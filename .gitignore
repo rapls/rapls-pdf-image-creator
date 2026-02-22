@@ -1,0 +1,5 @@
+.DS_Store
+.claude/
+.serena/
+node_modules/
+*.zip

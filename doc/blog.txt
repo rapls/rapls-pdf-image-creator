@@ -1,0 +1,438 @@
+WordPressでPDFを扱っていると、こんな悩みに直面しませんか？
+<ul>
+ 	<li>メディアライブラリがPDFアイコンだらけで、どれがどのファイルか分からない</li>
+ 	<li>PDFを投稿に挿入するとき、味気ないリンクテキストしか選べない</li>
+ 	<li>「PDF Embedder」など高機能なプラグインは、やりたいことに対して重すぎる</li>
+</ul>
+私自身、クライアントのWordPressサイト保守で同じ問題を抱えていました。以前は別のプラグインで解決していたのですが、<strong>開発停止でWordPress.orgから削除</strong>されてしまい、代替を探すことに。
+
+しかし見つかるのは、機能過多で設定が複雑なものばかり。「PDFをアップしたら表紙画像を自動生成する」——ただそれだけのシンプルなプラグインがない。
+
+<strong>だから自分で作りました。</strong>
+
+この記事では、開発者である私が「なぜこの設計にしたか」「実務でどう使うか」「ハマりやすいポイント」まで、WordPress.orgのreadmeには書ききれない部分を解説します。
+<div style="background: #f0f7ff; border: 1px solid #d0e3f7; padding: 20px; border-radius: 8px; margin: 24px 0;">
+<h3 style="margin: 0 0 12px 0; font-size: 1.1em;">📥 ダウンロード</h3>
+<p style="margin: 0 0 8px 0;"><strong>WordPress.org：</strong><a href="https://wordpress.org/plugins/rapls-pdf-image-creator/" target="_blank" rel="noopener">Rapls PDF Image Creator</a></p>
+<p style="margin: 0; font-size: 0.9em; color: #666;">無料 / GPLv2ライセンス / 日本語対応</p>
+
+</div>
+
+<hr />
+
+<h2 id="what">このプラグインが解決する問題</h2>
+<h3>Before：PDFアイコン地獄</h3>
+WordPressのメディアライブラリにPDFをアップロードすると、すべて同じアイコンで表示されます。10個、20個と増えていくと「どれがどのPDFか」まったく分かりません。
+
+ファイル名で判断するしかないのですが、クライアントから受け取ったPDFは「資料.pdf」「最終版.pdf」「修正2.pdf」といった名前がついていることも多く、管理が破綻します。
+<h3>After：表紙が見える</h3>
+このプラグインを入れると、PDFをアップロードした瞬間に<strong>表紙（1ページ目）が画像として生成</strong>され、メディアライブラリに表示されます。
+
+「あの赤い表紙のやつ」「グラフが載ってるPDF」——視覚的に探せるようになります。
+
+<img src="https://raplsworks.com/wp-content/uploads/2025/12/screenshot-4-1024x663.png" alt="メディアライブラリでPDFの表紙サムネイルが表示されている様子" width="600" />
+
+<hr />
+
+<h2 id="why">なぜ「サムネイル自動生成」にこだわったか</h2>
+類似プラグインを探したとき、多くは「PDFビューアー」や「埋め込み表示」がメイン機能でした。でも私が欲しかったのは違いました。
+<h3>私が必要だった機能</h3>
+<ul>
+ 	<li><strong>アップロードしたら勝手にサムネイルができる</strong>（手動作業ゼロ）</li>
+ 	<li><strong>生成した画像をアイキャッチや投稿に使える</strong>（WordPress標準の画像として扱える）</li>
+ 	<li><strong>余計な機能がない</strong>（ビューアーは別プラグインでいい）</li>
+</ul>
+<h3>だから削ぎ落とした機能</h3>
+<ul>
+ 	<li>PDFビューアー機能 → 不要（必要なら専用プラグインを使えばいい）</li>
+ 	<li>複数ページのサムネイル生成 → 不要（表紙1枚で十分なケースが大半）</li>
+ 	<li>外部サービス連携 → 不要（サーバー内で完結させたい）</li>
+</ul>
+結果、<strong>インストールして有効化するだけで動く</strong>シンプルなプラグインになりました。
+
+<hr />
+
+<h2 id="server">動く環境・動かない環境（サーバー別の注意点）</h2>
+このプラグインは<strong>ImageMagick（Imagick PHP拡張）</strong>を使ってPDFを画像に変換します。WordPress.orgのreadmeには「ImageMagickが必要」としか書いていませんが、実際にはサーバーによって状況が異なります。
+<h3>主要レンタルサーバーの対応状況（2024年時点）</h3>
+<table style="width: 100%; border-collapse: collapse; border: 1px solid #ddd;">
+<thead>
+<tr style="background-color: #f2f2f2;">
+<th style="padding: 10px; border: 1px solid #ddd; text-align: left;">サーバー</th>
+<th style="padding: 10px; border: 1px solid #ddd; text-align: left;">ImageMagick</th>
+<th style="padding: 10px; border: 1px solid #ddd; text-align: left;">PDF変換</th>
+<th style="padding: 10px; border: 1px solid #ddd; text-align: left;">備考</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="padding: 10px; border: 1px solid #ddd;">Xserver</td>
+<td style="padding: 10px; border: 1px solid #ddd;">✅ 利用可</td>
+<td style="padding: 10px; border: 1px solid #ddd;">✅ 対応</td>
+<td style="padding: 10px; border: 1px solid #ddd;">標準で動作</td>
+</tr>
+<tr>
+<td style="padding: 10px; border: 1px solid #ddd;">ConoHa WING</td>
+<td style="padding: 10px; border: 1px solid #ddd;">✅ 利用可</td>
+<td style="padding: 10px; border: 1px solid #ddd;">✅ 対応</td>
+<td style="padding: 10px; border: 1px solid #ddd;">標準で動作</td>
+</tr>
+<tr>
+<td style="padding: 10px; border: 1px solid #ddd;">さくらのレンタルサーバ</td>
+<td style="padding: 10px; border: 1px solid #ddd;">✅ 利用可</td>
+<td style="padding: 10px; border: 1px solid #ddd;">✅ 対応</td>
+<td style="padding: 10px; border: 1px solid #ddd;">標準で動作</td>
+</tr>
+<tr>
+<td style="padding: 10px; border: 1px solid #ddd;">ロリポップ</td>
+<td style="padding: 10px; border: 1px solid #ddd;">✅ 利用可</td>
+<td style="padding: 10px; border: 1px solid #ddd;">⚠️ 要確認</td>
+<td style="padding: 10px; border: 1px solid #ddd;">プランにより異なる</td>
+</tr>
+<tr>
+<td style="padding: 10px; border: 1px solid #ddd;">mixhost</td>
+<td style="padding: 10px; border: 1px solid #ddd;">✅ 利用可</td>
+<td style="padding: 10px; border: 1px solid #ddd;">✅ 対応</td>
+<td style="padding: 10px; border: 1px solid #ddd;">標準で動作</td>
+</tr>
+<tr>
+<td style="padding: 10px; border: 1px solid #ddd;">wpX Speed</td>
+<td style="padding: 10px; border: 1px solid #ddd;">✅ 利用可</td>
+<td style="padding: 10px; border: 1px solid #ddd;">✅ 対応</td>
+<td style="padding: 10px; border: 1px solid #ddd;">標準で動作</td>
+</tr>
+</tbody>
+</table>
+<h3>確認方法</h3>
+プラグインを有効化後、<strong>「設定」→「Rapls PDF Image Creator」→「ステータス」タブ</strong>を確認してください。
+<pre><code>✓ ImageMagick (Imagick) が利用可能です
+✓ PDF変換がサポートされています
+</code></pre>
+この2つが表示されていればOKです。
+<h3>動かない場合</h3>
+「PDF変換がサポートされていません」と表示される場合、サーバーのImageMagickポリシーでPDFが禁止されている可能性があります。共用サーバーでは変更できないことが多いので、ホスティング会社に問い合わせてください。
+
+<hr />
+
+<h2 id="recommended">おすすめ設定（用途別）</h2>
+デフォルト設定でも動きますが、用途によって調整すると効率的です。
+<h3>一般的なブログ・コーポレートサイト</h3>
+<table style="width: 100%; border-collapse: collapse; border: 1px solid #ddd; margin-bottom: 20px;">
+<tbody>
+<tr>
+<td style="padding: 10px; border: 1px solid #ddd; width: 30%;"><strong>最大幅/高さ</strong></td>
+<td style="padding: 10px; border: 1px solid #ddd;">1024px</td>
+</tr>
+<tr>
+<td style="padding: 10px; border: 1px solid #ddd;"><strong>品質</strong></td>
+<td style="padding: 10px; border: 1px solid #ddd;">80〜85</td>
+</tr>
+<tr>
+<td style="padding: 10px; border: 1px solid #ddd;"><strong>フォーマット</strong></td>
+<td style="padding: 10px; border: 1px solid #ddd;">WebP（軽量）またはJPEG（互換性重視）</td>
+</tr>
+<tr>
+<td style="padding: 10px; border: 1px solid #ddd;"><strong>生成画像を非表示</strong></td>
+<td style="padding: 10px; border: 1px solid #ddd;">ON（メディアライブラリの肥大化防止）</td>
+</tr>
+</tbody>
+</table>
+<h3>デザイン・印刷系（高画質が必要）</h3>
+<table style="width: 100%; border-collapse: collapse; border: 1px solid #ddd; margin-bottom: 20px;">
+<tbody>
+<tr>
+<td style="padding: 10px; border: 1px solid #ddd; width: 30%;"><strong>最大幅/高さ</strong></td>
+<td style="padding: 10px; border: 1px solid #ddd;">2048px</td>
+</tr>
+<tr>
+<td style="padding: 10px; border: 1px solid #ddd;"><strong>品質</strong></td>
+<td style="padding: 10px; border: 1px solid #ddd;">95</td>
+</tr>
+<tr>
+<td style="padding: 10px; border: 1px solid #ddd;"><strong>フォーマット</strong></td>
+<td style="padding: 10px; border: 1px solid #ddd;">PNG（劣化なし）</td>
+</tr>
+</tbody>
+</table>
+<h3>PDF大量アップロード（サーバー負荷を抑えたい）</h3>
+<table style="width: 100%; border-collapse: collapse; border: 1px solid #ddd; margin-bottom: 20px;">
+<tbody>
+<tr>
+<td style="padding: 10px; border: 1px solid #ddd; width: 30%;"><strong>最大幅/高さ</strong></td>
+<td style="padding: 10px; border: 1px solid #ddd;">800px</td>
+</tr>
+<tr>
+<td style="padding: 10px; border: 1px solid #ddd;"><strong>品質</strong></td>
+<td style="padding: 10px; border: 1px solid #ddd;">70〜75</td>
+</tr>
+<tr>
+<td style="padding: 10px; border: 1px solid #ddd;"><strong>フォーマット</strong></td>
+<td style="padding: 10px; border: 1px solid #ddd;">WebP</td>
+</tr>
+</tbody>
+</table>
+
+<hr />
+
+<h2 id="usecase">実務での活用パターン</h2>
+<h3>パターン1：資料ダウンロードページ</h3>
+企業サイトでホワイトペーパーやカタログを配布する場合、PDFの表紙サムネイルがあると「どんな資料か」が一目で分かります。
+
+ショートコードを使えば、簡単にサムネイル付きダウンロードリンクを設置できます：
+<pre><code>[rapls_pdf_download_link id="123" size="medium" text="資料をダウンロード"]
+</code></pre>
+<h3>パターン2：不動産・物件情報</h3>
+間取り図PDFをアップロードすると、自動で間取り画像がサムネイルになります。物件一覧ページで「画像として」表示できるので、ユーザーがクリック前に内容を確認できます。
+<h3>パターン3：学校・教育機関</h3>
+配布プリントや時間割PDFの管理に。教員がPDFをアップロードするだけで、保護者向けページに表紙付きで一覧表示できます。
+
+<hr />
+
+<h2 id="trouble">よくあるトラブルと解決策</h2>
+<h3>🔴 サムネイルが生成されない</h3>
+<strong>原因1：ImageMagickが無効</strong>
+
+→ 「設定」→「ステータス」タブで確認。「利用不可」なら、サーバー側の問題です。
+
+<strong>原因2：PDFが暗号化されている</strong>
+
+→ パスワード保護されたPDFは変換できません。保護を解除してから再アップロードしてください。
+
+<strong>原因3：PHPメモリ不足</strong>
+
+→ 大きなPDF（数十MB）だと、PHPのメモリ制限に引っかかることがあります。wp-config.phpで以下を追加：
+<pre><code>define( 'WP_MEMORY_LIMIT', '256M' );
+</code></pre>
+<h3>🔴 サムネイルが真っ黒になる</h3>
+<strong>原因：PDFのカラースペースがCMYK（印刷用PDF）</strong>
+
+この問題は、Adobe IllustratorやInDesignで作成した<strong>印刷用PDF</strong>で発生しやすいです。
+
+<strong>なぜ真っ黒になるのか？</strong>
+
+コンピュータの画面と印刷物では、色の表現方法が異なります。
+
+<ul>
+ 	<li><strong>RGB（画面用）</strong>：赤・緑・青の光を混ぜて色を表現。3色を最大にすると「白」になる</li>
+ 	<li><strong>CMYK（印刷用）</strong>：シアン・マゼンタ・イエロー・黒のインクを重ねて色を表現。4色を重ねると「黒」になる</li>
+</ul>
+
+ImageMagickはデフォルトでRGBを想定しているため、CMYKのデータをそのまま処理すると色の解釈が狂い、真っ黒になってしまいます。
+
+<strong>特に注意が必要なケース：PDF/X形式</strong>
+
+Illustratorで「別名で保存」→「Adobe PDF」を選んだとき、「準拠する規格」が以下のいずれかになっていると、ドキュメントがRGBモードでも内部的にCMYKに変換されます。
+
+<ul>
+ 	<li>PDF/X-1a:2001</li>
+ 	<li>PDF/X-1a:2003</li>
+ 	<li>PDF/X-3:2002</li>
+ 	<li>PDF/X-4:2008</li>
+</ul>
+
+これらは印刷入稿用の国際規格で、<strong>RGBが使用禁止</strong>という制約があるためです。
+
+<strong>✅ バージョン1.0.9で自動対応</strong>
+
+バージョン1.0.9以降、プラグインはPDFのカラースペースを自動検出し、CMYKの場合はsRGB（画面表示用の標準的なRGB）に変換してからサムネイルを生成します。
+
+<pre><code>// 内部処理（自動で実行されます）
+$colorspace = $imagick->getImageColorspace();
+if ($colorspace === COLORSPACE_CMYK) {
+    $imagick->transformImageColorspace(COLORSPACE_SRGB);
+}
+</code></pre>
+
+これにより、PDF/X-1:2001形式などの印刷用PDFでも正しい色でサムネイルが生成されるようになりました。
+
+<strong>それでも真っ黒になる場合</strong>
+
+まれに、特殊なカラープロファイルを使用したPDFでは変換がうまくいかないことがあります。その場合は、PDF作成時に以下を試してください：
+
+<ol>
+ 	<li>IllustratorでPDFを保存する際、「準拠する規格」を<strong>「なし」</strong>に設定</li>
+ 	<li>プリセットは「最小ファイルサイズ」または「高品質印刷」を選択</li>
+ 	<li>ドキュメントのカラーモードをRGBに変更してから保存</li>
+</ol>
+
+詳しくは別記事で解説しています：
+<div class="blogcard-type bct-related">
+
+https://raplsworks.com/pdf-black-thumbnail-illustrator-pdfx-fix/
+
+</div>
+<h3>🔴 一括生成が途中で止まる</h3>
+<strong>原因：サーバーのタイムアウト</strong>
+
+→ 大量のPDFを一度に処理すると、PHPの実行時間制限に引っかかります。
+
+<strong>対策：</strong>
+<ul>
+ 	<li>深夜など負荷の低い時間帯に実行</li>
+ 	<li>一度に処理する件数を減らす（プラグインは内部で分割処理していますが、サーバーによっては厳しい場合も）</li>
+ 	<li>ブラウザを閉じない（Ajax処理なので、閉じると中断されます）</li>
+</ul>
+
+<hr />
+
+<h2 id="faq">FAQ（よくある質問）</h2>
+<h3>Q. 2ページ目をサムネイルにできますか？</h3>
+A. はい。設定画面の「ページ番号」を変更するか、フィルターフックで制御できます。ページ番号は0始まりなので、2ページ目は「1」です。
+<pre><code>// 常に2ページ目をサムネイルにする
+add_filter( 'rapls_pdf_image_creator_thumbnail_page', function( $page, $pdf_id ) {
+    return 1;
+}, 10, 2 );
+</code></pre>
+<h3>Q. 既存のPDFにもサムネイルを付けられますか？</h3>
+A. はい。「設定」→「一括生成」タブから、プラグイン導入前にアップロードしたPDFにも一括でサムネイルを生成できます。
+<h3>Q. プラグインを削除したら、生成した画像はどうなりますか？</h3>
+A. デフォルトでは削除されます。「アンインストール時に画像を保持」をONにしておけば、通常の画像として残ります。
+<h3>Q. PDFを削除したら、サムネイル画像も消えますか？</h3>
+A. はい。PDFとサムネイルは紐付いているので、PDFを削除すると自動的にサムネイルも削除されます。
+<h3>Q. 他のPDFプラグイン（PDF Embedderなど）と併用できますか？</h3>
+A. はい。このプラグインは「サムネイル生成」に特化しているので、ビューアー系プラグインとは競合しません。役割が違うので、併用して問題ありません。
+<h3>Q. マルチサイトで使えますか？</h3>
+A. はい。各サイトで個別に有効化して使用できます。
+
+<hr />
+
+<h2 id="dev">開発者向けリファレンス</h2>
+テーマやプラグインからPDFサムネイルを制御したい場合は、以下のAPIを使用できます。
+<h3>テンプレート関数</h3>
+<pre><code>// サムネイルがあるか確認
+if ( rapls_pic_has_thumbnail( $pdf_id ) ) {
+    // サムネイル画像のHTMLを取得
+    echo rapls_pic_get_thumbnail_image( $pdf_id, 'medium', array( 'class' =&gt; 'pdf-thumb' ) );
+}
+
+// サムネイルURLを取得
+$url = rapls_pic_get_thumbnail_url( $pdf_id, 'large' );
+
+// サムネイルの添付ファイルIDを取得
+$thumbnail_id = rapls_pic_get_thumbnail_id( $pdf_id );
+
+// サムネイルを手動生成（第2引数trueで強制再生成）
+$thumbnail_id = rapls_pic_generate_thumbnail( $pdf_id, true );
+</code></pre>
+<h3>ショートコード</h3>
+<pre><code>// サムネイル画像を表示
+[rapls_pdf_thumbnail id="123" size="medium" class="my-class"]
+
+// サムネイルURLのみ出力
+[rapls_pdf_thumbnail_url id="123" size="medium"]
+
+// クリックでPDFを開くサムネイル
+[rapls_pdf_clickable_thumbnail id="123" size="medium" target="_blank"]
+
+// ダウンロードリンク（サムネイル＋テキスト）
+[rapls_pdf_download_link id="123" size="thumbnail" text="ダウンロード"]
+</code></pre>
+<h3>フィルターフック</h3>
+<pre><code>// サムネイルに使用するページを変更
+add_filter( 'rapls_pdf_image_creator_thumbnail_page', function( $page, $pdf_id ) {
+    return 0; // 0始まり
+}, 10, 2 );
+
+// 最大幅を変更
+add_filter( 'rapls_pdf_image_creator_thumbnail_max_width', function( $width, $pdf_id ) {
+    return 2048;
+}, 10, 2 );
+
+// 品質を変更
+add_filter( 'rapls_pdf_image_creator_thumbnail_quality', function( $quality, $pdf_id ) {
+    return 95;
+}, 10, 2 );
+
+// フォーマットを変更（jpeg / png / webp）
+add_filter( 'rapls_pdf_image_creator_thumbnail_format', function( $format, $pdf_id ) {
+    return 'webp';
+}, 10, 2 );
+
+// 背景色を変更（white / black / transparent）
+add_filter( 'rapls_pdf_image_creator_thumbnail_bgcolor', function( $color, $pdf_id ) {
+    return 'transparent';
+}, 10, 2 );
+</code></pre>
+<h3>アクションフック</h3>
+<pre><code>// サムネイル生成前
+add_action( 'rapls_pdf_image_creator_before_generate', function( $pdf_id ) {
+    // 処理
+} );
+
+// サムネイル生成後
+add_action( 'rapls_pdf_image_creator_after_generate', function( $pdf_id, $thumbnail_id ) {
+    // 処理
+}, 10, 2 );
+
+// サムネイル生成失敗時
+add_action( 'rapls_pdf_image_creator_generation_failed', function( $pdf_id, $error ) {
+    // エラーログなど
+}, 10, 2 );
+</code></pre>
+
+<hr />
+
+<h2 id="changelog">更新履歴と開発方針</h2>
+<h3>開発方針</h3>
+このプラグインは「PDFサムネイル自動生成」という<strong>一つの機能に集中</strong>して開発しています。
+<ul>
+ 	<li>機能追加より安定性を優先</li>
+ 	<li>WordPress本体・PHPのアップデートへの追従</li>
+ 	<li>セキュリティ対応は最優先で実施</li>
+</ul>
+「あったら便利」な機能は慎重に検討し、複雑化を避けています。
+<h3>更新履歴</h3>
+<h4>1.0.9.2</h4>
+<ul>
+ 	<li>設定画面のステータスタブにWordPress.orgレビューページへのリンクを追加</li>
+ 	<li>公式ドキュメントURLを変更</li>
+</ul>
+<h4>1.0.9</h4>
+<ul>
+ 	<li>修正: PDF/X-1:2001 形式の PDF でサムネイルが真っ黒になる問題を解決</li>
+ 	<li>印刷用 PDF (CMYK カラースペース) を sRGB に自動変換する機能を追加</li>
+</ul>
+<h4>1.0.8</h4>
+<ul>
+ 	<li>修正: PDF の添付ファイル詳細でサムネイル URL ではなく PDF の URL を表示</li>
+ 	<li>修正: 生成されたサムネイルの詳細画面で元の PDF の URL を表示</li>
+ 	<li>修正:「URL をクリップボードにコピー」で PDF とサムネイル両方とも PDF の URL をコピー</li>
+</ul>
+<h4>1.0.7.1</h4>
+<ul>
+ 	<li>公式ドキュメントURLを変更</li>
+</ul>
+<h4>1.0.7</h4>
+<ul>
+ 	<li>WordPress 6.5対応：非推奨の <code>load_plugin_textdomain()</code> を削除</li>
+ 	<li>日本語翻訳をWordPress翻訳スタイルガイドに準拠</li>
+</ul>
+<h4>1.0.6</h4>
+<ul>
+ 	<li>ステータスタブにサポートリンクを追加</li>
+ 	<li>PHP 7.4互換性を修正（<code>readonly</code>プロパティと<code>match</code>式を削除）</li>
+ 	<li>セキュリティ改善：<code>error_log()</code>をWP_DEBUG有効時のみに制限</li>
+ 	<li>カスタムHTML出力に<code>wp_kses_post()</code>サニタイズを追加</li>
+</ul>
+<h4>1.0.5</h4>
+<ul>
+ 	<li>GhostScriptエンジンのサポートを削除（WordPress.orgセキュリティ要件への対応）</li>
+ 	<li>PDF変換エンジンをImageMagickに一本化</li>
+</ul>
+<strong>なぜGhostScriptを削除したか：</strong>WordPress.orgのプラグインガイドラインで、<code>exec()</code>や<code>shell_exec()</code>を使った外部コマンド実行が禁止されているためです。GhostScriptはコマンドライン経由でしか使えないため、泣く泣く対応を削除しました。
+<h4>1.0.4</h4>
+<ul>
+ 	<li>ネームスペースを <code>Rapls\PDFImageCreator</code> に変更</li>
+ 	<li>全プレフィックスを <code>rapls_pic_</code> に統一（WordPress.orgガイドライン準拠）</li>
+</ul>
+<h4>1.0.0</h4>
+<ul>
+ 	<li>初回リリース</li>
+</ul>
+
+<hr />
+
+<h2>サポート</h2>
+バグ報告や機能リクエストは、<a href="https://wordpress.org/support/plugin/rapls-pdf-image-creator/" target="_blank" rel="noopener">WordPress.orgのサポートフォーラム</a>からお願いします。
+
+このプラグインが役に立った場合は、<a href="https://buymeacoffee.com/rapls" target="_blank" rel="noopener">☕ Buy me a coffee</a> で開発をサポートしていただけると励みになります。

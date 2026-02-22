@@ -1,0 +1,529 @@
+# Japanese translation for Rapls PDF Image Creator
+# Copyright (C) 2025 Rapls Works
+# This file is distributed under the same license as the Rapls PDF Image Creator package.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: Rapls PDF Image Creator 1.0.6\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2024-01-01 00:00+0000\n"
+"PO-Revision-Date: 2024-01-01 00:00+0000\n"
+"Last-Translator: \n"
+"Language-Team: Japanese\n"
+"Language: ja\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+#: rapls-pdf-image-creator.php
+msgid "Rapls PDF Image Creator requires PHP 7.4 or higher."
+msgstr "Rapls PDF Image Creator を使用するには PHP 7.4以上が必要です。"
+
+#: admin/views/settings-page.php
+msgid "Rapls PDF Image Creator"
+msgstr "Rapls PDF Image Creator"
+
+#: includes/Admin.php
+msgid "Rapls PDF Image Creator:"
+msgstr "Rapls PDF Image Creator:"
+
+#: admin/views/settings-page.php
+msgid "Automatically generate thumbnail images from PDF files uploaded to the Media Library."
+msgstr "メディアライブラリにアップロードされた PDF ファイルからサムネイル画像を自動生成します。"
+
+#: admin/views/settings-page.php
+msgid "Settings"
+msgstr "設定"
+
+#: admin/views/settings-page.php
+msgid "Bulk Generate"
+msgstr "一括生成"
+
+#: admin/views/settings-page.php
+msgid "Status"
+msgstr "ステータス"
+
+#: admin/views/settings-page.php
+msgid "Image Settings"
+msgstr "画像設定"
+
+#: admin/views/settings-page.php
+msgid "Max Width"
+msgstr "最大幅"
+
+#: admin/views/settings-page.php
+msgid "Maximum width of generated thumbnail. (100-4096)"
+msgstr "生成されるサムネイルの最大幅 (100-4096)。"
+
+#: admin/views/settings-page.php
+msgid "Max Height"
+msgstr "最大高さ"
+
+#: admin/views/settings-page.php
+msgid "Maximum height of generated thumbnail. (100-4096)"
+msgstr "生成されるサムネイルの最大高さ (100-4096)。"
+
+#: admin/views/settings-page.php
+msgid "Quality"
+msgstr "品質"
+
+#: admin/views/settings-page.php
+msgid "Image quality for JPEG/WebP output. (10-100)"
+msgstr "JPEG/WebP 出力の画像品質 (10-100)。"
+
+#: admin/views/settings-page.php
+msgid "Output Format"
+msgstr "出力形式"
+
+#: admin/views/settings-page.php
+msgid "JPEG"
+msgstr "JPEG"
+
+#: admin/views/settings-page.php
+msgid "PNG"
+msgstr "PNG"
+
+#: admin/views/settings-page.php
+msgid "WebP"
+msgstr "WebP"
+
+#: admin/views/settings-page.php
+msgid "Background Color"
+msgstr "背景色"
+
+#: admin/views/settings-page.php
+msgid "White"
+msgstr "白"
+
+#: admin/views/settings-page.php
+msgid "Black"
+msgstr "黒"
+
+#: admin/views/settings-page.php
+msgid "Transparent (PNG only)"
+msgstr "透明 (PNG のみ)"
+
+#: admin/views/settings-page.php
+msgid "Background color for transparent areas in PDFs."
+msgstr "PDF 内の透明部分の背景色。"
+
+#: admin/views/settings-page.php
+msgid "Page Number"
+msgstr "ページ番号"
+
+#: admin/views/settings-page.php
+msgid "Page to use for thumbnail (0 = first page)."
+msgstr "サムネイルに使用するページ (0 = 最初のページ)。"
+
+#: admin/views/settings-page.php
+msgid "Behavior Settings"
+msgstr "動作設定"
+
+#: admin/views/settings-page.php
+msgid "Auto Generate"
+msgstr "自動生成"
+
+#: admin/views/settings-page.php
+msgid "Automatically generate thumbnail when PDF is uploaded"
+msgstr "PDF アップロード時にサムネイルを自動生成"
+
+#: admin/views/settings-page.php
+msgid "Featured Image"
+msgstr "アイキャッチ画像"
+
+#: admin/views/settings-page.php
+msgid "Set generated thumbnail as PDF featured image"
+msgstr "生成したサムネイルを PDF のアイキャッチ画像として設定"
+
+#: admin/views/settings-page.php
+msgid "Enables using get_post_thumbnail_id() with PDF attachments."
+msgstr "PDF 添付ファイルで get_post_thumbnail_id() を使用可能にします。"
+
+#: admin/views/settings-page.php
+msgid "Bulk Generate Thumbnails"
+msgstr "サムネイル一括生成"
+
+#: admin/views/settings-page.php
+msgid "Generate thumbnails for existing PDF files in your Media Library."
+msgstr "メディアライブラリ内の既存 PDF ファイルのサムネイルを生成します。"
+
+#: admin/views/settings-page.php
+msgid "Options"
+msgstr "オプション"
+
+#: admin/views/settings-page.php
+msgid "Include PDFs that already have thumbnails (regenerate)"
+msgstr "すでにサムネイルがある PDF も含める (再生成)"
+
+#: admin/views/settings-page.php
+msgid "Scan for PDFs"
+msgstr "PDF をスキャン"
+
+#: admin/views/settings-page.php
+msgid "Start Generation"
+msgstr "生成開始"
+
+#: admin/views/settings-page.php
+msgid "Stop"
+msgstr "停止"
+
+#: admin/views/settings-page.php
+msgid "Scan Results"
+msgstr "スキャン結果"
+
+#: admin/views/settings-page.php
+msgid "PDFs found:"
+msgstr "見つかった PDF:"
+
+#: admin/views/settings-page.php
+msgid "Progress"
+msgstr "進行状況"
+
+#: admin/views/settings-page.php
+msgid "Ready"
+msgstr "準備完了"
+
+#: admin/views/settings-page.php
+msgid "Generated:"
+msgstr "生成済み:"
+
+#: admin/views/settings-page.php
+msgid "Failed:"
+msgstr "失敗:"
+
+#: admin/views/settings-page.php
+msgid "Log"
+msgstr "ログ"
+
+#: admin/views/settings-page.php
+msgid "Server Status"
+msgstr "サーバーステータス"
+
+#: admin/views/settings-page.php
+msgid "Engine"
+msgstr "エンジン"
+
+#: admin/views/settings-page.php
+msgid "Details"
+msgstr "詳細"
+
+#: admin/views/settings-page.php
+msgid "Available"
+msgstr "利用可能"
+
+#: admin/views/settings-page.php
+msgid "Not Available"
+msgstr "利用不可"
+
+#: admin/views/settings-page.php
+msgid "Statistics"
+msgstr "統計"
+
+#: admin/views/settings-page.php
+msgid "Refresh Statistics"
+msgstr "統計を更新"
+
+#: admin/views/settings-page.php
+msgid "Total PDFs:"
+msgstr "PDF 総数:"
+
+#: admin/views/settings-page.php
+msgid "With thumbnail:"
+msgstr "サムネイルあり:"
+
+#: admin/views/settings-page.php
+msgid "Without thumbnail:"
+msgstr "サムネイルなし:"
+
+#: includes/Admin.php
+msgid "Processing..."
+msgstr "処理中..."
+
+#: includes/Admin.php
+msgid "Complete!"
+msgstr "完了！"
+
+#: includes/Admin.php
+msgid "An error occurred."
+msgstr "エラーが発生しました。"
+
+#: includes/Admin.php
+msgid "Start bulk generation? This may take a while."
+msgstr "一括生成を開始しますか？時間がかかる場合があります。"
+
+#: includes/Admin.php
+msgid "Generating thumbnail %1$d of %2$d..."
+msgstr "サムネイル生成中 %1$d / %2$d..."
+
+#: includes/Admin.php
+msgid "PDF thumbnail generated successfully."
+msgstr "PDF サムネイルが正常に生成されました。"
+
+#: includes/Admin.php
+msgid "Failed to generate PDF thumbnail."
+msgstr "PDF サムネイルの生成に失敗しました。"
+
+#: includes/Admin.php
+msgid "ImageMagick (Imagick PHP extension) with PDF support is required but not available. Please contact your hosting provider to enable it."
+msgstr "ImageMagick (Imagick PHP 拡張) と PDF サポートが必要ですが、利用できません。ホスティングプロバイダーに有効化を依頼してください。"
+
+#: includes/BulkProcessor.php
+msgid "Permission denied."
+msgstr "権限がありません。"
+
+#: includes/BulkProcessor.php
+msgid "Invalid PDF ID."
+msgstr "無効な PDF ID です。"
+
+#: includes/BulkProcessor.php
+msgid "Not a PDF file."
+msgstr "PDF ファイルではありません。"
+
+#: includes/BulkProcessor.php
+msgid "Thumbnail generated."
+msgstr "サムネイルを生成しました。"
+
+#: includes/BulkProcessor.php
+msgid "Failed to generate thumbnail."
+msgstr "サムネイルの生成に失敗しました。"
+
+#: includes/MediaLibrary.php
+msgid "PDF Thumbnail"
+msgstr "PDF サムネイル"
+
+#: includes/MediaLibrary.php
+msgid "Thumbnail generated"
+msgstr "サムネイル生成済み"
+
+#: includes/MediaLibrary.php
+msgid "No thumbnail"
+msgstr "サムネイルなし"
+
+#: includes/MediaLibrary.php
+msgid "Regenerate Thumbnail"
+msgstr "サムネイル再生成"
+
+#: includes/MediaLibrary.php
+msgid "Generate Thumbnail"
+msgstr "サムネイル生成"
+
+#: includes/MediaLibrary.php
+msgid "Security check failed."
+msgstr "セキュリティチェックに失敗しました。"
+
+#: includes/MediaLibrary.php
+msgid "You do not have permission to do this."
+msgstr "この操作を行う権限がありません。"
+
+#: includes/MediaLibrary.php
+msgid "Invalid attachment ID."
+msgstr "無効な添付ファイル ID です。"
+
+#: includes/MediaLibrary.php
+msgid "Thumbnail generated successfully."
+msgstr "サムネイルが正常に生成されました。"
+
+#: includes/Engine/ImagickEngine.php
+msgid "ImageMagick (Imagick)"
+msgstr "ImageMagick (Imagick)"
+
+#: includes/Engine/ImagickEngine.php
+msgid "Imagick extension"
+msgstr "Imagick 拡張機能"
+
+#: includes/Engine/ImagickEngine.php
+msgid "Loaded"
+msgstr "読み込み済み"
+
+#: includes/Engine/ImagickEngine.php
+msgid "Not loaded"
+msgstr "未読み込み"
+
+#: includes/Engine/ImagickEngine.php
+msgid "PDF support"
+msgstr "PDF サポート"
+
+#: includes/Engine/ImagickEngine.php
+msgid "Supported"
+msgstr "対応"
+
+#: includes/Engine/ImagickEngine.php
+msgid "Not supported (check policy.xml)"
+msgstr "非対応 (policy.xml を確認してください)"
+
+#: includes/Engine/ImagickEngine.php
+msgid "Unable to check"
+msgstr "確認できません"
+
+#: includes/Engine/ImagickEngine.php
+msgid "Failed to read PDF file"
+msgstr "PDF ファイルの読み込みに失敗しました"
+
+#: includes/Engine/ImagickEngine.php
+msgid "Invalid page number"
+msgstr "無効なページ番号です"
+
+#: includes/Engine/ImagickEngine.php
+msgid "Failed to convert PDF"
+msgstr "PDF の変換に失敗しました"
+
+#: includes/Engine/ImagickEngine.php
+msgid "Not available (PDF delegate may be missing)"
+msgstr "利用不可 (PDF デリゲートがない可能性があります)"
+
+#: admin/views/settings-page.php
+msgid "This plugin requires ImageMagick (Imagick PHP extension) with PDF support to generate thumbnails."
+msgstr "このプラグインはサムネイル生成に ImageMagick (Imagick PHP 拡張) と PDF サポートが必要です。"
+
+#: admin/views/settings-page.php
+msgid "ImageMagick is not available."
+msgstr "ImageMagick が利用できません。"
+
+#: admin/views/settings-page.php
+msgid "Please contact your hosting provider to enable the Imagick PHP extension with PDF support."
+msgstr "ホスティングプロバイダーに Imagick PHP 拡張と PDF サポートの有効化を依頼してください。"
+
+#: admin/views/settings-page.php
+msgid "Requirement"
+msgstr "要件"
+
+#: admin/views/settings-page.php
+msgid "Unable to check requirements."
+msgstr "要件を確認できません。"
+
+#: admin/views/settings-page.php
+msgid "Insert Settings"
+msgstr "挿入設定"
+
+#: admin/views/settings-page.php
+msgid "Configure how PDF thumbnails are inserted into content."
+msgstr "PDF サムネイルをコンテンツに挿入する方法を設定します。"
+
+#: admin/views/settings-page.php
+msgid "Default Insert Type"
+msgstr "デフォルト挿入タイプ"
+
+#: admin/views/settings-page.php
+msgid "Thumbnail Image"
+msgstr "サムネイル画像"
+
+#: admin/views/settings-page.php
+msgid "Title (text link only)"
+msgstr "タイトル (テキストリンクのみ)"
+
+#: admin/views/settings-page.php
+msgid "Custom HTML"
+msgstr "カスタム HTML"
+
+#: admin/views/settings-page.php
+msgid "\"Title\" inserts only a text link to the PDF. \"Custom HTML\" allows using document viewer plugins."
+msgstr "「タイトル」は PDF へのテキストリンクのみを挿入します。「カスタム HTML」はドキュメントビュープラグインの使用を可能にします。"
+
+#: admin/views/settings-page.php
+msgid "Default Insert Size"
+msgstr "デフォルト挿入サイズ"
+
+#: admin/views/settings-page.php
+msgid "Image size to use when inserting PDF thumbnails."
+msgstr "PDF サムネイルを挿入する際に使用する画像サイズ。"
+
+#: admin/views/settings-page.php
+msgid "Link To"
+msgstr "リンク先"
+
+#: admin/views/settings-page.php
+msgid "PDF File"
+msgstr "PDF ファイル"
+
+#: admin/views/settings-page.php
+msgid "Attachment Page"
+msgstr "添付ファイルページ"
+
+#: admin/views/settings-page.php
+msgid "None (no link)"
+msgstr "なし (リンクなし)"
+
+#: admin/views/settings-page.php
+msgid "Custom HTML Template"
+msgstr "カスタム HTML テンプレート"
+
+#: admin/views/settings-page.php
+msgid "Available placeholders:"
+msgstr "利用可能なプレースホルダー:"
+
+#: admin/views/settings-page.php
+msgid "URL to the PDF file"
+msgstr "PDF ファイルの URL"
+
+#: admin/views/settings-page.php
+msgid "URL to the thumbnail image"
+msgstr "サムネイル画像の URL"
+
+#: admin/views/settings-page.php
+msgid "PDF title"
+msgstr "PDF タイトル"
+
+#: admin/views/settings-page.php
+msgid "PDF attachment ID"
+msgstr "PDF 添付ファイル ID"
+
+#: admin/views/settings-page.php
+msgid "URL to the attachment page"
+msgstr "添付ファイルページの URL"
+
+#: admin/views/settings-page.php
+msgid "Example for Google Doc Embedder:"
+msgstr "Google Doc Embedder の例:"
+
+#: admin/views/settings-page.php
+msgid "Display Settings"
+msgstr "表示設定"
+
+#: admin/views/settings-page.php
+msgid "Display Thumbnail Icon"
+msgstr "サムネイルアイコンを表示"
+
+#: admin/views/settings-page.php
+msgid "Display generated thumbnail instead of default PDF mime-type icon"
+msgstr "デフォルトの PDF MIME タイプアイコンの代わりに生成されたサムネイルを表示"
+
+#: admin/views/settings-page.php
+msgid "Shows the generated thumbnail image as the PDF icon in the Media Library."
+msgstr "メディアライブラリで PDF のアイコンとして生成されたサムネイル画像を表示します。"
+
+#: admin/views/settings-page.php
+msgid "Hide Generated Images"
+msgstr "生成された画像を非表示"
+
+#: admin/views/settings-page.php
+msgid "Hide generated thumbnail images in the Media Library"
+msgstr "メディアライブラリで生成されたサムネイル画像を非表示にする"
+
+#: admin/views/settings-page.php
+msgid "When unchecked and a PDF is deleted, the generated image will NOT be deleted together."
+msgstr "チェックを外すと、PDF を削除しても生成された画像は一緒に削除されません。"
+
+#: admin/views/settings-page.php
+msgid "Keep Images on Uninstall"
+msgstr "アンインストール時に画像を保持"
+
+#: admin/views/settings-page.php
+msgid "Keep generated images after the plugin is uninstalled"
+msgstr "プラグインをアンインストールした後も生成された画像を保持する"
+
+#: admin/views/settings-page.php
+msgid "If checked, generated image files will be handled as ordinary image files after plugin removal."
+msgstr "チェックすると、プラグイン削除後も生成された画像ファイルは通常の画像ファイルとして扱われます。"
+
+#: admin/views/settings-page.php
+msgid "Support This Plugin"
+msgstr "このプラグインをサポート"
+
+#: admin/views/settings-page.php
+msgid "If you find this plugin useful, please consider supporting its development."
+msgstr "このプラグインが役に立った場合は、開発をサポートしていただけると幸いです。"
+
+#: admin/views/settings-page.php
+msgid "Buy me a coffee"
+msgstr "Buy me a coffee"
