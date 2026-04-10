@@ -12,7 +12,7 @@
  * Plugin Name: Rapls PDF Image Creator
  * Plugin URI:  https://raplsworks.com/rapls-pdf-image-creator-guide/
  * Description: Automatically generate thumbnail images from PDF files uploaded to the Media Library.
- * Version:     1.0.9.2
+ * Version:     1.0.9.3
  * Author:      Rapls Works
  * Author URI:  https://raplsworks.com
  * Text Domain: rapls-pdf-image-creator
@@ -46,7 +46,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Plugin constants
-define('RAPLS_PIC_VERSION', '1.0.9.2');
+define('RAPLS_PIC_VERSION', '1.0.9.3');
 define('RAPLS_PIC_PLUGIN_FILE', __FILE__);
 define('RAPLS_PIC_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('RAPLS_PIC_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -69,6 +69,11 @@ spl_autoload_register(function (string $class): void {
         require $file;
     }
 });
+
+// Load translations from plugin directory to prevent .l10n.php warnings
+add_action('init', function (): void {
+    load_plugin_textdomain('rapls-pdf-image-creator', false, dirname(RAPLS_PIC_PLUGIN_BASENAME) . '/languages');
+}, 1);
 
 // Load plugin
 add_action('plugins_loaded', function (): void {

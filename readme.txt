@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 6.9
-Stable tag: 1.0.9.2
+Stable tag: 1.0.9.3
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -181,6 +181,11 @@ foreach ( $pdfs as $pdf ) {
 * `rapls_pdf_image_creator_generation_failed` - When generation fails
 
 == Changelog ==
+= 1.0.9.3 =
+* Fixed: Resolved PHP warnings for missing .l10n.php translation files on WordPress 6.5+
+* Added PHP-optimized translation file (ja.l10n.php) for faster translation loading
+* Restored load_plugin_textdomain() to ensure translations load from plugin directory
+
 = 1.0.9.2 =
 * Added review link in Status tab support section
 * Updated Plugin URI to new guide page
