@@ -70,13 +70,21 @@ spl_autoload_register(function (string $class): void {
     }
 });
 
-// Load translations from plugin directory to prevent .l10n.php warnings
-add_action('init', function (): void {
-    load_plugin_textdomain('rapls-pdf-image-creator', false, dirname(RAPLS_PIC_PLUGIN_BASENAME) . '/languages');
-}, 1);
-
 // Load plugin
 add_action('plugins_loaded', function (): void {
+    // Load translations directly from plugin directory to prevent .l10n.php warnings
+    // Note: load_plugin_textdomain() tries WP_LANG_DIR/plugins/ first, which causes
+    // include() warnings when .l10n.php doesn't exist there. load_textdomain() with
+    // the plugin's own path avoids this by only looking in the plugin directory.
+    $locale = determine_locale();
+    if ($locale && 'en_US' !== $locale) {
+        load_textdomain(
+            'rapls-pdf-image-creator',
+            RAPLS_PIC_PLUGIN_DIR . 'languages/rapls-pdf-image-creator-' . $locale . '.mo',
+            $locale
+        );
+    }
+
     // Initialize plugin
     $plugin = \Rapls\PDFImageCreator\Plugin::getInstance();
     $plugin->init();
