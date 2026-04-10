@@ -72,12 +72,18 @@ spl_autoload_register(function (string $class): void {
 
 // Load plugin
 add_action('plugins_loaded', function (): void {
-    // Load translations directly from plugin directory to prevent .l10n.php warnings
-    // Note: load_plugin_textdomain() tries WP_LANG_DIR/plugins/ first, which causes
-    // include() warnings when .l10n.php doesn't exist there. load_textdomain() with
-    // the plugin's own path avoids this by only looking in the plugin directory.
+    // Ensure .l10n.php exists in WP global languages directory to prevent
+    // include() warnings from WordPress 6.5+ JIT translation loader.
+    // This file persists after plugin deletion, preventing warnings during uninstall.
     $locale = determine_locale();
     if ($locale && 'en_US' !== $locale) {
+        $l10n_file = 'rapls-pdf-image-creator-' . $locale . '.l10n.php';
+        $source = RAPLS_PIC_PLUGIN_DIR . 'languages/' . $l10n_file;
+        $dest = WP_LANG_DIR . '/plugins/' . $l10n_file;
+        if (file_exists($source) && !file_exists($dest)) {
+            @copy($source, $dest);
+        }
+
         load_textdomain(
             'rapls-pdf-image-creator',
             RAPLS_PIC_PLUGIN_DIR . 'languages/rapls-pdf-image-creator-' . $locale . '.mo',
@@ -118,13 +124,6 @@ register_activation_hook(__FILE__, function (): void {
         add_option('rapls_pic_settings', $defaults);
     }
 
-    // Copy .l10n.php to WP global languages directory to prevent warnings
-    // after plugin deactivation/deletion (WordPress JIT loader looks here)
-    $source = RAPLS_PIC_PLUGIN_DIR . 'languages/rapls-pdf-image-creator-ja.l10n.php';
-    $dest = WP_LANG_DIR . '/plugins/rapls-pdf-image-creator-ja.l10n.php';
-    if (file_exists($source) && !file_exists($dest)) {
-        @copy($source, $dest);
-    }
 });
 
 /**
