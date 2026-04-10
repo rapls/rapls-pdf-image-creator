@@ -12,6 +12,10 @@ if (!defined('WP_UNINSTALL_PLUGIN')) {
     exit;
 }
 
+// Clear translation file cache to prevent stale .l10n.php include() warnings.
+// WordPress caches the file list from wp-content/languages/plugins/ for up to 1 hour.
+wp_cache_delete(md5(WP_LANG_DIR . '/plugins/'), 'translation_files');
+
 // Get plugin settings
 $rapls_pic_settings = get_option('rapls_pic_settings', []);
 

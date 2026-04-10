@@ -86,6 +86,14 @@ add_filter('override_load_textdomain', function ($override, $domain, $mofile) {
     return $override;
 }, 10, 3);
 
+// Clear stale translation file cache on deactivation.
+// WordPress caches glob() results for up to 1 hour (wp_cache 'translation_files').
+// After plugin deactivation/deletion, stale cache entries cause
+// wp_get_l10n_php_file_data() to include() files that no longer exist.
+register_deactivation_hook(RAPLS_PIC_PLUGIN_FILE, function (): void {
+    wp_cache_delete(md5(WP_LANG_DIR . '/plugins/'), 'translation_files');
+});
+
 // Load plugin
 add_action('plugins_loaded', function (): void {
     // Load translations from plugin directory (not blocked by our filter
