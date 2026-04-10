@@ -12,6 +12,17 @@ if (!defined('WP_UNINSTALL_PLUGIN')) {
     exit;
 }
 
+// Ensure .l10n.php exists in WP global languages directory to prevent
+// include() warnings after plugin files are deleted.
+$rapls_pic_locale = determine_locale();
+if ($rapls_pic_locale && 'en_US' !== $rapls_pic_locale) {
+    $rapls_pic_l10n_source = __DIR__ . '/languages/rapls-pdf-image-creator-' . $rapls_pic_locale . '.l10n.php';
+    $rapls_pic_l10n_dest = WP_LANG_DIR . '/plugins/rapls-pdf-image-creator-' . $rapls_pic_locale . '.l10n.php';
+    if (file_exists($rapls_pic_l10n_source) && !file_exists($rapls_pic_l10n_dest)) {
+        @copy($rapls_pic_l10n_source, $rapls_pic_l10n_dest);
+    }
+}
+
 // Get plugin settings
 $rapls_pic_settings = get_option('rapls_pic_settings', []);
 
