@@ -117,6 +117,14 @@ register_activation_hook(__FILE__, function (): void {
     if (!get_option('rapls_pic_settings')) {
         add_option('rapls_pic_settings', $defaults);
     }
+
+    // Copy .l10n.php to WP global languages directory to prevent warnings
+    // after plugin deactivation/deletion (WordPress JIT loader looks here)
+    $source = RAPLS_PIC_PLUGIN_DIR . 'languages/rapls-pdf-image-creator-ja.l10n.php';
+    $dest = WP_LANG_DIR . '/plugins/rapls-pdf-image-creator-ja.l10n.php';
+    if (file_exists($source) && !file_exists($dest)) {
+        @copy($source, $dest);
+    }
 });
 
 /**
