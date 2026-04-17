@@ -12,11 +12,13 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
 Auto-generate thumbnail images from uploaded PDF files using ImageMagick. Set as Featured Image and insert into posts.
 
-== Description ==
+ == Description ==
 
-Rapls PDF Image Creator automatically generates thumbnail images when you upload PDF files to your WordPress Media Library. The plugin uses ImageMagick (Imagick PHP extension) to convert the first page of a PDF into an image.
+ Rapls PDF Image Creator automatically generates thumbnail images when you upload PDF files to your WordPress Media Library. The plugin uses ImageMagick (Imagick PHP extension) to convert the first page of a PDF into an image.
 
-= Key Features =
+👉 **Setup guide & troubleshooting:** [How to fix CMYK black thumbnails and PDF/X issues](https://raplsworks.com/rapls-pdf-image-creator-guide/)
+
+ = Key Features =
 
 * **Automatic Generation** - Thumbnails are created instantly when PDFs are uploaded
 * **Featured Image Support** - Generated thumbnails are automatically set as the PDF's featured image
@@ -83,6 +85,14 @@ Most shared hosting providers have ImageMagick available. Check the Status tab i
 
 == Frequently Asked Questions ==
 
+= Where can I find detailed documentation? =
+
+A full guide with setup instructions, the fix for the infamous "black thumbnail" problem (CMYK / PDF/X), and real-world usage tips:
+
+* [Rapls PDF Image Creator — Setup & Troubleshooting Guide](https://raplsworks.com/rapls-pdf-image-creator-guide/)
+* [Source code on GitHub](https://github.com/rapls/rapls-pdf-image-creator)
+* [Developer's blog — Rapls Works](https://raplsworks.com/)
+
 = What are the server requirements? =
 
 You need ImageMagick with the Imagick PHP extension and PDF support. Most shared hosting providers have this available. Contact your hosting provider if you need to enable it.
@@ -90,6 +100,8 @@ You need ImageMagick with the Imagick PHP extension and PDF support. Most shared
 = How do I check if my server supports PDF conversion? =
 
 Go to Settings > Rapls PDF Image Creator > Status tab. The plugin will show whether ImageMagick is available and properly configured.
+
+For detailed troubleshooting including common server setup issues, see the [setup guide](https://raplsworks.com/rapls-pdf-image-creator-guide/).
 
 = Can I generate thumbnails for PDFs uploaded before installing this plugin? =
 
