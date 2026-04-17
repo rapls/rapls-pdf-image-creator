@@ -3,3 +3,5 @@
 .serena/
 node_modules/
 *.zip
+CLAUDE.md
+doc/
