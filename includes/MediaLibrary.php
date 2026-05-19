@@ -44,6 +44,11 @@ final class MediaLibrary
         // Auto-generate thumbnail on upload
         add_action('add_attachment', [$this, 'onAttachmentAdded']);
 
+        // When auto-generate is OFF, suppress WordPress core's built-in
+        // PDF preview generation (introduced in WP 4.7) so no thumbnail
+        // is created at all on upload.
+        add_filter('wp_generate_attachment_metadata', [$this, 'maybeSuppressCorePdfPreview'], 1, 3);
+
         // Delete thumbnail when PDF is deleted
         add_action('delete_attachment', [$this, 'onAttachmentDeleted']);
 
@@ -106,6 +111,48 @@ final class MediaLibrary
 
         // Generate thumbnail
         $this->generator->generate($attachmentId);
+    }
+
+    /**
+     * Suppress WordPress core's PDF preview generation when auto-generate is OFF.
+     *
+     * WP 4.7+ auto-generates a `-pdf.jpg` preview during
+     * wp_generate_attachment_metadata() regardless of plugin settings. When the
+     * user has explicitly disabled auto-generation, we must also strip these
+     * core-created sizes so no thumbnail appears.
+     *
+     * @param array<string, mixed> $metadata     Generated attachment metadata.
+     * @param int                  $attachmentId Attachment ID.
+     * @param string               $context      Metadata generation context.
+     * @return array<string, mixed>
+     */
+    public function maybeSuppressCorePdfPreview(array $metadata, int $attachmentId, string $context = ''): array
+    {
+        if ($this->settings->isAutoGenerateEnabled()) {
+            return $metadata;
+        }
+
+        if (get_post_mime_type($attachmentId) !== 'application/pdf') {
+            return $metadata;
+        }
+
+        // Remove the core-generated preview file from disk and from the metadata.
+        if (!empty($metadata['sizes']) && is_array($metadata['sizes'])) {
+            $uploadDir = wp_get_upload_dir();
+            $baseDir = isset($metadata['file']) ? trailingslashit(dirname($metadata['file'])) : '';
+            foreach ($metadata['sizes'] as $size) {
+                if (empty($size['file'])) {
+                    continue;
+                }
+                $path = trailingslashit($uploadDir['basedir']) . $baseDir . $size['file'];
+                if (file_exists($path)) {
+                    @unlink($path);
+                }
+            }
+            $metadata['sizes'] = [];
+        }
+
+        return $metadata;
     }
 
     /**

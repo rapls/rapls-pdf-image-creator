@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 6.9
-Stable tag: 1.0.9.5
+Stable tag: 1.0.9.6
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -193,6 +193,10 @@ foreach ( $pdfs as $pdf ) {
 * `rapls_pdf_image_creator_generation_failed` - When generation fails
 
 == Changelog ==
+= 1.0.9.6 =
+* Fixed: When "Auto Generate" is OFF, WordPress core's built-in PDF preview is now also suppressed so no thumbnail is created on upload
+* Added wp_generate_attachment_metadata filter to remove core-generated -pdf.jpg files when auto-generation is disabled
+
 = 1.0.9.5 =
 * Updated Plugin URI to new plugin page (https://raplsworks.com/plugins/rapls-pdf-image-creator/)
 
