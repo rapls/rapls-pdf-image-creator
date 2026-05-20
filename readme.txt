@@ -4,8 +4,8 @@ Contributors: rapls
 Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
-Tested up to: 6.9
-Stable tag: 1.0.9.6
+Tested up to: 7.0
+Stable tag: 1.0.9.7
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -193,6 +193,10 @@ foreach ( $pdfs as $pdf ) {
 * `rapls_pdf_image_creator_generation_failed` - When generation fails
 
 == Changelog ==
+= 1.0.9.7 =
+* Tested up to WordPress 7.0
+* Verified compatibility with WordPress 7.0 (block editor, Site Health, REST API)
+
 = 1.0.9.6 =
 * Fixed: When "Auto Generate" is OFF, WordPress core's built-in PDF preview is now also suppressed so no thumbnail is created on upload
 * Added wp_generate_attachment_metadata filter to remove core-generated -pdf.jpg files when auto-generation is disabled
@@ -275,6 +279,9 @@ foreach ( $pdfs as $pdf ) {
 * Japanese translation included
 
 == Upgrade Notice ==
+
+= 1.0.9.7 =
+Tested up to WordPress 7.0. Compatibility verified.
 
 = 1.0.6 =
 PHP 7.4 compatibility fix and security improvements. Translation loading added.
