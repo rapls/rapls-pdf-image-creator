@@ -49,6 +49,12 @@ final class MediaLibrary
         // is created at all on upload.
         add_filter('wp_generate_attachment_metadata', [$this, 'maybeSuppressCorePdfPreview'], 1, 3);
 
+        // WordPress core < 7.0 reads $image_meta['file'] without an isset()
+        // guard in wp_image_add_srcset_and_sizes(); PDF metadata has 'sizes'
+        // but no top-level 'file', so embedding a PDF as an image throws an
+        // "Undefined array key 'file'" warning. Populate the key defensively.
+        add_filter('wp_get_attachment_metadata', [$this, 'ensurePdfMetadataHasFileKey'], 10, 2);
+
         // Delete thumbnail when PDF is deleted
         add_action('delete_attachment', [$this, 'onAttachmentDeleted']);
 
@@ -153,6 +159,42 @@ final class MediaLibrary
         }
 
         return $metadata;
+    }
+
+    /**
+     * Ensure PDF attachment metadata exposes a top-level `file` key.
+     *
+     * Core generates PDF metadata with `sizes` only (no top-level `file`).
+     * WordPress < 7.0 then accesses `$image_meta['file']` without an isset()
+     * guard inside wp_image_add_srcset_and_sizes(), so rendering a PDF that is
+     * embedded as an image raises "Undefined array key 'file'". We populate the
+     * key from the stored attached-file path; on WP 7.0+ (already guarded) this
+     * is a harmless no-op match for core's own behavior.
+     *
+     * @param mixed $data         Attachment metadata (array for valid attachments).
+     * @param int   $attachmentId Attachment ID.
+     * @return mixed
+     */
+    public function ensurePdfMetadataHasFileKey($data, int $attachmentId)
+    {
+        if (!is_array($data) || !empty($data['file'])) {
+            return $data;
+        }
+
+        if (empty($data['sizes']) || !is_array($data['sizes'])) {
+            return $data;
+        }
+
+        if (get_post_mime_type($attachmentId) !== 'application/pdf') {
+            return $data;
+        }
+
+        $attachedFile = get_post_meta($attachmentId, '_wp_attached_file', true);
+        if (is_string($attachedFile) && $attachedFile !== '') {
+            $data['file'] = $attachedFile;
+        }
+
+        return $data;
     }
 
     /**

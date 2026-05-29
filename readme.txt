@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.0
-Stable tag: 1.0.9.7
+Stable tag: 1.0.9.8
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -193,6 +193,10 @@ foreach ( $pdfs as $pdf ) {
 * `rapls_pdf_image_creator_generation_failed` - When generation fails
 
 == Changelog ==
+= 1.0.9.8 =
+* Fixed: "Undefined array key \"file\"" PHP warning in wp-includes/media.php when a PDF embedded as an image is displayed on WordPress 6.9.x and earlier
+* PDF attachment metadata now exposes a top-level "file" key so WordPress core's srcset handling no longer accesses an undefined key (core added its own guard in WP 7.0)
+
 = 1.0.9.7 =
 * Tested up to WordPress 7.0
 * Verified compatibility with WordPress 7.0 (block editor, Site Health, REST API)
@@ -279,6 +283,9 @@ foreach ( $pdfs as $pdf ) {
 * Japanese translation included
 
 == Upgrade Notice ==
+
+= 1.0.9.8 =
+Fixes an "Undefined array key file" PHP warning shown when a PDF embedded as an image is displayed on WordPress 6.9.x and earlier.
 
 = 1.0.9.7 =
 Tested up to WordPress 7.0. Compatibility verified.
