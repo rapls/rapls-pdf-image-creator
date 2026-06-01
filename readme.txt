@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.0
-Stable tag: 1.0.9.8
+Stable tag: 1.0.9.9
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -193,6 +193,10 @@ foreach ( $pdfs as $pdf ) {
 * `rapls_pdf_image_creator_generation_failed` - When generation fails
 
 == Changelog ==
+= 1.0.9.9 =
+* Fixed: "Undefined array key \"width\"" / "Undefined array key \"height\"" PHP warnings in wp-includes/media.php when a PDF (or a generated image attached via the PDF) is rendered as a featured image on post-list views (regression introduced in 1.0.9.8)
+* PDF attachment metadata now also exposes top-level "width" and "height" derived from the full-size preview so core's srcset and image-size helpers no longer hit undefined keys
+
 = 1.0.9.8 =
 * Fixed: "Undefined array key \"file\"" PHP warning in wp-includes/media.php when a PDF embedded as an image is displayed on WordPress 6.9.x and earlier
 * PDF attachment metadata now exposes a top-level "file" key so WordPress core's srcset handling no longer accesses an undefined key (core added its own guard in WP 7.0)
@@ -283,6 +287,9 @@ foreach ( $pdfs as $pdf ) {
 * Japanese translation included
 
 == Upgrade Notice ==
+
+= 1.0.9.9 =
+Fixes "Undefined array key width / height" PHP warnings introduced in 1.0.9.8 when a PDF-derived image is shown as a featured image on post-list pages.
 
 = 1.0.9.8 =
 Fixes an "Undefined array key file" PHP warning shown when a PDF embedded as an image is displayed on WordPress 6.9.x and earlier.

@@ -49,11 +49,12 @@ final class MediaLibrary
         // is created at all on upload.
         add_filter('wp_generate_attachment_metadata', [$this, 'maybeSuppressCorePdfPreview'], 1, 3);
 
-        // WordPress core < 7.0 reads $image_meta['file'] without an isset()
-        // guard in wp_image_add_srcset_and_sizes(); PDF metadata has 'sizes'
-        // but no top-level 'file', so embedding a PDF as an image throws an
-        // "Undefined array key 'file'" warning. Populate the key defensively.
-        add_filter('wp_get_attachment_metadata', [$this, 'ensurePdfMetadataHasFileKey'], 10, 2);
+        // Core reads $image_meta['file'/'width'/'height'] without isset()
+        // guards in several media functions. PDF metadata has only 'sizes', so
+        // rendering a PDF as an image (e.g. as a post-list featured image)
+        // raises "Undefined array key" warnings. Populate the missing top-level
+        // keys defensively from the 'full' preview.
+        add_filter('wp_get_attachment_metadata', [$this, 'ensurePdfMetadataHasImageKeys'], 10, 2);
 
         // Delete thumbnail when PDF is deleted
         add_action('delete_attachment', [$this, 'onAttachmentDeleted']);
@@ -162,26 +163,24 @@ final class MediaLibrary
     }
 
     /**
-     * Ensure PDF attachment metadata exposes a top-level `file` key.
+     * Ensure PDF attachment metadata exposes top-level image keys.
      *
-     * Core generates PDF metadata with `sizes` only (no top-level `file`).
-     * WordPress < 7.0 then accesses `$image_meta['file']` without an isset()
-     * guard inside wp_image_add_srcset_and_sizes(), so rendering a PDF that is
-     * embedded as an image raises "Undefined array key 'file'". We populate the
-     * key from the stored attached-file path; on WP 7.0+ (already guarded) this
-     * is a harmless no-op match for core's own behavior.
+     * Core generates PDF metadata with `sizes` only — no top-level `file`,
+     * `width`, or `height`. Core's media functions read those keys without
+     * isset() guards in several places (e.g. `wp_image_add_srcset_and_sizes()`
+     * on WP < 7.0, `_wp_get_image_size_from_meta()`, and
+     * `wp_calculate_image_srcset()`), so rendering a PDF as an image — for
+     * example as a featured image on a post list — raises "Undefined array key"
+     * warnings. Populate the missing keys from the stored attached-file path
+     * and the `full` preview dimensions.
      *
      * @param mixed $data         Attachment metadata (array for valid attachments).
      * @param int   $attachmentId Attachment ID.
      * @return mixed
      */
-    public function ensurePdfMetadataHasFileKey($data, int $attachmentId)
+    public function ensurePdfMetadataHasImageKeys($data, int $attachmentId)
     {
-        if (!is_array($data) || !empty($data['file'])) {
-            return $data;
-        }
-
-        if (empty($data['sizes']) || !is_array($data['sizes'])) {
+        if (!is_array($data) || empty($data['sizes']) || !is_array($data['sizes'])) {
             return $data;
         }
 
@@ -189,9 +188,21 @@ final class MediaLibrary
             return $data;
         }
 
-        $attachedFile = get_post_meta($attachmentId, '_wp_attached_file', true);
-        if (is_string($attachedFile) && $attachedFile !== '') {
-            $data['file'] = $attachedFile;
+        if (empty($data['file'])) {
+            $attachedFile = get_post_meta($attachmentId, '_wp_attached_file', true);
+            if (is_string($attachedFile) && $attachedFile !== '') {
+                $data['file'] = $attachedFile;
+            }
+        }
+
+        $full = $data['sizes']['full'] ?? null;
+        if (is_array($full)) {
+            if (empty($data['width']) && !empty($full['width'])) {
+                $data['width'] = (int) $full['width'];
+            }
+            if (empty($data['height']) && !empty($full['height'])) {
+                $data['height'] = (int) $full['height'];
+            }
         }
 
         return $data;
