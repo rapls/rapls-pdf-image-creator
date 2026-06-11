@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.0
-Stable tag: 1.0.9.9
+Stable tag: 1.0.9.10
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -193,6 +193,10 @@ foreach ( $pdfs as $pdf ) {
 * `rapls_pdf_image_creator_generation_failed` - When generation fails
 
 == Changelog ==
+= 1.0.9.10 =
+* Fixed: PHP Fatal error "Argument #5 ($attr) must be of type array, string given" in MediaLibrary::filterAttachmentImage() on PHP 8 when WordPress core (or another plugin) calls wp_get_attachment_image() with the default string $attr value
+* The wp_get_attachment_image filter callback now accepts both string and array $attr values, matching the WordPress core filter signature
+
 = 1.0.9.9 =
 * Fixed: "Undefined array key \"width\"" / "Undefined array key \"height\"" PHP warnings in wp-includes/media.php when a PDF (or a generated image attached via the PDF) is rendered as a featured image on post-list views (regression introduced in 1.0.9.8)
 * PDF attachment metadata now also exposes top-level "width" and "height" derived from the full-size preview so core's srcset and image-size helpers no longer hit undefined keys
@@ -287,6 +291,9 @@ foreach ( $pdfs as $pdf ) {
 * Japanese translation included
 
 == Upgrade Notice ==
+
+= 1.0.9.10 =
+Fixes a PHP Fatal error ("Argument #5 ($attr) must be of type array, string given") that could occur on PHP 8 when displaying a PDF as an image. Update strongly recommended.
 
 = 1.0.9.9 =
 Fixes "Undefined array key width / height" PHP warnings introduced in 1.0.9.8 when a PDF-derived image is shown as a featured image on post-list pages.

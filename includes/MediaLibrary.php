@@ -277,10 +277,10 @@ final class MediaLibrary
      * @param int $attachmentId Attachment ID
      * @param string|int[] $size Image size
      * @param bool $icon Whether icon
-     * @param array $attr Attributes
+     * @param string|array $attr Attributes (core passes '' by default; plugins may pass a string or an array)
      * @return string
      */
-    public function filterAttachmentImage(string $html, int $attachmentId, $size, bool $icon, array $attr): string
+    public function filterAttachmentImage(string $html, int $attachmentId, $size, bool $icon, $attr): string
     {
         // Only process if HTML is empty
         if (!empty($html)) {
@@ -291,6 +291,14 @@ final class MediaLibrary
         $mimeType = get_post_mime_type($attachmentId);
         if ($mimeType !== 'application/pdf') {
             return $html;
+        }
+
+        // Normalize $attr — core defaults to '' (string) and the filter signature
+        // is documented as string|array, so we must accept both.
+        if (is_string($attr)) {
+            $attr = $attr === '' ? [] : wp_parse_args($attr);
+        } elseif (!is_array($attr)) {
+            $attr = [];
         }
 
         // Get thumbnail image
