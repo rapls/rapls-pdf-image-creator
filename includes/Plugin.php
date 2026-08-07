@@ -15,6 +15,21 @@ namespace Rapls\PDFImageCreator;
 final class Plugin
 {
     /**
+     * Option holding the version the database was last migrated to
+     */
+    public const VERSION_OPTION = 'rapls_pic_version';
+
+    /**
+     * Option set when users should be told to regenerate thumbnails
+     */
+    public const COLOR_NOTICE_OPTION = 'rapls_pic_color_notice';
+
+    /**
+     * First version whose colour conversion differs from earlier releases
+     */
+    private const COLOR_FIX_VERSION = '1.1.0';
+
+    /**
      * Plugin instance
      */
     private static ?Plugin $instance = null;
@@ -77,6 +92,8 @@ final class Plugin
      */
     public function init(): void
     {
+        $this->maybeUpgrade();
+
         // Initialize components
         $this->mediaLibrary->init();
         $this->inserter->init();
@@ -92,6 +109,37 @@ final class Plugin
 
         // Register shortcodes
         $this->registerShortcodes();
+    }
+
+    /**
+     * Run one-time work after an update
+     *
+     * Nothing here touches the media library. The colour fix changes how new
+     * thumbnails are rendered, so existing ones stay as they are until the
+     * user regenerates them; all this does is say so once.
+     */
+    private function maybeUpgrade(): void
+    {
+        $stored = get_option(self::VERSION_OPTION, '');
+
+        if (RAPLS_PIC_VERSION === $stored) {
+            return;
+        }
+
+        // No version recorded but settings present means an upgrade from a
+        // release older than this option. A genuinely fresh install has
+        // neither, because activation writes both.
+        $previous = '' === $stored && get_option(Settings::OPTION_NAME) ? '1.0.0' : $stored;
+
+        if ('' !== $previous && version_compare($previous, self::COLOR_FIX_VERSION, '<')) {
+            update_option(self::COLOR_NOTICE_OPTION, '1', false);
+        }
+
+        // Host profiles may have changed with the platform; do not trust the
+        // paths cached by the previous version.
+        (new \Rapls\PDFImageCreator\Engine\ColorProfile())->flushCache();
+
+        update_option(self::VERSION_OPTION, RAPLS_PIC_VERSION, false);
     }
 
     /**

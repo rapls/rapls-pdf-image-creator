@@ -20,6 +20,11 @@ final class Admin
     public const PAGE_SLUG = 'rapls-pdf-image-creator';
 
     /**
+     * User meta recording that the colour update notice was dismissed
+     */
+    private const COLOR_NOTICE_META = 'rapls_pic_color_notice_dismissed';
+
+    /**
      * Settings manager
      */
     private Settings $settings;
@@ -48,6 +53,7 @@ final class Admin
     {
         add_action('admin_menu', [$this, 'addMenuPage']);
         add_action('admin_init', [$this, 'registerSettings']);
+        add_action('admin_init', [$this, 'maybeDismissColorNotice']);
         add_action('admin_enqueue_scripts', [$this, 'enqueueAssets']);
         add_action('admin_notices', [$this, 'showAdminNotices']);
     }
@@ -188,10 +194,81 @@ final class Admin
     }
 
     /**
+     * Handle dismissal of the colour update notice
+     */
+    public function maybeDismissColorNotice(): void
+    {
+        if (!isset($_GET['rapls_pic_dismiss_color_notice'])) {
+            return;
+        }
+
+        $nonce = isset($_GET['_wpnonce']) ? sanitize_text_field(wp_unslash($_GET['_wpnonce'])) : '';
+        if (!wp_verify_nonce($nonce, 'rapls_pic_dismiss_color_notice')) {
+            return;
+        }
+
+        update_user_meta(get_current_user_id(), self::COLOR_NOTICE_META, '1');
+    }
+
+    /**
+     * Build the dismissal URL for the colour update notice
+     *
+     * @param bool $toBulkTab Whether to land on the Bulk Generate tab
+     */
+    private function getColorNoticeDismissUrl(bool $toBulkTab): string
+    {
+        $url = wp_nonce_url(
+            add_query_arg(
+                'rapls_pic_dismiss_color_notice',
+                '1',
+                admin_url('options-general.php?page=' . self::PAGE_SLUG)
+            ),
+            'rapls_pic_dismiss_color_notice'
+        );
+
+        return $toBulkTab ? $url . '#tab-bulk' : $url;
+    }
+
+    /**
+     * Show the one-time notice about the colour conversion change
+     *
+     * Both links dismiss the notice for good; the X only hides it for this
+     * page view, which is the usual WordPress behaviour.
+     */
+    private function showColorUpdateNotice(): void
+    {
+        if (!current_user_can('manage_options')) {
+            return;
+        }
+
+        if ('1' !== get_option(Plugin::COLOR_NOTICE_OPTION)) {
+            return;
+        }
+
+        if (get_user_meta(get_current_user_id(), self::COLOR_NOTICE_META, true)) {
+            return;
+        }
+
+        echo '<div class="notice notice-info">';
+        echo '<p><strong>' . esc_html__('Rapls PDF Image Creator:', 'rapls-pdf-image-creator') . '</strong> ';
+        echo esc_html__('Color conversion has been improved. Thumbnails generated before this update keep their old colors.', 'rapls-pdf-image-creator');
+        echo '</p><p>';
+        echo '<a class="button button-primary" href="' . esc_url($this->getColorNoticeDismissUrl(true)) . '">';
+        echo esc_html__('Regenerate thumbnails', 'rapls-pdf-image-creator');
+        echo '</a> ';
+        echo '<a class="button" href="' . esc_url($this->getColorNoticeDismissUrl(false)) . '">';
+        echo esc_html__('Dismiss', 'rapls-pdf-image-creator');
+        echo '</a>';
+        echo '</p></div>';
+    }
+
+    /**
      * Show admin notices
      */
     public function showAdminNotices(): void
     {
+        $this->showColorUpdateNotice();
+
         // Success notice
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Display-only notice, no data processing
         if (isset($_GET['rapls_pic_generated'])) {

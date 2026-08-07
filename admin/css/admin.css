@@ -144,6 +144,17 @@
     color: #d63638;
 }
 
+.rapls-pic-status-detail {
+    display: block;
+    color: #646970;
+    font-size: 12px;
+}
+
+.rapls-pic-notice-list {
+    list-style: disc;
+    margin: 0 0 1em 2em;
+}
+
 /* Media Library Column */
 .column-rapls_pic_thumbnail {
     width: 80px;

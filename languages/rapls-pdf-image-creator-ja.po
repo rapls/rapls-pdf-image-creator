@@ -527,3 +527,81 @@ msgstr "このプラグインが役に立った場合は、開発をサポート
 #: admin/views/settings-page.php
 msgid "Buy me a coffee"
 msgstr "Buy me a coffee"
+
+#: includes/Engine/ImagickEngine.php
+msgid "Color Management"
+msgstr "カラー管理"
+
+#: includes/Engine/ImagickEngine.php
+msgid "Active (ICC)"
+msgstr "有効 (ICC)"
+
+#: includes/Engine/ImagickEngine.php
+#. translators: 1: CMYK profile filename, 2: sRGB profile filename
+msgid "Converting %1$s to %2$s"
+msgstr "%1$s → %2$s で変換"
+
+#: includes/Engine/ImagickEngine.php
+msgid "Inactive — using simple conversion"
+msgstr "無効 — 簡易変換で動作中"
+
+#: includes/Engine/ImagickEngine.php
+msgid "Disabled by filter — using simple conversion"
+msgstr "フィルターで無効化 — 簡易変換で動作中"
+
+#: includes/Engine/ImagickEngine.php
+msgid "No CMYK profile found on this server."
+msgstr "このサーバーに CMYK プロファイルが見つかりません。"
+
+#: includes/Engine/ImagickEngine.php
+msgid "No sRGB profile found on this server."
+msgstr "このサーバーに sRGB プロファイルが見つかりません。"
+
+#: includes/Admin.php
+msgid "Color conversion has been improved. Thumbnails generated before this update keep their old colors."
+msgstr "カラー変換の処理を改善しました。この更新より前に生成されたサムネイルは、以前の色のままになっています。"
+
+#: includes/Admin.php
+msgid "Regenerate thumbnails"
+msgstr "サムネイルを再生成"
+
+#: includes/Admin.php
+msgid "Dismiss"
+msgstr "閉じる"
+
+#: admin/views/settings-page.php
+msgid "CMYK PDFs may render more vivid than the original. Install a CMYK ICC profile on the server, or point the rapls_pdf_image_creator_icc_paths filter at one, to restore accurate colors."
+msgstr "CMYK の PDF では、色が実際より鮮やかに再現される場合があります。サーバーに CMYK の ICC プロファイルを設置するか、rapls_pdf_image_creator_icc_paths フィルターでパスを指定してください。"
+
+#: includes/Engine/ImagickEngine.php
+msgid "CMYK PDF Rendering"
+msgstr "CMYK PDF の描画"
+
+#: includes/Engine/ImagickEngine.php
+msgid "ImageMagick 6 — CMYK PDFs may produce a blank image"
+msgstr "ImageMagick 6 — CMYK の PDF で画像が真っ白になる場合があります"
+
+#: includes/Engine/ImagickEngine.php
+msgid "RGB PDFs are not affected."
+msgstr "RGB の PDF には影響しません。"
+
+#: admin/views/settings-page.php
+msgid "CMYK PDFs may generate a blank white thumbnail on this server."
+msgstr "このサーバーでは、CMYK の PDF から真っ白なサムネイルが生成される場合があります。"
+
+#: admin/views/settings-page.php
+msgid "ImageMagick 6 renders CMYK PDFs through Ghostscript's bmpsep8 device, which produces a separation BMP that ImageMagick cannot read back. ImageMagick 7 does not have this problem."
+msgstr "ImageMagick 6 は CMYK の PDF を Ghostscript の bmpsep8 デバイスで描画しますが、これが出力する分版 BMP を ImageMagick 自身が読み戻せません。ImageMagick 7 ではこの問題は起きません。"
+
+#: admin/views/settings-page.php
+msgid "Ask your hosting provider for either of the following:"
+msgstr "ホスティング事業者に、次のいずれかを依頼してください。"
+
+#: admin/views/settings-page.php
+msgid "Upgrade ImageMagick to version 7."
+msgstr "ImageMagick をバージョン 7 に更新する。"
+
+#: admin/views/settings-page.php
+#. translators: 1: delegates.xml, 2: ps:cmyk, 3: bmpsep8, 4: pamcmyk32
+msgid "In %1$s, change the %2$s delegate from %3$s to %4$s."
+msgstr "%1$s の %2$s デリゲートを %3$s から %4$s に変更する。"

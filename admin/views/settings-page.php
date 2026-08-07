@@ -448,6 +448,9 @@ if (!defined('ABSPATH')) {
                         <td class="<?php echo $rapls_pic_req['status'] ? 'rapls-pic-status-ok' : 'rapls-pic-status-error'; ?>">
                             <?php echo $rapls_pic_req['status'] ? '✓ ' : '✗ '; ?>
                             <?php echo esc_html($rapls_pic_req['message']); ?>
+                            <?php if (!empty($rapls_pic_req['detail'])) : ?>
+                                <span class="rapls-pic-status-detail"><?php echo esc_html($rapls_pic_req['detail']); ?></span>
+                            <?php endif; ?>
                         </td>
                     </tr>
                     <?php endforeach; ?>
@@ -458,6 +461,46 @@ if (!defined('ABSPATH')) {
                 <?php endif; ?>
             </tbody>
         </table>
+
+        <?php if (isset($rapls_pic_imagick_engine['requirements']['cmyk_pdf'])) : ?>
+        <div class="notice notice-warning inline">
+            <p>
+                <strong><?php esc_html_e('CMYK PDFs may generate a blank white thumbnail on this server.', 'rapls-pdf-image-creator'); ?></strong>
+            </p>
+            <p>
+                <?php esc_html_e('ImageMagick 6 renders CMYK PDFs through Ghostscript\'s bmpsep8 device, which produces a separation BMP that ImageMagick cannot read back. ImageMagick 7 does not have this problem.', 'rapls-pdf-image-creator'); ?>
+            </p>
+            <p>
+                <?php esc_html_e('Ask your hosting provider for either of the following:', 'rapls-pdf-image-creator'); ?>
+            </p>
+            <ul class="rapls-pic-notice-list">
+                <li><?php esc_html_e('Upgrade ImageMagick to version 7.', 'rapls-pdf-image-creator'); ?></li>
+                <li>
+                    <?php
+                    printf(
+                        /* translators: 1: delegates.xml, 2: ps:cmyk, 3: bmpsep8, 4: pamcmyk32 */
+                        esc_html__('In %1$s, change the %2$s delegate from %3$s to %4$s.', 'rapls-pdf-image-creator'),
+                        '<code>delegates.xml</code>',
+                        '<code>ps:cmyk</code>',
+                        '<code>bmpsep8</code>',
+                        '<code>pamcmyk32</code>'
+                    );
+                    ?>
+                </li>
+            </ul>
+        </div>
+        <?php endif; ?>
+
+        <?php
+        $rapls_pic_color = $rapls_pic_imagick_engine['requirements']['color_management'] ?? null;
+        if ($rapls_pic_color && !$rapls_pic_color['status']) :
+            ?>
+        <div class="notice notice-warning inline">
+            <p>
+                <?php esc_html_e('CMYK PDFs may render more vivid than the original. Install a CMYK ICC profile on the server, or point the rapls_pdf_image_creator_icc_paths filter at one, to restore accurate colors.', 'rapls-pdf-image-creator'); ?>
+            </p>
+        </div>
+        <?php endif; ?>
 
         <h2><?php esc_html_e('Statistics', 'rapls-pdf-image-creator'); ?></h2>
 

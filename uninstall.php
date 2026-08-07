@@ -61,3 +61,11 @@ if (!$rapls_pic_keep_images) {
 
 // Delete plugin options
 delete_option('rapls_pic_settings');
+delete_option('rapls_pic_version');
+delete_option('rapls_pic_color_notice');
+delete_option('rapls_pic_color_diagnostics');
+
+// Cached ICC profile locations and the per-user notice dismissal flag
+delete_transient('rapls_pic_icc_path_srgb');
+delete_transient('rapls_pic_icc_path_cmyk');
+delete_metadata('user', 0, 'rapls_pic_color_notice_dismissed', '', true);

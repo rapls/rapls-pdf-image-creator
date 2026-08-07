@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.0
-Stable tag: 1.0.9.10
+Stable tag: 1.1.0
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -103,6 +103,32 @@ Go to Settings > Rapls PDF Image Creator > Status tab. The plugin will show whet
 
 For detailed troubleshooting including common server setup issues, see the [setup guide](https://raplsworks.com/rapls-pdf-image-creator-guide/).
 
+= My thumbnail is a completely blank white image. What is wrong? =
+
+Check Settings > Rapls PDF Image Creator > Status. If it reports ImageMagick 6, that is the cause.
+
+ImageMagick 6 renders any PDF it judges to be CMYK through Ghostscript's `bmpsep8` device, which writes a separation BMP that ImageMagick's own BMP reader cannot decode. Depending on the exact ImageMagick and Ghostscript versions, the read either fails outright or returns an empty raster — which becomes a blank white thumbnail. ImageMagick 7 uses a different device and is unaffected.
+
+The plugin cannot work around this, because ImageMagick picks the device from the PDF's own content and no Imagick API call overrides it. Ask your hosting provider to upgrade to ImageMagick 7, or to change the `ps:cmyk` delegate in `delegates.xml` from `bmpsep8` to `pamcmyk32`.
+
+RGB PDFs are not affected, which is why only some of your PDFs fail.
+
+= Why do my thumbnails look more vivid than the original PDF? =
+
+If the PDF uses CMYK colours and no ICC profile is available on your server, the plugin falls back to a simple arithmetic conversion, which exaggerates greens and blues. Check Settings > Rapls PDF Image Creator > Status to see whether ICC colour management is active. Installing a CMYK profile on the server, or pointing the `rapls_pdf_image_creator_icc_paths` filter at one, restores accurate colours.
+
+= I updated and my thumbnails still have the old colours. Why? =
+
+Thumbnails are not regenerated automatically, because regenerating every PDF on a large site during an update is not something a plugin should decide to do. Go to Settings > Rapls PDF Image Creator > Bulk Generate and regenerate them.
+
+If you would rather keep the previous colours, pin the old behaviour:
+
+`
+add_filter( 'rapls_pdf_image_creator_color_conversion', function() {
+    return 'naive';
+} );
+`
+
 = Can I generate thumbnails for PDFs uploaded before installing this plugin? =
 
 Yes. Go to Settings > Rapls PDF Image Creator > Bulk Generate tab to scan and generate thumbnails for all existing PDFs.
@@ -186,6 +212,24 @@ foreach ( $pdfs as $pdf ) {
 * `rapls_pdf_image_creator_custom_insert_html` - Custom insert HTML
 * `rapls_pdf_image_creator_hide_thumbnails_in_library` - Hide in Media Library
 
+= Color Conversion Filters =
+
+* `rapls_pdf_image_creator_color_conversion` - `auto` (default), `icc` or `naive`. `naive` restores the pre-1.1.0 colors
+* `rapls_pdf_image_creator_icc_paths` - Array of absolute paths to search, per profile type (`srgb` / `cmyk`)
+* `rapls_pdf_image_creator_rendering_intent` - An `Imagick::RENDERINGINTENT_*` value (default: relative colorimetric)
+* `rapls_pdf_image_creator_flatten_background` - Background transparency is flattened onto (default: the configured background, or `white` for JPEG)
+
+Pointing the plugin at a specific pair of profiles:
+
+`
+add_filter( 'rapls_pdf_image_creator_icc_paths', function( $paths, $type ) {
+    if ( 'cmyk' === $type ) {
+        return array( '/srv/icc/JapanColor2011Coated.icc' );
+    }
+    return $paths;
+}, 10, 2 );
+`
+
 = Available Action Hooks =
 
 * `rapls_pdf_image_creator_before_generate` - Before thumbnail generation
@@ -193,6 +237,16 @@ foreach ( $pdfs as $pdf ) {
 * `rapls_pdf_image_creator_generation_failed` - When generation fails
 
 == Changelog ==
+= 1.1.0 =
+* Fixed: CMYK PDFs produced thumbnails with oversaturated colors — greens and blues in particular came out close to fluorescent. The conversion to sRGB now goes through ICC profiles when the server has them, instead of the arithmetic formula that ignores ink behavior
+* Fixed: transparent regions are now flattened onto the configured background explicitly, which addresses the "black thumbnail" problem without touching the color space. Choosing a transparent background with JPEG output now falls back to white, since JPEG cannot store transparency
+* Changed: replaced the deprecated flattenImages() call with mergeImageLayers(), which behaves correctly under ImageMagick 7
+* Added: the Status tab now reports whether ICC color management is active and which profiles are in use
+* Added: the Status tab warns when the server runs ImageMagick 6, which renders CMYK PDFs through Ghostscript's bmpsep8 device and produces a blank white thumbnail. This is a limitation of ImageMagick 6 that the plugin cannot work around; the notice explains what to ask your host for
+* Added: filters `rapls_pdf_image_creator_icc_paths`, `rapls_pdf_image_creator_rendering_intent`, `rapls_pdf_image_creator_color_conversion` and `rapls_pdf_image_creator_flatten_background`
+* Note: existing thumbnails are not regenerated automatically. Use the Bulk Generate tab to refresh them. To keep the previous colors, pass 'naive' to the `rapls_pdf_image_creator_color_conversion` filter
+* No ICC profile is bundled and no external program is invoked; profiles are read from the server at run time
+
 = 1.0.9.10 =
 * Fixed: PHP Fatal error "Argument #5 ($attr) must be of type array, string given" in MediaLibrary::filterAttachmentImage() on PHP 8 when WordPress core (or another plugin) calls wp_get_attachment_image() with the default string $attr value
 * The wp_get_attachment_image filter callback now accepts both string and array $attr values, matching the WordPress core filter signature
@@ -291,6 +345,9 @@ foreach ( $pdfs as $pdf ) {
 * Japanese translation included
 
 == Upgrade Notice ==
+
+= 1.1.0 =
+Fixes oversaturated colors in thumbnails generated from CMYK PDFs. Existing thumbnails keep their old colors until you regenerate them from the Bulk Generate tab.
 
 = 1.0.9.10 =
 Fixes a PHP Fatal error ("Argument #5 ($attr) must be of type array, string given") that could occur on PHP 8 when displaying a PDF as an image. Update strongly recommended.
