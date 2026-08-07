@@ -4,5 +4,6 @@ CLAUDE.md export-ignore
 .serena/ export-ignore
 .gitignore export-ignore
 doc/ export-ignore
+docs/ export-ignore
 tests/ export-ignore
 tools/ export-ignore
