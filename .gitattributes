@@ -1,3 +1,7 @@
+# Banners, icons and screenshots belong in the wordpress.org SVN assets/
+# directory, not in the plugin download. They are the whole of the zip's size.
+assets/ export-ignore
+
 .gitattributes export-ignore
 CLAUDE.md export-ignore
 .claude/ export-ignore

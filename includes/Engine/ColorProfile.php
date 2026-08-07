@@ -231,7 +231,9 @@ final class ColorProfile
         if ('srgb' === $type) {
             $candidates = [
                 // Drop a profile here to override host discovery entirely.
-                RAPLS_PIC_PLUGIN_DIR . 'assets/icc/sRGB2014.icc',
+                // Not assets/ — that directory holds the wordpress.org banners
+                // and screenshots and is stripped from the distributed zip.
+                RAPLS_PIC_PLUGIN_DIR . 'icc/sRGB2014.icc',
                 '/usr/share/color/icc/colord/sRGB.icc',
                 '/usr/share/color/icc/sRGB.icc',
                 '/System/Library/ColorSync/Profiles/sRGB Profile.icc',

@@ -9,7 +9,9 @@
 #
 # The archive comes from git, not the working tree, so uncommitted edits are
 # never shipped by accident. Everything marked export-ignore in .gitattributes
-# (tests/, tools/, docs/, CLAUDE.md, .gitattributes itself) is left out.
+# is left out: tests/, tools/, docs/, CLAUDE.md, dotfiles, and assets/ — the
+# banners and screenshots there belong to the wordpress.org listing, not the
+# download, and they account for essentially all of the zip's weight.
 
 set -eu
 
@@ -43,11 +45,20 @@ echo "  files    $(unzip -l "$OUT" | tail -1 | awk '{print $2}')"
 echo "  size     $(du -h "$OUT" | cut -f1)"
 
 # Anything listed here would have been a packaging mistake.
-LEAKED="$(unzip -Z1 "$OUT" | grep -E '(^|/)(tests|tools|docs?|node_modules)/|CLAUDE\.md|\.gitattributes|\.gitignore|\.DS_Store' || true)"
+LEAKED="$(unzip -Z1 "$OUT" | grep -E '(^|/)(tests|tools|docs?|assets|node_modules)/|CLAUDE\.md|\.gitattributes|\.gitignore|\.DS_Store' || true)"
 if [ -n "$LEAKED" ]; then
-    echo "WARNING — development files leaked into the archive:" >&2
+    echo "WARNING — files that must not ship leaked into the archive:" >&2
     echo "$LEAKED" >&2
     exit 1
 fi
 
-echo "  excluded tests/, tools/, docs/, CLAUDE.md, dotfiles — verified"
+# Nothing but code, translations and the readme should be in here.
+IMAGES="$(unzip -Z1 "$OUT" | grep -iE '\.(png|jpe?g|gif|webp|svg|bmp|tiff?)$' || true)"
+if [ -n "$IMAGES" ]; then
+    echo "WARNING — images found in the archive:" >&2
+    echo "$IMAGES" >&2
+    exit 1
+fi
+
+echo "  excluded tests/, tools/, docs/, assets/, CLAUDE.md, dotfiles — verified"
+echo "  no image files in the archive — verified"
