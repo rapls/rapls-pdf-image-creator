@@ -9,10 +9,10 @@
  * @license     GPL-2.0-or-later
  *
  * @wordpress-plugin
- * Plugin Name: Rapls PDF Image Creator
+ * Plugin Name: Rapls PDF Image Creator – PDF Thumbnails & Featured Images
  * Plugin URI:  https://raplsworks.com/plugins/rapls-pdf-image-creator/
- * Description: Automatically generate thumbnail images from PDF files uploaded to the Media Library.
- * Version:     1.1.0
+ * Description: The first page of each uploaded PDF becomes an image in every registered size, ready to use as a post cover or inside content. Needs ImageMagick.
+ * Version:     1.1.1
  * Author:      Rapls Works
  * Author URI:  https://raplsworks.com
  * Text Domain: rapls-pdf-image-creator
@@ -46,7 +46,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Plugin constants
-define('RAPLS_PIC_VERSION', '1.1.0');
+define('RAPLS_PIC_VERSION', '1.1.1');
 define('RAPLS_PIC_PLUGIN_FILE', __FILE__);
 define('RAPLS_PIC_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('RAPLS_PIC_PLUGIN_URL', plugin_dir_url(__FILE__));

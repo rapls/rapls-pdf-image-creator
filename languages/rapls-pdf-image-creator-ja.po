@@ -242,7 +242,7 @@ msgstr "処理中..."
 
 #: includes/Admin.php
 msgid "Complete!"
-msgstr "完了！"
+msgstr "完了 !"
 
 #: includes/Admin.php
 msgid "An error occurred."
@@ -250,7 +250,7 @@ msgstr "エラーが発生しました。"
 
 #: includes/Admin.php
 msgid "Start bulk generation? This may take a while."
-msgstr "一括生成を開始しますか？時間がかかる場合があります。"
+msgstr "一括生成を開始しますか ? 時間がかかる場合があります。"
 
 #: includes/Admin.php
 msgid "Generating thumbnail %1$d of %2$d..."
@@ -567,7 +567,7 @@ msgstr "サムネイルを再生成"
 
 #: includes/Admin.php
 msgid "Dismiss"
-msgstr "閉じる"
+msgstr "非表示"
 
 #: admin/views/settings-page.php
 msgid "CMYK PDFs may render more vivid than the original. Install a CMYK ICC profile on the server, or point the rapls_pdf_image_creator_icc_paths filter at one, to restore accurate colors."
@@ -595,7 +595,7 @@ msgstr "ImageMagick 6 は CMYK の PDF を Ghostscript の bmpsep8 デバイス�
 
 #: admin/views/settings-page.php
 msgid "Ask your hosting provider for either of the following:"
-msgstr "ホスティング事業者に、次のいずれかを依頼してください。"
+msgstr "ホスティングプロバイダーに、次のいずれかを依頼してください。"
 
 #: admin/views/settings-page.php
 msgid "Upgrade ImageMagick to version 7."

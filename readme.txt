@@ -1,16 +1,16 @@
-=== Rapls PDF Image Creator ===
+=== Rapls PDF Image Creator – PDF Thumbnails & Featured Images ===
 
 Contributors: rapls
 Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.0
-Stable tag: 1.1.0
+Stable tag: 1.1.1
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Auto-generate thumbnail images from uploaded PDF files using ImageMagick. Set as Featured Image and insert into posts.
+The first page of each uploaded PDF becomes an image in every registered size, ready to use as a post cover or inside content. Needs ImageMagick.
 
  == Description ==
 
@@ -237,6 +237,10 @@ add_filter( 'rapls_pdf_image_creator_icc_paths', function( $paths, $type ) {
 * `rapls_pdf_image_creator_generation_failed` - When generation fails
 
 == Changelog ==
+= 1.1.1 =
+* Display name updated: the plugin is listed as "Rapls PDF Image Creator – PDF Thumbnails & Featured Images" so that the directory search finds it by what it does, not only by its brand name.
+* The description in the plugin header no longer differs from the one in this readme, and neither now simply repeats the title. No functional change.
+
 = 1.1.0 =
 * Fixed: CMYK PDFs produced thumbnails with oversaturated colors — greens and blues in particular came out close to fluorescent. The conversion to sRGB now goes through ICC profiles when the server has them, instead of the arithmetic formula that ignores ink behavior
 * Fixed: transparent regions are now flattened onto the configured background explicitly, which addresses the "black thumbnail" problem without touching the color space. Choosing a transparent background with JPEG output now falls back to white, since JPEG cannot store transparency
