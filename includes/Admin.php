@@ -101,6 +101,9 @@ final class Admin
         $sanitized['max_width'] = max(100, min(4096, absint($input['max_width'] ?? 1024)));
         $sanitized['max_height'] = max(100, min(4096, absint($input['max_height'] ?? 1024)));
 
+        // Rendering resolution (DPI)
+        $sanitized['resolution'] = max(72, min(600, absint($input['resolution'] ?? 150)));
+
         // Quality
         $sanitized['quality'] = max(10, min(100, absint($input['quality'] ?? 90)));
 

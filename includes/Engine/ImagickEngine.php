@@ -162,8 +162,14 @@ final class ImagickEngine implements EngineInterface
         try {
             $imagick = new \Imagick();
 
-            // Set resolution before reading (important for quality)
-            $imagick->setResolution($options['resolution'], $options['resolution']);
+            // Set resolution before reading (important for quality). This runs
+            // through a filter, so a caller can hand back 0 or a negative --
+            // either makes Imagick render nothing. Fall back to the default.
+            $resolution = (int) $options['resolution'];
+            if ($resolution < 1) {
+                $resolution = $defaults['resolution'];
+            }
+            $imagick->setResolution($resolution, $resolution);
 
             // Read specific page from PDF
             $page = max(0, (int) $options['page']);

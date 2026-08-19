@@ -215,6 +215,29 @@ $r = (new ImagickEngine())->convert($pdf, RAPLS_PIC_TEST_TMP . '/out.img', ['for
 check('pinned to arithmetic despite profiles', in_array('transformImageColorspace', Imagick::$log, true), true);
 check('no ICC calls', in_array('profileImage', Imagick::$log, true), false);
 
+echo "\n=== rendering resolution ===\n";
+[$r, $log] = run(['format' => 'jpeg']);
+check('defaults to 150 DPI', in_array('setResolution(150)', $log, true), true);
+
+[$r, $log] = run(['format' => 'jpeg', 'resolution' => 300]);
+check('explicit DPI reaches Imagick', in_array('setResolution(300)', $log, true), true);
+check('  ...and still before readImage', array_search('setResolution(300)', $log, true) < array_search('readImage', $log, true), true);
+
+// The setting goes through a filter, so a caller can hand back something that
+// would make Imagick render an empty page.
+foreach ([0, -1, 'abc'] as $bad) {
+    [$r, $log] = run(['format' => 'jpeg', 'resolution' => $bad]);
+    check('bad DPI ' . json_encode($bad) . ' falls back to 150', in_array('setResolution(150)', $log, true), true);
+}
+
+// Raising the max dimensions alone cannot produce a bigger thumbnail -- the
+// resize step only ever scales down. Raising the DPI is what makes the source
+// raster bigger. This is what the 1.2.0 setting exists for.
+[$r, $log] = run(['format' => 'jpeg', 'max_width' => 4096, 'max_height' => 4096]);
+check('max dimensions above the raster do not upscale', array_values(array_filter($log, function ($s) {
+    return strpos($s, 'resizeImage') === 0;
+})), []);
+
 echo "\n=== failure paths ===\n";
 $r = (new ImagickEngine())->convert('/no/such.pdf', RAPLS_PIC_TEST_TMP . '/out.img', []);
 check('missing PDF reports failure', $r->isSuccess(), false);

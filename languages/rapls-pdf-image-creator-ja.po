@@ -65,6 +65,18 @@ msgid "Maximum height of generated thumbnail. (100-4096)"
 msgstr "生成されるサムネイルの最大高さ (100-4096)。"
 
 #: admin/views/settings-page.php
+msgid "Rendering Resolution"
+msgstr "描画解像度"
+
+#: admin/views/settings-page.php
+msgid "Resolution the PDF page is rendered at. (72-600)"
+msgstr "PDF のページを描画する解像度 (72-600)。"
+
+#: admin/views/settings-page.php
+msgid "Raise this to get a larger thumbnail: the maximum dimensions above only scale the rendered page down, never up. Higher values use more memory during generation."
+msgstr "サムネイルを大きくするには、この値を上げてください。上の最大幅・最大高さは、描画されたページを縮小するだけで、拡大はしません。値を大きくすると、生成時のメモリ使用量が増えます。"
+
+#: admin/views/settings-page.php
 msgid "Quality"
 msgstr "品質"
 

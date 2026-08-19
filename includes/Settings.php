@@ -25,6 +25,7 @@ final class Settings
     private const DEFAULTS = [
         'max_width' => 1024,
         'max_height' => 1024,
+        'resolution' => 150,
         'quality' => 90,
         'format' => 'jpeg',
         'bgcolor' => 'white',
@@ -118,6 +119,18 @@ final class Settings
     public function getMaxHeight(): int
     {
         return (int) $this->getValue('max_height', 1024);
+    }
+
+    /**
+     * Get rendering resolution in DPI
+     *
+     * This is the density Imagick renders the PDF at, applied before the page
+     * is read. It sets the size of the source raster; the thumbnail is then
+     * scaled down to the max dimensions, never up.
+     */
+    public function getResolution(): int
+    {
+        return (int) $this->getValue('resolution', 150);
     }
 
     /**

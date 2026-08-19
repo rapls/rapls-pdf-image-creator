@@ -72,6 +72,23 @@ if (!defined('ABSPATH')) {
 
                 <tr>
                     <th scope="row">
+                        <label for="rapls_pic_resolution"><?php esc_html_e('Rendering Resolution', 'rapls-pdf-image-creator'); ?></label>
+                    </th>
+                    <td>
+                        <input type="number" id="rapls_pic_resolution" name="rapls_pic_settings[resolution]"
+                            value="<?php echo esc_attr((string) $config['resolution']); ?>"
+                            min="72" max="600" class="small-text"> DPI
+                        <p class="description">
+                            <?php esc_html_e('Resolution the PDF page is rendered at. (72-600)', 'rapls-pdf-image-creator'); ?>
+                        </p>
+                        <p class="description">
+                            <?php esc_html_e('Raise this to get a larger thumbnail: the maximum dimensions above only scale the rendered page down, never up. Higher values use more memory during generation.', 'rapls-pdf-image-creator'); ?>
+                        </p>
+                    </td>
+                </tr>
+
+                <tr>
+                    <th scope="row">
                         <label for="rapls_pic_quality"><?php esc_html_e('Quality', 'rapls-pdf-image-creator'); ?></label>
                     </th>
                     <td>

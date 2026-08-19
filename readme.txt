@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.0
-Stable tag: 1.1.1
+Stable tag: 1.2.0
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -133,6 +133,12 @@ add_filter( 'rapls_pdf_image_creator_color_conversion', function() {
 
 Yes. Go to Settings > Rapls PDF Image Creator > Bulk Generate tab to scan and generate thumbnails for all existing PDFs.
 
+= I raised Max Width and Max Height but the thumbnail is the same size. Why? =
+
+Those two settings only scale the rendered page *down*. They never enlarge it. The size the page is rendered at comes from Rendering Resolution instead, which was fixed at 150 DPI before version 1.2.0 — an A4 page at 150 DPI is about 1240x1754 pixels, and no maximum above that could produce anything bigger.
+
+Raise Rendering Resolution (Settings > Rapls PDF Image Creator > Image Settings) and the rendered page grows with it; the maximum dimensions then cap the result as before. Bear in mind that memory use during generation grows with the square of the resolution, so raise it in steps if your server is small.
+
 = What image formats are supported? =
 
 JPEG, PNG, and WebP. Configure your preferred format in the Image Settings tab.
@@ -205,6 +211,7 @@ foreach ( $pdfs as $pdf ) {
 * `rapls_pdf_image_creator_thumbnail_page` - PDF page to use (default: 0)
 * `rapls_pdf_image_creator_thumbnail_max_width` - Maximum width
 * `rapls_pdf_image_creator_thumbnail_max_height` - Maximum height
+* `rapls_pdf_image_creator_thumbnail_resolution` - Rendering resolution in DPI (default: 150)
 * `rapls_pdf_image_creator_thumbnail_quality` - Image quality (1-100)
 * `rapls_pdf_image_creator_thumbnail_format` - Output format
 * `rapls_pdf_image_creator_thumbnail_bgcolor` - Background color
@@ -237,6 +244,11 @@ add_filter( 'rapls_pdf_image_creator_icc_paths', function( $paths, $type ) {
 * `rapls_pdf_image_creator_generation_failed` - When generation fails
 
 == Changelog ==
+= 1.2.0 =
+* Added: Rendering Resolution setting (Settings > Image Settings), so the DPI the PDF page is rasterized at is no longer fixed at 150. Raising it is what produces a larger thumbnail — the maximum width and height only scale the rendered page down, never up, so raising them alone had no effect once the page already fit
+* Added: filter `rapls_pdf_image_creator_thumbnail_resolution`, for setting the DPI per attachment
+* Note: the default is 150, which is what every previous version used, so thumbnails do not change until you raise it. Existing thumbnails are not regenerated automatically; use the Bulk Generate tab
+
 = 1.1.1 =
 * Display name updated: the plugin is listed as "Rapls PDF Image Creator – PDF Thumbnails & Featured Images" so that the directory search finds it by what it does, not only by its brand name.
 * The description in the plugin header no longer differs from the one in this readme, and neither now simply repeats the title. No functional change.
@@ -349,6 +361,9 @@ add_filter( 'rapls_pdf_image_creator_icc_paths', function( $paths, $type ) {
 * Japanese translation included
 
 == Upgrade Notice ==
+
+= 1.2.0 =
+Adds a Rendering Resolution (DPI) setting for larger thumbnails. The default matches previous behavior, so nothing changes until you raise it.
 
 = 1.1.0 =
 Fixes oversaturated colors in thumbnails generated from CMYK PDFs. Existing thumbnails keep their old colors until you regenerate them from the Bulk Generate tab.
