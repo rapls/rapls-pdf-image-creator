@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.0
-Stable tag: 1.2.0
+Stable tag: 1.2.1
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -244,6 +244,10 @@ add_filter( 'rapls_pdf_image_creator_icc_paths', function( $paths, $type ) {
 * `rapls_pdf_image_creator_generation_failed` - When generation fails
 
 == Changelog ==
+= 1.2.1 =
+* Fixed: twelve strings in the admin screens were shown in English under a translated locale. The bundled Japanese translation had drifted from the code — it still carried fourteen entries for a Status tab that no longer exists, and had none for the strings that replaced them, for the Bulk Generate error messages, or for the review link
+* No functional change; translation files only
+
 = 1.2.0 =
 * Added: Rendering Resolution setting (Settings > Image Settings), so the DPI the PDF page is rasterized at is no longer fixed at 150. Raising it is what produces a larger thumbnail — the maximum width and height only scale the rendered page down, never up, so raising them alone had no effect once the page already fit
 * Added: filter `rapls_pdf_image_creator_thumbnail_resolution`, for setting the DPI per attachment
@@ -361,6 +365,9 @@ add_filter( 'rapls_pdf_image_creator_icc_paths', function( $paths, $type ) {
 * Japanese translation included
 
 == Upgrade Notice ==
+
+= 1.2.1 =
+Translation fix: twelve admin strings that were stuck in English under a translated locale now display correctly. No functional change.
 
 = 1.2.0 =
 Adds a Rendering Resolution (DPI) setting for larger thumbnails. The default matches previous behavior, so nothing changes until you raise it.

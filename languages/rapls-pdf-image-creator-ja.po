@@ -4,7 +4,7 @@
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: Rapls PDF Image Creator 1.0.6\n"
+"Project-Id-Version: Rapls PDF Image Creator 1.2.1\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2024-01-01 00:00+0000\n"
 "PO-Revision-Date: 2024-01-01 00:00+0000\n"
@@ -18,7 +18,7 @@ msgstr ""
 
 #: rapls-pdf-image-creator.php
 msgid "Rapls PDF Image Creator requires PHP 7.4 or higher."
-msgstr "Rapls PDF Image Creator を使用するには PHP 7.4以上が必要です。"
+msgstr "Rapls PDF Image Creator を使用するには PHP 7.4 以上が必要です。"
 
 #: admin/views/settings-page.php
 msgid "Rapls PDF Image Creator"
@@ -213,20 +213,8 @@ msgid "Server Status"
 msgstr "サーバーステータス"
 
 #: admin/views/settings-page.php
-msgid "Engine"
-msgstr "エンジン"
-
-#: admin/views/settings-page.php
-msgid "Details"
-msgstr "詳細"
-
-#: admin/views/settings-page.php
 msgid "Available"
 msgstr "利用可能"
-
-#: admin/views/settings-page.php
-msgid "Not Available"
-msgstr "利用不可"
 
 #: admin/views/settings-page.php
 msgid "Statistics"
@@ -259,6 +247,18 @@ msgstr "完了 !"
 #: includes/Admin.php
 msgid "An error occurred."
 msgstr "エラーが発生しました。"
+
+#: includes/BulkProcessor.php
+msgid "An error occurred while scanning for PDFs."
+msgstr "PDF の検索中にエラーが発生しました。"
+
+#: includes/BulkProcessor.php
+msgid "An error occurred while generating thumbnail."
+msgstr "サムネイルの生成中にエラーが発生しました。"
+
+#: includes/BulkProcessor.php
+msgid "An error occurred while fetching status."
+msgstr "ステータスの取得中にエラーが発生しました。"
 
 #: includes/Admin.php
 msgid "Start bulk generation? This may take a while."
@@ -337,48 +337,33 @@ msgid "Thumbnail generated successfully."
 msgstr "サムネイルが正常に生成されました。"
 
 #: includes/Engine/ImagickEngine.php
-msgid "ImageMagick (Imagick)"
-msgstr "ImageMagick (Imagick)"
+msgid "Installed"
+msgstr "インストール済み"
 
 #: includes/Engine/ImagickEngine.php
-msgid "Imagick extension"
-msgstr "Imagick 拡張機能"
+msgid "Not installed"
+msgstr "未インストール"
 
 #: includes/Engine/ImagickEngine.php
-msgid "Loaded"
-msgstr "読み込み済み"
+msgid "Unknown"
+msgstr "不明"
 
 #: includes/Engine/ImagickEngine.php
-msgid "Not loaded"
-msgstr "未読み込み"
+msgid "PDF file not found."
+msgstr "PDF ファイルが見つかりません。"
 
 #: includes/Engine/ImagickEngine.php
-msgid "PDF support"
-msgstr "PDF サポート"
+msgid "PDF file is not readable."
+msgstr "PDF ファイルを読み込めません。"
 
 #: includes/Engine/ImagickEngine.php
-msgid "Supported"
-msgstr "対応"
+msgid "Failed to create output directory."
+msgstr "出力先ディレクトリを作成できませんでした。"
 
+#. translators: %s: error message
 #: includes/Engine/ImagickEngine.php
-msgid "Not supported (check policy.xml)"
-msgstr "非対応 (policy.xml を確認してください)"
-
-#: includes/Engine/ImagickEngine.php
-msgid "Unable to check"
-msgstr "確認できません"
-
-#: includes/Engine/ImagickEngine.php
-msgid "Failed to read PDF file"
-msgstr "PDF ファイルの読み込みに失敗しました"
-
-#: includes/Engine/ImagickEngine.php
-msgid "Invalid page number"
-msgstr "無効なページ番号です"
-
-#: includes/Engine/ImagickEngine.php
-msgid "Failed to convert PDF"
-msgstr "PDF の変換に失敗しました"
+msgid "Imagick error: %s"
+msgstr "Imagick エラー: %s"
 
 #: includes/Engine/ImagickEngine.php
 msgid "Not available (PDF delegate may be missing)"
@@ -539,6 +524,14 @@ msgstr "このプラグインが役に立った場合は、開発をサポート
 #: admin/views/settings-page.php
 msgid "Buy me a coffee"
 msgstr "Buy me a coffee"
+
+#: admin/views/settings-page.php
+msgid "Leave a review"
+msgstr "レビューを書く"
+
+#: admin/views/settings-page.php
+msgid "Your reviews help other users discover this plugin. Thank you!"
+msgstr "レビューは、このプラグインを他のユーザーに見つけてもらう助けになります。ご協力ありがとうございます !"
 
 #: includes/Engine/ImagickEngine.php
 msgid "Color Management"
