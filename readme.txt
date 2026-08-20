@@ -4,7 +4,7 @@ Contributors: rapls
 Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
-Tested up to: 7.0
+Tested up to: 7.1
 Stable tag: 1.2.1
 Requires PHP: 7.4
 License: GPLv2 or later
