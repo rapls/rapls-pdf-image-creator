@@ -72,6 +72,7 @@ delete_transient('rapls_pic_icc_path_srgb');
 delete_transient('rapls_pic_icc_path_cmyk');
 delete_transient('rapls_pic_pdf_policy');
 delete_transient('rapls_pic_pdf_read');
+delete_transient('rapls_pic_cmyk_render');
 delete_transient('rapls_pic_activation_notice');
 delete_metadata('user', 0, 'rapls_pic_color_notice_dismissed', '', true);
 delete_metadata('user', 0, 'rapls_pic_engine_notice_dismissed', '', true);

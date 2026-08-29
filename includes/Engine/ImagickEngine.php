@@ -81,6 +81,11 @@ final class ImagickEngine implements EngineInterface
     private const READ_PROBE_TRANSIENT = 'rapls_pic_pdf_read';
 
     /**
+     * Transient caching the CMYK render probe
+     */
+    private const CMYK_PROBE_TRANSIENT = 'rapls_pic_cmyk_render';
+
+    /**
      * {@inheritdoc}
      *
      * Nothing here may throw: this runs on every admin page load through the
@@ -200,12 +205,20 @@ final class ImagickEngine implements EngineInterface
      */
     private static function minimalPdf(): string
     {
-        $objects = [
+        return self::buildPdf([
             '<< /Type /Catalog /Pages 2 0 R >>',
             '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
             '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 72 72] /Resources << >> >>',
-        ];
+        ]);
+    }
 
+    /**
+     * Assemble a PDF from a list of object bodies, with a correct xref table
+     *
+     * @param array<int, string> $objects Object bodies, in order from 1.
+     */
+    private static function buildPdf(array $objects): string
+    {
         $pdf = "%PDF-1.4\n";
         $offsets = [];
         foreach ($objects as $index => $body) {
@@ -700,12 +713,121 @@ final class ImagickEngine implements EngineInterface
             return null;
         }
 
+        // Warning on the version number alone turned out to be too broad.
+        // Measured on Xserver's ImageMagick 6.9.13-25: a DeviceCMYK page
+        // renders correctly, colorspace and all. So render one and look.
+        $probe = $this->probeCmykRender();
+
+        if (true === $probe['ok']) {
+            return [
+                'name' => __('CMYK PDF Rendering', 'rapls-pdf-image-creator'),
+                'status' => true,
+                'message' => __('Working on this server (tested)', 'rapls-pdf-image-creator'),
+                'detail' => __('ImageMagick 6 renders some CMYK PDFs as a blank image. A test page rendered correctly here, so the common case works. Complex print-ready files (PDF/X) can still take a different path — check one of your own if you rely on them.', 'rapls-pdf-image-creator'),
+            ];
+        }
+
+        if (false === $probe['ok']) {
+            return [
+                'name' => __('CMYK PDF Rendering', 'rapls-pdf-image-creator'),
+                'status' => false,
+                'message' => __('Broken on this server (tested)', 'rapls-pdf-image-creator'),
+                'detail' => __('A CMYK test page came back blank. Ask your hosting provider to update ImageMagick to version 7, or to change the ps:cmyk delegate from bmpsep8 to pamcmyk32. RGB PDFs are not affected.', 'rapls-pdf-image-creator'),
+            ];
+        }
+
+        // Could not test. Say so rather than guessing either way.
         return [
             'name' => __('CMYK PDF Rendering', 'rapls-pdf-image-creator'),
             'status' => false,
             'message' => __('ImageMagick 6 — CMYK PDFs may produce a blank image', 'rapls-pdf-image-creator'),
             'detail' => __('RGB PDFs are not affected.', 'rapls-pdf-image-creator'),
         ];
+    }
+
+    /**
+     * Render a CMYK page and see whether anything survives
+     *
+     * ImageMagick 6 hands CMYK PDFs to Ghostscript's bmpsep8 device and then
+     * cannot read what comes back, which lands as a blank white thumbnail.
+     * Whether that happens depends on the build, so measure instead of
+     * reading the version number: fill a page with 100% cyan and look at it.
+     *
+     * @return array{ok: bool|null, error: string} ok is null when untestable.
+     */
+    private function probeCmykRender(): array
+    {
+        $version = $this->getVersionString();
+
+        $cached = get_transient(self::CMYK_PROBE_TRANSIENT);
+        if (is_array($cached) && array_key_exists('ok', $cached) && isset($cached['version'])
+            && $cached['version'] === $version) {
+            return ['ok' => $cached['ok'], 'error' => (string) ($cached['error'] ?? '')];
+        }
+
+        $result = ['ok' => null, 'error' => ''];
+
+        try {
+            $imagick = new \Imagick();
+            $imagick->setResolution(72, 72);
+            $imagick->readImageBlob(self::minimalCmykPdf(), 'rapls-pic-cmyk-probe.pdf');
+
+            // Sample in sRGB: read straight out of a CMYK raster, 100% cyan
+            // reports as r=255, which is indistinguishable from red.
+            try {
+                $imagick->transformImageColorspace(\Imagick::COLORSPACE_SRGB);
+            } catch (\Throwable $e) {
+                // Keep whatever space it came back in and judge on that.
+            }
+
+            $pixel = $imagick->getImagePixelColor(
+                (int) ($imagick->getImageWidth() / 2),
+                (int) ($imagick->getImageHeight() / 2)
+            );
+            $rgb = $pixel->getColor();
+            $imagick->clear();
+
+            // A page filled edge to edge cannot legitimately be white or black.
+            $blank = ($rgb['r'] > 240 && $rgb['g'] > 240 && $rgb['b'] > 240)
+                || ($rgb['r'] < 15 && $rgb['g'] < 15 && $rgb['b'] < 15);
+
+            $result['ok'] = !$blank;
+            $result['error'] = sprintf('#%02X%02X%02X', $rgb['r'], $rgb['g'], $rgb['b']);
+        } catch (\Exception $e) {
+            // ImageMagick refused the file. That is a real answer.
+            $result['ok'] = false;
+            $result['error'] = $e->getMessage();
+        } catch (\Throwable $e) {
+            // Something below ImageMagick broke -- a build without
+            // readImageBlob, a fatal in the extension. Not evidence that CMYK
+            // is broken, so say nothing rather than say the wrong thing.
+            $result['ok'] = null;
+            $result['error'] = $e->getMessage();
+        }
+
+        set_transient(
+            self::CMYK_PROBE_TRANSIENT,
+            $result + ['version' => $version],
+            12 * HOUR_IN_SECONDS
+        );
+
+        return $result;
+    }
+
+    /**
+     * A one-page PDF whose only content is a solid CMYK fill
+     */
+    private static function minimalCmykPdf(): string
+    {
+        $stream = "/DeviceCMYK cs\n1.0 0.0 0.0 0.0 k\n0 0 72 72 re\nf\n";
+
+        return self::buildPdf([
+            '<< /Type /Catalog /Pages 2 0 R >>',
+            '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+            '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 72 72] '
+                . '/Resources << /ColorSpace << /CS0 /DeviceCMYK >> >> /Contents 4 0 R >>',
+            '<< /Length ' . strlen($stream) . " >>\nstream\n" . $stream . 'endstream',
+        ]);
     }
 
     /**

@@ -4,7 +4,7 @@
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: Rapls PDF Image Creator 1.3.0\n"
+"Project-Id-Version: Rapls PDF Image Creator 1.3.2\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2024-01-01 00:00+0000\n"
 "PO-Revision-Date: 2024-01-01 00:00+0000\n"
@@ -740,3 +740,19 @@ msgstr "無効"
 #: includes/SiteHealth.php
 msgid "Server requirements and settings for PDF thumbnail generation."
 msgstr "PDF サムネイル生成に関するサーバー要件と設定。"
+
+#: includes/Engine/ImagickEngine.php
+msgid "Working on this server (tested)"
+msgstr "このサーバーでは動作します (実測)"
+
+#: includes/Engine/ImagickEngine.php
+msgid "ImageMagick 6 renders some CMYK PDFs as a blank image. A test page rendered correctly here, so the common case works. Complex print-ready files (PDF/X) can still take a different path — check one of your own if you rely on them."
+msgstr "ImageMagick 6 では CMYK の PDF が真っ白な画像になることがあります。このサーバーではテストページが正しく描画されたので、通常のケースは問題ありません。ただし印刷入稿用の複雑な PDF (PDF/X) は別の経路を通ることがあるため、実際に使うファイルで確認してください。"
+
+#: includes/Engine/ImagickEngine.php
+msgid "Broken on this server (tested)"
+msgstr "このサーバーでは動作しません (実測)"
+
+#: includes/Engine/ImagickEngine.php
+msgid "A CMYK test page came back blank. Ask your hosting provider to update ImageMagick to version 7, or to change the ps:cmyk delegate from bmpsep8 to pamcmyk32. RGB PDFs are not affected."
+msgstr "CMYK のテストページが真っ白で返りました。ImageMagick をバージョン 7 に更新するか、ps:cmyk デリゲートを bmpsep8 から pamcmyk32 に変更するよう、ホスティング事業者に依頼してください。RGB の PDF には影響しません。"

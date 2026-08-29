@@ -236,6 +236,47 @@ foreach ($messages as $message => $expected) {
     check(substr($message, 0, 34) . '...', $isPolicy ? 'policy' : ($isDelegate ? 'delegate' : 'other'), $expected);
 }
 
+echo "\n=== CMYK probe: blank detection ===\n";
+
+// The CMYK page is filled edge to edge with 100% cyan. White or black means
+// the raster came back empty -- the ImageMagick 6 bmpsep8 symptom. Anything
+// else is a real render.
+$blank = function (array $rgb): bool {
+    return ($rgb['r'] > 240 && $rgb['g'] > 240 && $rgb['b'] > 240)
+        || ($rgb['r'] < 15 && $rgb['g'] < 15 && $rgb['b'] < 15);
+};
+
+check('pure white is blank', $blank(['r' => 255, 'g' => 255, 'b' => 255]), true);
+check('pure black is blank', $blank(['r' => 0, 'g' => 0, 'b' => 0]), true);
+// Measured on Xserver, ImageMagick 6.9.13-25, and on Local, ImageMagick 7.1.1.
+check('cyan #00FFFF is a real render', $blank(['r' => 0, 'g' => 255, 'b' => 255]), false);
+check('near-white #F8F8F8 still blank', $blank(['r' => 248, 'g' => 248, 'b' => 248]), true);
+check('mid grey is a real render', $blank(['r' => 128, 'g' => 128, 'b' => 128]), false);
+
+echo "\n=== the CMYK probe PDF ===\n";
+$cmyk = call_private($engine, 'minimalCmykPdf');
+check('is a PDF', substr($cmyk, 0, 8), '%PDF-1.4');
+// Without this, Ghostscript renders an RGB page and the test proves nothing.
+check('declares DeviceCMYK', substr_count($cmyk, '/DeviceCMYK'), 2);
+check('fills the page with cyan', false !== strpos($cmyk, '1.0 0.0 0.0 0.0 k'), true);
+check('has a content stream', false !== strpos($cmyk, 'stream'), true);
+check('stream length matches the declared /Length', (function () use ($cmyk) {
+    preg_match('/\/Length (\d+) >>\s*stream\n(.*?)endstream/s', $cmyk, $m);
+    return isset($m[1], $m[2]) && (int) $m[1] === strlen($m[2]);
+})(), true);
+
+// Both probe PDFs go through the same builder, so the xref stays correct
+// even though the CMYK one has four objects instead of three.
+preg_match_all('/^(\d{10}) 00000 n $/m', $cmyk, $rows);
+check('four xref entries', count($rows[1]), 4);
+$good = true;
+foreach ($rows[1] as $i => $offset) {
+    if (substr($cmyk, (int) $offset, strlen((string) ($i + 1)) + 6) !== ($i + 1) . ' 0 obj') {
+        $good = false;
+    }
+}
+check('every xref offset lands on its object', $good, true);
+
 echo "\n=== requirements still readable without the extension ===\n";
 $reqs = $engine->getRequirements();
 check('extension row present', $reqs['extension']['status'], false);

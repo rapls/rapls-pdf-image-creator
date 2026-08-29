@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.1
-Stable tag: 1.3.1
+Stable tag: 1.3.2
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -107,7 +107,9 @@ For detailed troubleshooting including common server setup issues, see the [setu
 
 Check Settings > Rapls PDF Image Creator > Status. If it reports ImageMagick 6, that is the cause.
 
-ImageMagick 6 renders any PDF it judges to be CMYK through Ghostscript's `bmpsep8` device, which writes a separation BMP that ImageMagick's own BMP reader cannot decode. Depending on the exact ImageMagick and Ghostscript versions, the read either fails outright or returns an empty raster — which becomes a blank white thumbnail. ImageMagick 7 uses a different device and is unaffected.
+ImageMagick 6 can render a PDF it judges to be CMYK through Ghostscript's `bmpsep8` device, which writes a separation BMP that ImageMagick's own BMP reader cannot decode. Depending on the exact ImageMagick and Ghostscript versions, the read either fails outright or returns an empty raster — which becomes a blank white thumbnail. ImageMagick 7 uses a different device and is unaffected.
+
+Not every ImageMagick 6 build is affected: on Xserver's 6.9.13-25 a CMYK page renders correctly. Since 1.3.2 the Status tab renders a test page and reports what this server actually does, rather than warning on the version number.
 
 The plugin cannot work around this, because ImageMagick picks the device from the PDF's own content and no Imagick API call overrides it. Ask your hosting provider to upgrade to ImageMagick 7, or to change the `ps:cmyk` delegate in `delegates.xml` from `bmpsep8` to `pamcmyk32`.
 
@@ -256,6 +258,11 @@ add_filter( 'rapls_pdf_image_creator_icc_paths', function( $paths, $type ) {
 * `rapls_pdf_image_creator_generation_failed` - When generation fails
 
 == Changelog ==
+= 1.3.2 =
+* Changed: the ImageMagick 6 CMYK warning is now measured rather than assumed. It used to appear on every ImageMagick 6 server on the strength of the version number alone. Measured on Xserver's ImageMagick 6.9.13-25, a CMYK page renders correctly, so that warning was wrong there
+* The Status tab now renders a CMYK test page — one inch of solid cyan, built in memory — and reports what actually came back. A blank result is stated as tested and confirmed, with what to ask the host; a correct result says so, while noting that complex PDF/X files can still take a different path
+* Result cached for 12 hours and re-tested when the ImageMagick version changes
+
 = 1.3.1 =
 * Fixed: the availability check was asking the wrong question. `Imagick::queryFormats('PDF')` reports which coders were compiled in, not whether the security policy permits them — verified on ImageMagick 7.1.1, where a policy.xml denying the PDF coder still leaves PDF in queryFormats while reading one throws `NotAuthorized`. On such a server 1.3.0 reported "PDF thumbnails can be generated" and then failed silently on the first upload, which is the exact problem 1.3.0 set out to solve
 * Fixed: a server with ImageMagick but without Ghostscript was also reported as working, for the same reason
@@ -392,6 +399,9 @@ add_filter( 'rapls_pdf_image_creator_icc_paths', function( $paths, $type ) {
 * Japanese translation included
 
 == Upgrade Notice ==
+
+= 1.3.2 =
+The ImageMagick 6 CMYK warning is now based on rendering a test page instead of the version number, so servers where CMYK works are no longer warned.
 
 = 1.3.1 =
 Corrects the 1.3.0 detection. On servers whose ImageMagick policy forbids PDFs — the most common cause of missing thumbnails on shared hosting — 1.3.0 wrongly reported everything as working. Install this if you are on 1.3.0.
