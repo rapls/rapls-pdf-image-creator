@@ -251,6 +251,108 @@ try {
 $notAuthorized = (bool) preg_match('/not\s*authoriz|security policy/i', $readError);
 $noDelegate = (bool) preg_match('/no decode delegate|delegate.*(failed|missing)|FailedToExecuteCommand|gs.*not found/i', $readError);
 
+h('CMYK read test');
+
+/**
+ * A one-page PDF whose only content is a solid CMYK fill.
+ *
+ * ImageMagick picks its Ghostscript device from what it finds in the PDF.
+ * DeviceCMYK sends ImageMagick 6 down the bmpsep8 path, which is where the
+ * blank-thumbnail bug lives. A pure white result here is the bug.
+ */
+function minimal_cmyk_pdf(): string
+{
+    $stream = "/DeviceCMYK cs\n1.0 0.0 0.0 0.0 k\n0 0 72 72 re\nf\n";
+
+    $objects = [
+        "<< /Type /Catalog /Pages 2 0 R >>",
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 72 72] "
+            . "/Resources << /ColorSpace << /CS0 /DeviceCMYK >> >> /Contents 4 0 R >>",
+        "<< /Length " . strlen($stream) . " >>\nstream\n" . $stream . "endstream",
+    ];
+
+    $pdf = "%PDF-1.4\n";
+    $offsets = [];
+    foreach ($objects as $i => $body) {
+        $offsets[] = strlen($pdf);
+        $pdf .= ($i + 1) . " 0 obj\n" . $body . "\nendobj\n";
+    }
+
+    $xref = strlen($pdf);
+    $pdf .= "xref\n0 " . (count($objects) + 1) . "\n";
+    $pdf .= "0000000000 65535 f \n";
+    foreach ($offsets as $offset) {
+        $pdf .= sprintf("%010d 00000 n \n", $offset);
+    }
+    $pdf .= "trailer\n<< /Size " . (count($objects) + 1) . " /Root 1 0 R >>\n";
+    $pdf .= "startxref\n" . $xref . "\n%%EOF\n";
+
+    return $pdf;
+}
+
+$cmykOk = null;
+$cmykBlank = false;
+if (!$readOk) {
+    echo "  (RGB の読み込みが通っていないので省略)\n";
+} else {
+    try {
+        $im = new Imagick();
+        $im->setResolution(72, 72);
+        $im->readImageBlob(minimal_cmyk_pdf(), 'probe-cmyk.pdf');
+        kv('readImageBlob', 'OK');
+        kv('size', $im->getImageWidth() . ' x ' . $im->getImageHeight());
+        // Which Ghostscript device ImageMagick chose shows up here. A CMYK
+        // colorspace means it went down the separation path -- the one that
+        // breaks on ImageMagick 6.
+        $space = $im->getImageColorspace();
+        $spaceName = 'id ' . $space;
+        if (defined('Imagick::COLORSPACE_CMYK') && Imagick::COLORSPACE_CMYK === $space) {
+            $spaceName = 'CMYK (id ' . $space . ')';
+        } elseif (defined('Imagick::COLORSPACE_SRGB') && Imagick::COLORSPACE_SRGB === $space) {
+            $spaceName = 'sRGB (id ' . $space . ')';
+        }
+        kv('colorspace', $spaceName);
+        kv('unique colours', count($im->getImageHistogram()));
+
+        // Sample in sRGB so the number below means what it looks like. Read
+        // straight out of a CMYK raster, 100% cyan reports as r=255, which
+        // reads like red to anyone looking at the output.
+        try {
+            $im->transformImageColorspace(Imagick::COLORSPACE_SRGB);
+        } catch (Throwable $e) {
+            // Leave it in whatever space it came back in.
+        }
+
+        $px = $im->getImagePixelColor((int) ($im->getImageWidth() / 2), (int) ($im->getImageHeight() / 2));
+        $rgb = $px->getColor();
+        $hex = sprintf('#%02X%02X%02X', $rgb['r'], $rgb['g'], $rgb['b']);
+        kv('centre pixel (sRGB)', $hex . '  (r=' . $rgb['r'] . ' g=' . $rgb['g'] . ' b=' . $rgb['b'] . ')');
+
+        // A page filled edge to edge with 100% cyan cannot legitimately come
+        // back white or black. Either one means the raster is empty.
+        $cmykBlank = ($rgb['r'] > 240 && $rgb['g'] > 240 && $rgb['b'] > 240)
+            || ($rgb['r'] < 15 && $rgb['g'] < 15 && $rgb['b'] < 15);
+        $cmykOk = !$cmykBlank;
+
+        $im->clear();
+    } catch (Throwable $e) {
+        $cmykOk = false;
+        kv('readImageBlob', 'FAILED');
+        echo "\n  " . trim($e->getMessage()) . "\n";
+    }
+
+    echo "\n";
+    if (true === $cmykOk) {
+        echo "  シアン 100% がシアンとして描画されました。CMYK の PDF も扱えます。\n";
+    } elseif ($cmykBlank) {
+        echo "  ★ シアン 100% が真っ白（または真っ黒）になりました。\n";
+        echo "    CMYK の PDF から作るサムネイルは、この環境では潰れます。\n";
+    } else {
+        echo "  ★ CMYK の PDF を読めませんでした。上のエラーを参照。\n";
+    }
+}
+
 h('ImageMagick generation');
 $major = 0;
 if (preg_match('/ImageMagick\s+(\d+)\./', (string) ($version['versionString'] ?? ''), $mv)) {
@@ -267,7 +369,11 @@ h('VERDICT');
 if ($readOk) {
     echo "  PDF を実際に読めました (ok)\n";
     echo "  → このサーバーでサムネイル生成は動きます。\n";
-    if (6 === $major) {
+    if (false === $cmykOk) {
+        echo "  ただし CMYK の PDF は潰れます（上の CMYK read test 参照）。\n";
+    } elseif (true === $cmykOk) {
+        echo "  CMYK の PDF も実測で通りました。\n";
+    } elseif (6 === $major) {
         echo "  ただし CMYK の PDF は真っ白になる可能性があります。\n";
     }
 } elseif ($notAuthorized) {
