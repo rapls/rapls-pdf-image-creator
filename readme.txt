@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.1
-Stable tag: 1.3.0
+Stable tag: 1.3.1
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -256,6 +256,12 @@ add_filter( 'rapls_pdf_image_creator_icc_paths', function( $paths, $type ) {
 * `rapls_pdf_image_creator_generation_failed` - When generation fails
 
 == Changelog ==
+= 1.3.1 =
+* Fixed: the availability check was asking the wrong question. `Imagick::queryFormats('PDF')` reports which coders were compiled in, not whether the security policy permits them — verified on ImageMagick 7.1.1, where a policy.xml denying the PDF coder still leaves PDF in queryFormats while reading one throws `NotAuthorized`. On such a server 1.3.0 reported "PDF thumbnails can be generated" and then failed silently on the first upload, which is the exact problem 1.3.0 set out to solve
+* Fixed: a server with ImageMagick but without Ghostscript was also reported as working, for the same reason
+* Changed: availability is now decided by handing ImageMagick an actual PDF — a blank one-inch page built in memory, no file written and no process started by the plugin — and reading the exception. `NotAuthorized` means the policy; a Ghostscript failure means the delegate. The result is cached for 12 hours and re-checked when the ImageMagick version changes
+* Fixed: the policy.xml reader counted rules inside `<!-- -->` as active. Hosting providers usually unblock PDF by commenting the deny rule out rather than deleting it, so an already-fixed server could be reported as still blocked
+
 = 1.3.0 =
 * Added: a "PDF thumbnail generation" test in Tools > Site Health, plus a Rapls PDF Image Creator section under Site Health > Info. This is where people look first when something does not work, and where support requests get copied from
 * Added: activating the plugin on a server that cannot render PDFs now says so on the next admin screen. Previously activation succeeded in silence, uploads produced no thumbnail, and nothing anywhere explained why
@@ -386,6 +392,9 @@ add_filter( 'rapls_pdf_image_creator_icc_paths', function( $paths, $type ) {
 * Japanese translation included
 
 == Upgrade Notice ==
+
+= 1.3.1 =
+Corrects the 1.3.0 detection. On servers whose ImageMagick policy forbids PDFs — the most common cause of missing thumbnails on shared hosting — 1.3.0 wrongly reported everything as working. Install this if you are on 1.3.0.
 
 = 1.3.0 =
 Diagnostics. Site Health now reports whether PDF thumbnails can be generated, activation warns when the server cannot render PDFs, and a missing ImageMagick is told apart from an ImageMagick that is forbidden to read PDFs. No change to how thumbnails are produced.

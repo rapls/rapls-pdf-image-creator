@@ -189,6 +189,53 @@ check('policy branch names policy.xml',
 check('delegate branch does not blame policy alone',
     false !== stripos(call_private($engine, 'statusFor', ['pdf_unsupported'])['action'], 'ImageMagick'), true);
 
+echo "\n=== the minimal PDF used for the read probe ===\n";
+
+// The whole detection now rests on handing ImageMagick this blob, so it has
+// to be a real PDF. A malformed one would fail everywhere and every server
+// would look broken.
+$pdf = call_private($engine, 'minimalPdf');
+
+check('starts with the PDF header', substr($pdf, 0, 8), '%PDF-1.4');
+check('ends with EOF', substr(rtrim($pdf), -5), '%%EOF');
+check('has a catalog', false !== strpos($pdf, '/Type /Catalog'), true);
+check('has exactly one page', substr_count($pdf, '/Type /Page '), 1);
+check('declares its object count', false !== strpos($pdf, '/Size 4'), true);
+
+// The xref offsets must point at the real byte positions, or a strict
+// reader rejects the file.
+preg_match_all('/^(\d{10}) 00000 n $/m', $pdf, $rows);
+check('three xref entries', count($rows[1]), 3);
+$offsetsGood = true;
+foreach ($rows[1] as $i => $offset) {
+    if (substr($pdf, (int) $offset, strlen((string) ($i + 1)) + 6) !== ($i + 1) . ' 0 obj') {
+        $offsetsGood = false;
+    }
+}
+check('every xref offset lands on its object', $offsetsGood, true);
+
+$startxref = (int) substr($pdf, strrpos($pdf, 'startxref') + 10);
+check('startxref points at the xref table', substr($pdf, $startxref, 4), 'xref');
+
+echo "\n=== read probe classification ===\n";
+
+// queryFormats() does not apply the security policy -- verified on
+// ImageMagick 7.1.1, where a policy.xml denying the PDF coder still leaves
+// PDF in queryFormats while readImage throws NotAuthorized. These are the
+// two spellings that have to be told apart.
+$messages = [
+    "NotAuthorized `PDF' @ error/constitute.c/IsCoderAuthorized/454" => 'policy',
+    'attempt to perform an operation not allowed by the security policy `PDF\'' => 'policy',
+    "FailedToExecuteCommand `'gs' -sstdout=%stderr ... ' (32512) @ error/ghostscript-private.h" => 'delegate',
+    'no decode delegate for this image format `PDF\'' => 'delegate',
+];
+
+foreach ($messages as $message => $expected) {
+    $isPolicy = (bool) preg_match('/not\s*authoriz|security policy/i', $message);
+    $isDelegate = !$isPolicy && (bool) preg_match('/no decode delegate|FailedToExecuteCommand|delegate/i', $message);
+    check(substr($message, 0, 34) . '...', $isPolicy ? 'policy' : ($isDelegate ? 'delegate' : 'other'), $expected);
+}
+
 echo "\n=== requirements still readable without the extension ===\n";
 $reqs = $engine->getRequirements();
 check('extension row present', $reqs['extension']['status'], false);

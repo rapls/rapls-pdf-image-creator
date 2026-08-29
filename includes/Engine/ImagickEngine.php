@@ -63,23 +63,22 @@ final class ImagickEngine implements EngineInterface
      */
     public function isAvailable(): bool
     {
-        if (!extension_loaded('imagick') || !class_exists('\Imagick')) {
-            return false;
-        }
-
-        // Check if PDF is in the supported formats
-        try {
-            $formats = \Imagick::queryFormats('PDF');
-            return !empty($formats);
-        } catch (\Exception $e) {
-            return false;
-        }
+        // Deliberately the same answer the Status tab and Site Health give.
+        // This used to ask queryFormats() on its own and say yes on servers
+        // whose policy.xml forbids PDFs, which made every surface claim the
+        // plugin worked right up until the first upload silently failed.
+        return 'ok' === $this->getAvailabilityStatus()['code'];
     }
 
     /**
      * Transient caching the policy.xml lookup
      */
     private const POLICY_TRANSIENT = 'rapls_pic_pdf_policy';
+
+    /**
+     * Transient caching the actual PDF read probe
+     */
+    private const READ_PROBE_TRANSIENT = 'rapls_pic_pdf_read';
 
     /**
      * {@inheritdoc}
@@ -99,24 +98,131 @@ final class ImagickEngine implements EngineInterface
             return $this->statusFor('error', $e->getMessage());
         }
 
-        if (!empty($formats)) {
+        if (empty($formats)) {
+            // No PDF coder compiled in at all.
+            return $this->statusFor('pdf_unsupported');
+        }
+
+        // queryFormats() lists the coders that were built in. It does NOT
+        // apply the security policy -- verified on ImageMagick 7.1.1, where a
+        // policy.xml denying the PDF coder still leaves PDF in queryFormats
+        // while readImage throws NotAuthorized. Asking it is therefore not an
+        // answer; the only way to know is to hand ImageMagick a PDF.
+        $probe = $this->probePdfRead();
+
+        if ($probe['ok']) {
             return $this->statusFor('ok');
         }
 
-        // ImageMagick is here but will not touch a PDF. Two different server
-        // problems land on the same empty result, and they need different
-        // requests to the host, so try to tell them apart.
-        $policyFile = $this->findPdfPolicyBlock();
+        if (preg_match('/not\s*authoriz|security policy/i', $probe['error'])) {
+            $policyFile = $this->findPdfPolicyBlock();
 
-        if (null !== $policyFile) {
             return $this->statusFor(
                 'pdf_blocked_by_policy',
-                /* translators: %s: absolute path to the policy.xml file */
-                sprintf(__('Policy file: %s', 'rapls-pdf-image-creator'), $policyFile)
+                null === $policyFile
+                    ? $probe['error']
+                    /* translators: %s: absolute path to the policy.xml file */
+                    : sprintf(__('Policy file: %s', 'rapls-pdf-image-creator'), $policyFile)
             );
         }
 
-        return $this->statusFor('pdf_unsupported');
+        if (preg_match('/no decode delegate|FailedToExecuteCommand|delegate/i', $probe['error'])) {
+            return $this->statusFor('pdf_unsupported', $probe['error']);
+        }
+
+        return $this->statusFor('error', $probe['error']);
+    }
+
+    /**
+     * Ask ImageMagick to actually read a PDF
+     *
+     * The only reliable test. Renders a blank 1-inch page held in memory --
+     * no temporary file of ours, no process started by us. ImageMagick calls
+     * its own PDF delegate internally, exactly as it does for a real upload.
+     *
+     * Cached: this is the one expensive check, and the admin notice runs on
+     * every page. The key carries the ImageMagick version so that a server
+     * upgrade re-tests instead of serving a stale answer.
+     *
+     * @return array{ok: bool, error: string}
+     */
+    private function probePdfRead(): array
+    {
+        // The version lives inside the value rather than in the key, so that
+        // uninstall.php has one fixed name to delete.
+        $version = $this->getVersionString();
+
+        $cached = get_transient(self::READ_PROBE_TRANSIENT);
+        if (is_array($cached) && isset($cached['ok'], $cached['error'], $cached['version'])
+            && $cached['version'] === $version) {
+            return ['ok' => (bool) $cached['ok'], 'error' => (string) $cached['error']];
+        }
+
+        $result = ['ok' => false, 'error' => ''];
+
+        try {
+            $imagick = new \Imagick();
+            $imagick->setResolution(72, 72);
+            $imagick->readImageBlob(self::minimalPdf(), 'rapls-pic-probe.pdf');
+            $imagick->clear();
+            $result['ok'] = true;
+        } catch (\Throwable $e) {
+            $result['error'] = $e->getMessage();
+        }
+
+        set_transient(
+            self::READ_PROBE_TRANSIENT,
+            $result + ['version' => $version],
+            12 * HOUR_IN_SECONDS
+        );
+
+        return $result;
+    }
+
+    /**
+     * The ImageMagick version string, or '' when it cannot be read
+     */
+    private function getVersionString(): string
+    {
+        try {
+            $version = \Imagick::getVersion();
+            return (string) ($version['versionString'] ?? '');
+        } catch (\Throwable $e) {
+            return '';
+        }
+    }
+
+    /**
+     * A minimal, structurally valid one-page PDF
+     *
+     * Built rather than bundled so there is no file to ship, and no question
+     * about the licence of a sample document. One empty 72x72pt page.
+     */
+    private static function minimalPdf(): string
+    {
+        $objects = [
+            '<< /Type /Catalog /Pages 2 0 R >>',
+            '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+            '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 72 72] /Resources << >> >>',
+        ];
+
+        $pdf = "%PDF-1.4\n";
+        $offsets = [];
+        foreach ($objects as $index => $body) {
+            $offsets[] = strlen($pdf);
+            $pdf .= ($index + 1) . " 0 obj\n" . $body . "\nendobj\n";
+        }
+
+        $startxref = strlen($pdf);
+        $pdf .= 'xref' . "\n" . '0 ' . (count($objects) + 1) . "\n";
+        $pdf .= "0000000000 65535 f \n";
+        foreach ($offsets as $offset) {
+            $pdf .= sprintf("%010d 00000 n \n", $offset);
+        }
+        $pdf .= "trailer\n<< /Size " . (count($objects) + 1) . " /Root 1 0 R >>\n";
+        $pdf .= 'startxref' . "\n" . $startxref . "\n" . '%%EOF' . "\n";
+
+        return $pdf;
     }
 
     /**
@@ -224,11 +330,12 @@ final class ImagickEngine implements EngineInterface
         $dirs = [];
 
         // Runtime overrides win over anything compiled in, and ImageMagick
-        // honours them ahead of its own configure path. Verified: with
-        // MAGICK_CONFIGURE_PATH pointing at a policy.xml that denies the PDF
-        // coder, queryFormats('PDF') comes back empty while
-        // getConfigureOptions() still reports the build directory -- so
-        // consulting only the latter would miss the file actually in force.
+        // honours them ahead of its own configure path. Verified on
+        // ImageMagick 7.1.1: with MAGICK_CONFIGURE_PATH pointing at a
+        // policy.xml that denies the PDF coder, reading a PDF throws
+        // NotAuthorized while getConfigureOptions() still reports the build
+        // directory -- so consulting only the latter finds no policy file and
+        // the plugin blames a missing delegate instead.
         $env = getenv('MAGICK_CONFIGURE_PATH');
         if (is_string($env) && '' !== $env) {
             $dirs = array_merge($dirs, explode(':', $env));
