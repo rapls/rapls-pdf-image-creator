@@ -74,6 +74,44 @@ final class Generator
     }
 
     /**
+     * Option recording why the last generation attempt had no engine
+     *
+     * Only ever holds a status code from getAvailabilityStatus(), so it is
+     * safe to display and cheap to read on an admin page.
+     */
+    public const UNAVAILABLE_OPTION = 'rapls_pic_engine_unavailable';
+
+    /**
+     * Explain whether thumbnails can be generated on this server, and why not
+     *
+     * @return array{code: string, label: string, summary: string, action: string, detail: string}
+     */
+    public function getAvailabilityStatus(): array
+    {
+        foreach ($this->engines as $engine) {
+            $status = $engine->getAvailabilityStatus();
+            if ('ok' === $status['code']) {
+                return $status;
+            }
+        }
+
+        // No engine said yes. Report the first one's reason; with a single
+        // engine that is the whole story, and with more it is still the most
+        // useful thing to show.
+        foreach ($this->engines as $engine) {
+            return $engine->getAvailabilityStatus();
+        }
+
+        return [
+            'code' => 'no_engine',
+            'label' => __('No conversion engine', 'rapls-pdf-image-creator'),
+            'summary' => __('No PDF conversion engine is registered.', 'rapls-pdf-image-creator'),
+            'action' => '',
+            'detail' => '',
+        ];
+    }
+
+    /**
      * Get available engine for conversion
      *
      * @return EngineInterface|null
@@ -221,6 +259,21 @@ final class Generator
         // Get available engine
         $engine = $this->getAvailableEngine();
         if (!$engine) {
+            // This used to return in silence, which is the worst way to fail:
+            // the thumbnail simply never appears and nothing anywhere says
+            // why. Leave a trace, and record it for the admin notice.
+            $status = $this->getAvailabilityStatus();
+
+            // Bulk Generate calls this in a loop; only write when the answer
+            // actually changed.
+            if (get_option(self::UNAVAILABLE_OPTION) !== $status['code']) {
+                update_option(self::UNAVAILABLE_OPTION, $status['code'], false);
+            }
+
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('Rapls PDF Image Creator: no conversion engine available (' . $status['code'] . ') - ' . $status['summary']);
+            }
+
             return null;
         }
 
@@ -378,6 +431,7 @@ final class Generator
         $capabilities = [
             'engines' => [],
             'available' => false,
+            'availability' => $this->getAvailabilityStatus(),
         ];
 
         foreach ($this->engines as $name => $engine) {

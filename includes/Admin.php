@@ -25,6 +25,15 @@ final class Admin
     private const COLOR_NOTICE_META = 'rapls_pic_color_notice_dismissed';
 
     /**
+     * User meta recording which "no engine" notice was dismissed
+     *
+     * Holds the status code, not a flag: dismissing "Imagick is not
+     * installed" should not also silence "policy.xml forbids PDFs" if the
+     * server later changes underneath them.
+     */
+    private const ENGINE_NOTICE_META = 'rapls_pic_engine_notice_dismissed';
+
+    /**
      * Settings manager
      */
     private Settings $settings;
@@ -54,6 +63,7 @@ final class Admin
         add_action('admin_menu', [$this, 'addMenuPage']);
         add_action('admin_init', [$this, 'registerSettings']);
         add_action('admin_init', [$this, 'maybeDismissColorNotice']);
+        add_action('admin_init', [$this, 'maybeDismissEngineNotice']);
         add_action('admin_enqueue_scripts', [$this, 'enqueueAssets']);
         add_action('admin_notices', [$this, 'showAdminNotices']);
     }
@@ -288,16 +298,122 @@ final class Admin
             echo '</div>';
         }
 
-        // Show warning if no engine available
+        $this->showEngineNotice();
+    }
+
+    /**
+     * Warn when the server cannot render PDFs at all
+     *
+     * The plugin can be activated on a server with no ImageMagick, and used
+     * to do so without a word: uploads produced no thumbnail and no message.
+     * So this speaks up on every admin screen right after activation, or once
+     * an upload has actually failed, and keeps speaking on the plugin's own
+     * screens. It also says *which* of the two server problems this is,
+     * because the fix differs.
+     */
+    private function showEngineNotice(): void
+    {
+        if (!current_user_can('manage_options')) {
+            return;
+        }
+
+        $status = $this->generator->getAvailabilityStatus();
+
+        if ('ok' === $status['code']) {
+            // The host fixed it. Forget everything we recorded about it, so a
+            // later failure starts from a clean slate.
+            delete_transient(RAPLS_PIC_ACTIVATION_NOTICE);
+            if (false !== get_option(Generator::UNAVAILABLE_OPTION, false)) {
+                delete_option(Generator::UNAVAILABLE_OPTION);
+            }
+            return;
+        }
+
         $screen = get_current_screen();
-        if ($screen && ($screen->id === 'settings_page_' . self::PAGE_SLUG || $screen->id === 'upload')) {
-            if (!$this->generator->getAvailableEngine()) {
-                echo '<div class="notice notice-error">';
-                echo '<p><strong>' . esc_html__('Rapls PDF Image Creator:', 'rapls-pdf-image-creator') . '</strong> ';
-                echo esc_html__('ImageMagick (Imagick PHP extension) with PDF support is required but not available. Please contact your hosting provider to enable it.', 'rapls-pdf-image-creator');
-                echo '</p></div>';
+        $onOwnScreen = $screen
+            && ('settings_page_' . self::PAGE_SLUG === $screen->id || 'upload' === $screen->id);
+
+        $justActivated = (bool) get_transient(RAPLS_PIC_ACTIVATION_NOTICE);
+        $uploadFailed = false !== get_option(Generator::UNAVAILABLE_OPTION, false);
+        $dismissed = get_user_meta(get_current_user_id(), self::ENGINE_NOTICE_META, true) === $status['code'];
+
+        if (!$onOwnScreen) {
+            if ($dismissed || (!$justActivated && !$uploadFailed)) {
+                return;
             }
         }
+
+        echo '<div class="notice notice-error">';
+        echo '<p><strong>' . esc_html__('Rapls PDF Image Creator:', 'rapls-pdf-image-creator') . ' ';
+        echo esc_html($status['label']) . '</strong></p>';
+
+        echo '<p>' . esc_html($status['summary']) . '</p>';
+
+        if ($uploadFailed) {
+            echo '<p>' . esc_html__('A PDF was uploaded and no thumbnail could be generated for this reason.', 'rapls-pdf-image-creator') . '</p>';
+        }
+
+        if ('' !== $status['action']) {
+            echo '<p><strong>' . esc_html__('What to do:', 'rapls-pdf-image-creator') . '</strong> ';
+            echo esc_html($status['action']) . '</p>';
+        }
+
+        if ('' !== $status['detail']) {
+            echo '<p><code>' . esc_html($status['detail']) . '</code></p>';
+        }
+
+        echo '<p>';
+        if (!$onOwnScreen) {
+            echo '<a class="button" href="' . esc_url(admin_url('options-general.php?page=' . self::PAGE_SLUG . '#tab-status')) . '">';
+            echo esc_html__('Plugin status', 'rapls-pdf-image-creator');
+            echo '</a> ';
+            echo '<a class="button" href="' . esc_url($this->getEngineNoticeDismissUrl($status['code'])) . '">';
+            echo esc_html__('Dismiss', 'rapls-pdf-image-creator');
+            echo '</a>';
+        }
+        echo '<a href="' . esc_url(admin_url('site-health.php')) . '">';
+        echo esc_html__('See Site Health for the full report', 'rapls-pdf-image-creator');
+        echo '</a>';
+        echo '</p>';
+
+        echo '</div>';
+    }
+
+    /**
+     * Handle dismissal of the "no engine" notice
+     */
+    public function maybeDismissEngineNotice(): void
+    {
+        if (!isset($_GET['rapls_pic_dismiss_engine_notice'])) {
+            return;
+        }
+
+        $nonce = isset($_GET['_wpnonce']) ? sanitize_text_field(wp_unslash($_GET['_wpnonce'])) : '';
+        if (!wp_verify_nonce($nonce, 'rapls_pic_dismiss_engine_notice')) {
+            return;
+        }
+
+        $code = sanitize_key(wp_unslash($_GET['rapls_pic_dismiss_engine_notice']));
+
+        update_user_meta(get_current_user_id(), self::ENGINE_NOTICE_META, $code);
+        delete_transient(RAPLS_PIC_ACTIVATION_NOTICE);
+    }
+
+    /**
+     * Build the dismissal URL for the "no engine" notice
+     *
+     * @param string $code Status code being dismissed.
+     */
+    private function getEngineNoticeDismissUrl(string $code): string
+    {
+        global $pagenow;
+
+        $base = admin_url(is_string($pagenow) && '' !== $pagenow ? $pagenow : 'index.php');
+
+        return wp_nonce_url(
+            add_query_arg('rapls_pic_dismiss_engine_notice', $code, $base),
+            'rapls_pic_dismiss_engine_notice'
+        );
     }
 
     /**

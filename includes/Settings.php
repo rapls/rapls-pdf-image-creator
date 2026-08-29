@@ -21,8 +21,11 @@ final class Settings
 
     /**
      * Default settings
+     *
+     * Public because the activation hook seeds the option from here. It used
+     * to keep its own copy of this list, which quietly went out of date.
      */
-    private const DEFAULTS = [
+    public const DEFAULTS = [
         'max_width' => 1024,
         'max_height' => 1024,
         'resolution' => 150,

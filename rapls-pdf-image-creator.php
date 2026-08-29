@@ -12,7 +12,7 @@
  * Plugin Name: Rapls PDF Image Creator – PDF Thumbnails & Featured Images
  * Plugin URI:  https://raplsworks.com/plugins/rapls-pdf-image-creator/
  * Description: The first page of each uploaded PDF becomes an image in every registered size, ready to use as a post cover or inside content. Needs ImageMagick.
- * Version:     1.2.1
+ * Version:     1.3.0
  * Author:      Rapls Works
  * Author URI:  https://raplsworks.com
  * Text Domain: rapls-pdf-image-creator
@@ -46,11 +46,15 @@ if (!defined('ABSPATH')) {
 }
 
 // Plugin constants
-define('RAPLS_PIC_VERSION', '1.2.1');
+define('RAPLS_PIC_VERSION', '1.3.0');
 define('RAPLS_PIC_PLUGIN_FILE', __FILE__);
 define('RAPLS_PIC_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('RAPLS_PIC_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RAPLS_PIC_PLUGIN_BASENAME', plugin_basename(__FILE__));
+
+// Transient set at activation when the server cannot render PDFs, so the
+// first admin page after activation can say so.
+define('RAPLS_PIC_ACTIVATION_NOTICE', 'rapls_pic_activation_notice');
 
 // Autoloader
 spl_autoload_register(function (string $class): void {
@@ -92,6 +96,7 @@ add_filter('override_load_textdomain', function ($override, $domain, $mofile) {
 // wp_get_l10n_php_file_data() to include() files that no longer exist.
 register_deactivation_hook(RAPLS_PIC_PLUGIN_FILE, function (): void {
     wp_cache_delete(md5(WP_LANG_DIR . '/plugins/'), 'translation_files');
+    delete_transient(RAPLS_PIC_ACTIVATION_NOTICE);
 });
 
 // Load plugin
@@ -124,25 +129,28 @@ register_activation_hook(__FILE__, function (): void {
         );
     }
 
-    // Set default options
-    $defaults = [
-        'max_width' => 1024,
-        'max_height' => 1024,
-        'quality' => 90,
-        'format' => 'jpeg',
-        'bgcolor' => 'white',
-        'page' => 0,
-        'auto_generate' => true,
-        'set_featured' => true,
-    ];
-
-    if (!get_option('rapls_pic_settings')) {
-        add_option('rapls_pic_settings', $defaults);
+    // Set default options. Taken from Settings so the two cannot drift.
+    if (!get_option(\Rapls\PDFImageCreator\Settings::OPTION_NAME)) {
+        add_option(\Rapls\PDFImageCreator\Settings::OPTION_NAME, \Rapls\PDFImageCreator\Settings::DEFAULTS);
     }
 
     // Stamping the version here is what lets Plugin::maybeUpgrade() tell a
     // fresh install apart from an upgrade that predates the option.
     update_option('rapls_pic_version', RAPLS_PIC_VERSION, false);
+
+    // Activating on a server without ImageMagick used to succeed in complete
+    // silence: uploads produced no thumbnail and nothing said why. Record the
+    // reason now so the next admin page can say it out loud.
+    delete_transient(RAPLS_PIC_ACTIVATION_NOTICE);
+    try {
+        $rapls_pic_status = (new \Rapls\PDFImageCreator\Engine\ImagickEngine())->getAvailabilityStatus();
+        if ('ok' !== $rapls_pic_status['code']) {
+            set_transient(RAPLS_PIC_ACTIVATION_NOTICE, $rapls_pic_status['code'], WEEK_IN_SECONDS);
+        }
+    } catch (\Throwable $e) {
+        // A broken Imagick build must never break activation.
+        set_transient(RAPLS_PIC_ACTIVATION_NOTICE, 'error', WEEK_IN_SECONDS);
+    }
 });
 
 /**

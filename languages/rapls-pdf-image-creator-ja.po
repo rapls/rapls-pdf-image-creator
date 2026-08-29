@@ -4,7 +4,7 @@
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: Rapls PDF Image Creator 1.2.1\n"
+"Project-Id-Version: Rapls PDF Image Creator 1.3.0\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2024-01-01 00:00+0000\n"
 "PO-Revision-Date: 2024-01-01 00:00+0000\n"
@@ -18,7 +18,7 @@ msgstr ""
 
 #: rapls-pdf-image-creator.php
 msgid "Rapls PDF Image Creator requires PHP 7.4 or higher."
-msgstr "Rapls PDF Image Creator を使用するには PHP 7.4 以上が必要です。"
+msgstr "Rapls PDF Image Creator を使用するには PHP 7.4以上が必要です。"
 
 #: admin/views/settings-page.php
 msgid "Rapls PDF Image Creator"
@@ -276,10 +276,6 @@ msgstr "PDF サムネイルが正常に生成されました。"
 msgid "Failed to generate PDF thumbnail."
 msgstr "PDF サムネイルの生成に失敗しました。"
 
-#: includes/Admin.php
-msgid "ImageMagick (Imagick PHP extension) with PDF support is required but not available. Please contact your hosting provider to enable it."
-msgstr "ImageMagick (Imagick PHP 拡張) と PDF サポートが必要ですが、利用できません。ホスティングプロバイダーに有効化を依頼してください。"
-
 #: includes/BulkProcessor.php
 msgid "Permission denied."
 msgstr "権限がありません。"
@@ -365,21 +361,9 @@ msgstr "出力先ディレクトリを作成できませんでした。"
 msgid "Imagick error: %s"
 msgstr "Imagick エラー: %s"
 
-#: includes/Engine/ImagickEngine.php
-msgid "Not available (PDF delegate may be missing)"
-msgstr "利用不可 (PDF デリゲートがない可能性があります)"
-
 #: admin/views/settings-page.php
 msgid "This plugin requires ImageMagick (Imagick PHP extension) with PDF support to generate thumbnails."
 msgstr "このプラグインはサムネイル生成に ImageMagick (Imagick PHP 拡張) と PDF サポートが必要です。"
-
-#: admin/views/settings-page.php
-msgid "ImageMagick is not available."
-msgstr "ImageMagick が利用できません。"
-
-#: admin/views/settings-page.php
-msgid "Please contact your hosting provider to enable the Imagick PHP extension with PDF support."
-msgstr "ホスティングプロバイダーに Imagick PHP 拡張と PDF サポートの有効化を依頼してください。"
 
 #: admin/views/settings-page.php
 msgid "Requirement"
@@ -610,3 +594,149 @@ msgstr "ImageMagick をバージョン 7 に更新する。"
 #. translators: 1: delegates.xml, 2: ps:cmyk, 3: bmpsep8, 4: pamcmyk32
 msgid "In %1$s, change the %2$s delegate from %3$s to %4$s."
 msgstr "%1$s の %2$s デリゲートを %3$s から %4$s に変更する。"
+
+#: includes/Engine/ImagickEngine.php
+msgid "Imagick extension not installed"
+msgstr "Imagick 拡張が未インストール"
+
+#: includes/Engine/ImagickEngine.php
+msgid "The Imagick PHP extension is not loaded, so no PDF can be rendered."
+msgstr "Imagick PHP 拡張が読み込まれていないため、PDF を描画できません。"
+
+#: includes/Engine/ImagickEngine.php
+msgid "Ask your hosting provider to install and enable the Imagick PHP extension (the ImageMagick binding for PHP)."
+msgstr "Imagick PHP 拡張 (ImageMagick の PHP バインディング) をインストールして有効にするよう、ホスティング事業者に依頼してください。"
+
+#: includes/Engine/ImagickEngine.php
+msgid "PDF blocked by ImageMagick policy"
+msgstr "ImageMagick のポリシーで PDF が禁止されています"
+
+#: includes/Engine/ImagickEngine.php
+msgid "ImageMagick is installed, but its security policy forbids reading PDF files. This is a server setting, not a missing component."
+msgstr "ImageMagick はインストールされていますが、セキュリティポリシーが PDF ファイルの読み込みを禁止しています。これはサーバーの設定であり、何かが足りないわけではありません。"
+
+#: includes/Engine/ImagickEngine.php
+msgid "Ask your hosting provider to allow the PDF coder in policy.xml. The rule currently denies it, and it needs read rights."
+msgstr "policy.xml で PDF コーダーを許可するよう、ホスティング事業者に依頼してください。現在は拒否する設定になっており、読み取り権限が必要です。"
+
+#: includes/Engine/ImagickEngine.php
+msgid "PDF support missing"
+msgstr "PDF に対応していません"
+
+#: includes/Engine/ImagickEngine.php
+msgid "ImageMagick is installed, but it reports no PDF support. Usually the PDF delegate is absent from the build; a security policy elsewhere on the server can also cause this."
+msgstr "ImageMagick はインストールされていますが、PDF に対応していないと報告しています。多くはビルドに PDF デリゲートが含まれていない場合です。サーバー上の別のセキュリティポリシーが原因のこともあります。"
+
+#: includes/Engine/ImagickEngine.php
+msgid "Ask your hosting provider to enable PDF support in ImageMagick, and to confirm that policy.xml does not deny the PDF coder."
+msgstr "ImageMagick で PDF を扱えるようにし、policy.xml が PDF コーダーを拒否していないか確認するよう、ホスティング事業者に依頼してください。"
+
+#: includes/Engine/ImagickEngine.php
+msgid "ImageMagick could not be asked which formats it supports."
+msgstr "ImageMagick に対応形式を問い合わせられませんでした。"
+
+#: includes/Engine/ImagickEngine.php
+msgid "Ask your hosting provider to check the ImageMagick installation."
+msgstr "ImageMagick のインストール状態を確認するよう、ホスティング事業者に依頼してください。"
+
+#: includes/Engine/ImagickEngine.php
+msgid "ImageMagick is installed and PDF rendering is permitted."
+msgstr "ImageMagick がインストールされており、PDF の描画も許可されています。"
+
+#: includes/Engine/ImagickEngine.php
+msgid "Unable to check"
+msgstr "確認できません"
+
+#. translators: %s: absolute path to the policy.xml file
+#: includes/Engine/ImagickEngine.php
+msgid "Policy file: %s"
+msgstr "ポリシーファイル: %s"
+
+#: includes/Generator.php
+msgid "No conversion engine"
+msgstr "変換エンジンがありません"
+
+#: includes/Generator.php
+msgid "No PDF conversion engine is registered."
+msgstr "PDF 変換エンジンが登録されていません。"
+
+#: includes/Admin.php
+msgid "A PDF was uploaded and no thumbnail could be generated for this reason."
+msgstr "PDF がアップロードされましたが、この理由でサムネイルを生成できませんでした。"
+
+#: includes/Admin.php
+msgid "What to do:"
+msgstr "対処方法:"
+
+#: includes/Admin.php
+msgid "Plugin status"
+msgstr "プラグインのステータス"
+
+#: includes/Admin.php
+msgid "See Site Health for the full report"
+msgstr "詳しい状況はサイトヘルスで確認できます"
+
+#: includes/SiteHealth.php
+msgid "PDF thumbnail generation"
+msgstr "PDF サムネイルの生成"
+
+#: includes/SiteHealth.php
+msgid "PDF thumbnails can be generated"
+msgstr "PDF サムネイルを生成できます"
+
+#: includes/SiteHealth.php
+msgid "PDF thumbnails cannot be generated"
+msgstr "PDF サムネイルを生成できません"
+
+#: includes/SiteHealth.php
+msgid "Media"
+msgstr "メディア"
+
+#: includes/SiteHealth.php
+msgid "Rapls PDF Image Creator can render PDF files, so thumbnails are generated when a PDF is uploaded."
+msgstr "Rapls PDF Image Creator は PDF ファイルを描画できます。PDF をアップロードすると、サムネイルが生成されます。"
+
+#: includes/SiteHealth.php
+msgid "Open the plugin status page"
+msgstr "プラグインのステータス画面を開く"
+
+#: includes/SiteHealth.php
+msgid "Plugin version"
+msgstr "プラグインのバージョン"
+
+#: includes/SiteHealth.php
+msgid "PDF rendering"
+msgstr "PDF の描画"
+
+#: includes/SiteHealth.php
+msgid "PDF rendering detail"
+msgstr "PDF の描画 (詳細)"
+
+#. translators: %d: resolution in dots per inch
+#: includes/SiteHealth.php
+msgid "%d DPI"
+msgstr "%d DPI"
+
+#: includes/SiteHealth.php
+msgid "Maximum dimensions"
+msgstr "最大サイズ"
+
+#: includes/SiteHealth.php
+msgid "Output format"
+msgstr "出力形式"
+
+#: includes/SiteHealth.php
+msgid "Generate on upload"
+msgstr "アップロード時に生成"
+
+#: includes/SiteHealth.php
+msgid "Enabled"
+msgstr "有効"
+
+#: includes/SiteHealth.php
+msgid "Disabled"
+msgstr "無効"
+
+#: includes/SiteHealth.php
+msgid "Server requirements and settings for PDF thumbnail generation."
+msgstr "PDF サムネイル生成に関するサーバー要件と設定。"

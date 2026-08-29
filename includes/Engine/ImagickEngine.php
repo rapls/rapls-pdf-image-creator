@@ -77,6 +77,294 @@ final class ImagickEngine implements EngineInterface
     }
 
     /**
+     * Transient caching the policy.xml lookup
+     */
+    private const POLICY_TRANSIENT = 'rapls_pic_pdf_policy';
+
+    /**
+     * {@inheritdoc}
+     *
+     * Nothing here may throw: this runs on every admin page load through the
+     * notice, and on the Site Health screen.
+     */
+    public function getAvailabilityStatus(): array
+    {
+        if (!extension_loaded('imagick') || !class_exists('\Imagick')) {
+            return $this->statusFor('no_extension');
+        }
+
+        try {
+            $formats = \Imagick::queryFormats('PDF');
+        } catch (\Exception $e) {
+            return $this->statusFor('error', $e->getMessage());
+        }
+
+        if (!empty($formats)) {
+            return $this->statusFor('ok');
+        }
+
+        // ImageMagick is here but will not touch a PDF. Two different server
+        // problems land on the same empty result, and they need different
+        // requests to the host, so try to tell them apart.
+        $policyFile = $this->findPdfPolicyBlock();
+
+        if (null !== $policyFile) {
+            return $this->statusFor(
+                'pdf_blocked_by_policy',
+                /* translators: %s: absolute path to the policy.xml file */
+                sprintf(__('Policy file: %s', 'rapls-pdf-image-creator'), $policyFile)
+            );
+        }
+
+        return $this->statusFor('pdf_unsupported');
+    }
+
+    /**
+     * Build the status array for one code
+     *
+     * Every branch of getAvailabilityStatus() comes through here, so the
+     * shape cannot drift between them and the wording stays in one place.
+     *
+     * @param string $code   One of ok, no_extension, pdf_blocked_by_policy,
+     *                       pdf_unsupported, error.
+     * @param string $detail Extra machine-ish detail, already translated.
+     * @return array{code: string, label: string, summary: string, action: string, detail: string}
+     */
+    private function statusFor(string $code, string $detail = ''): array
+    {
+        switch ($code) {
+            case 'ok':
+                $label = __('Ready', 'rapls-pdf-image-creator');
+                $summary = __('ImageMagick is installed and PDF rendering is permitted.', 'rapls-pdf-image-creator');
+                $action = '';
+                break;
+
+            case 'no_extension':
+                $label = __('Imagick extension not installed', 'rapls-pdf-image-creator');
+                $summary = __('The Imagick PHP extension is not loaded, so no PDF can be rendered.', 'rapls-pdf-image-creator');
+                $action = __('Ask your hosting provider to install and enable the Imagick PHP extension (the ImageMagick binding for PHP).', 'rapls-pdf-image-creator');
+                break;
+
+            case 'pdf_blocked_by_policy':
+                $label = __('PDF blocked by ImageMagick policy', 'rapls-pdf-image-creator');
+                $summary = __('ImageMagick is installed, but its security policy forbids reading PDF files. This is a server setting, not a missing component.', 'rapls-pdf-image-creator');
+                $action = __('Ask your hosting provider to allow the PDF coder in policy.xml. The rule currently denies it, and it needs read rights.', 'rapls-pdf-image-creator');
+                break;
+
+            case 'pdf_unsupported':
+                $label = __('PDF support missing', 'rapls-pdf-image-creator');
+                $summary = __('ImageMagick is installed, but it reports no PDF support. Usually the PDF delegate is absent from the build; a security policy elsewhere on the server can also cause this.', 'rapls-pdf-image-creator');
+                $action = __('Ask your hosting provider to enable PDF support in ImageMagick, and to confirm that policy.xml does not deny the PDF coder.', 'rapls-pdf-image-creator');
+                break;
+
+            default:
+                $code = 'error';
+                $label = __('Unable to check', 'rapls-pdf-image-creator');
+                $summary = __('ImageMagick could not be asked which formats it supports.', 'rapls-pdf-image-creator');
+                $action = __('Ask your hosting provider to check the ImageMagick installation.', 'rapls-pdf-image-creator');
+                break;
+        }
+
+        return [
+            'code' => $code,
+            'label' => $label,
+            'summary' => $summary,
+            'action' => $action,
+            'detail' => $detail,
+        ];
+    }
+
+    /**
+     * Find a policy.xml that denies the PDF coder
+     *
+     * Read-only, and deliberately so: the plugin may not run a process, so
+     * `identify -list policy` is not an option. Parsing the file ourselves is
+     * the only way to separate "policy says no" from "delegate is missing",
+     * and that distinction changes what the site owner has to ask for.
+     *
+     * @return string|null Path of the offending file, or null if none found.
+     */
+    private function findPdfPolicyBlock(): ?string
+    {
+        $cached = get_transient(self::POLICY_TRANSIENT);
+        if (is_array($cached) && array_key_exists('file', $cached)) {
+            return is_string($cached['file']) ? $cached['file'] : null;
+        }
+
+        $found = null;
+
+        foreach ($this->getPolicyFileCandidates() as $file) {
+            if (!is_readable($file)) {
+                continue;
+            }
+
+            $contents = @file_get_contents($file);
+            if (false === $contents || '' === $contents) {
+                continue;
+            }
+
+            if ($this->policyDeniesPdf($contents)) {
+                $found = $file;
+                break;
+            }
+        }
+
+        set_transient(self::POLICY_TRANSIENT, ['file' => $found], DAY_IN_SECONDS);
+
+        return $found;
+    }
+
+    /**
+     * Candidate policy.xml paths, most authoritative first
+     *
+     * @return array<int, string>
+     */
+    private function getPolicyFileCandidates(): array
+    {
+        $dirs = [];
+
+        // Runtime overrides win over anything compiled in, and ImageMagick
+        // honours them ahead of its own configure path. Verified: with
+        // MAGICK_CONFIGURE_PATH pointing at a policy.xml that denies the PDF
+        // coder, queryFormats('PDF') comes back empty while
+        // getConfigureOptions() still reports the build directory -- so
+        // consulting only the latter would miss the file actually in force.
+        $env = getenv('MAGICK_CONFIGURE_PATH');
+        if (is_string($env) && '' !== $env) {
+            $dirs = array_merge($dirs, explode(':', $env));
+        }
+
+        $home = getenv('MAGICK_HOME');
+        if (is_string($home) && '' !== $home) {
+            $dirs[] = rtrim($home, '/') . '/etc/ImageMagick-7';
+            $dirs[] = rtrim($home, '/') . '/etc/ImageMagick-6';
+            $dirs[] = rtrim($home, '/') . '/config-Q16';
+        }
+
+        // ImageMagick tells us where it looks, when the build supports it.
+        if (method_exists('\Imagick', 'getConfigureOptions')) {
+            try {
+                $options = \Imagick::getConfigureOptions('CONFIGURE_PATH');
+                if (is_array($options)) {
+                    foreach ($options as $value) {
+                        if (is_string($value) && '' !== $value) {
+                            $dirs = array_merge($dirs, explode(':', $value));
+                        }
+                    }
+                }
+            } catch (\Exception $e) {
+                // Older builds throw rather than return an empty set.
+                $dirs = [];
+            }
+        }
+
+        // The usual distribution locations, for builds that report nothing.
+        $dirs = array_merge($dirs, [
+            '/etc/ImageMagick-7',
+            '/etc/ImageMagick-6',
+            '/etc/ImageMagick',
+            '/usr/local/etc/ImageMagick-7',
+            '/usr/local/etc/ImageMagick-6',
+            '/opt/homebrew/etc/ImageMagick-7',
+        ]);
+
+        $files = [];
+        foreach ($dirs as $dir) {
+            $dir = rtrim(trim((string) $dir), '/');
+            if ('' === $dir) {
+                continue;
+            }
+            $files[] = $dir . '/policy.xml';
+        }
+
+        /**
+         * Filter the policy.xml paths searched
+         *
+         * Builds in unusual locations, and the test suite, need to point this
+         * somewhere else.
+         *
+         * @param array<int, string> $files Candidate paths, most authoritative first.
+         */
+        $files = apply_filters('rapls_pdf_image_creator_policy_paths', array_values(array_unique($files)));
+
+        return is_array($files) ? array_values(array_filter($files, 'is_string')) : [];
+    }
+
+    /**
+     * Does this policy.xml text deny reading PDFs?
+     *
+     * Matched with a regex rather than an XML parser: the file is small, the
+     * shape is fixed, and a malformed policy.xml must not turn into a fatal.
+     *
+     * @param string $xml Raw file contents.
+     */
+    private function policyDeniesPdf(string $xml): bool
+    {
+        if (!preg_match_all('/<policy\b[^>]*>/i', $xml, $matches)) {
+            return false;
+        }
+
+        foreach ($matches[0] as $tag) {
+            if (!preg_match('/\bdomain\s*=\s*"([^"]*)"/i', $tag, $domain)) {
+                continue;
+            }
+            if ('coder' !== strtolower(trim($domain[1]))) {
+                continue;
+            }
+
+            if (!preg_match('/\brights\s*=\s*"([^"]*)"/i', $tag, $rights)) {
+                continue;
+            }
+            $granted = strtolower(trim($rights[1]));
+            if ('none' !== $granted && false !== strpos($granted, 'read')) {
+                continue;
+            }
+
+            if (!preg_match('/\bpattern\s*=\s*"([^"]*)"/i', $tag, $pattern)) {
+                continue;
+            }
+
+            if ($this->patternCoversPdf(trim($pattern[1]))) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Does a policy pattern cover the PDF coder?
+     *
+     * Patterns seen in the wild: PDF, PDF*, {PS,PS2,PS3,EPS,PDF,XPS}, *.
+     *
+     * @param string $pattern Raw pattern attribute.
+     */
+    private function patternCoversPdf(string $pattern): bool
+    {
+        if ('' === $pattern) {
+            return false;
+        }
+
+        if ('*' === $pattern) {
+            return true;
+        }
+
+        $items = [$pattern];
+        if ('{' === $pattern[0] && '}' === substr($pattern, -1)) {
+            $items = explode(',', substr($pattern, 1, -1));
+        }
+
+        foreach ($items as $item) {
+            $item = strtoupper(trim($item));
+            if ('PDF' === $item || 'PDF*' === $item) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * {@inheritdoc}
      */
     public function getRequirements(): array
@@ -100,13 +388,17 @@ final class ImagickEngine implements EngineInterface
                     'message' => $version['versionString'] ?? __('Unknown', 'rapls-pdf-image-creator'),
                 ];
 
-                $formats = \Imagick::queryFormats('PDF');
+                // Report the reason, not just the bool: "policy forbids it"
+                // and "the build has no PDF delegate" send the site owner to
+                // their host with different requests.
+                $availability = $this->getAvailabilityStatus();
                 $requirements['pdf_support'] = [
                     'name' => 'PDF Support',
-                    'status' => !empty($formats),
-                    'message' => !empty($formats)
+                    'status' => 'ok' === $availability['code'],
+                    'message' => 'ok' === $availability['code']
                         ? __('Available', 'rapls-pdf-image-creator')
-                        : __('Not available (PDF delegate may be missing)', 'rapls-pdf-image-creator'),
+                        : $availability['label'],
+                    'detail' => trim($availability['summary'] . ' ' . $availability['detail']),
                 ];
 
                 $requirements['color_management'] = $this->getColorManagementStatus();

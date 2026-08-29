@@ -441,11 +441,30 @@ if (!defined('ABSPATH')) {
         $rapls_pic_is_available = $rapls_pic_imagick_engine && $rapls_pic_imagick_engine['available'];
         ?>
 
-        <?php if (!$rapls_pic_is_available) : ?>
+        <?php
+        // Say which of the two server problems this is. "Not installed" and
+        // "installed but forbidden to read PDFs" need different requests to
+        // the hosting provider, and the site owner cannot tell them apart.
+        $rapls_pic_availability = $capabilities['availability'] ?? null;
+        ?>
+
+        <?php if (!$rapls_pic_is_available && $rapls_pic_availability) : ?>
         <div class="notice notice-error inline">
+            <p><strong><?php echo esc_html($rapls_pic_availability['label']); ?></strong></p>
+            <p><?php echo esc_html($rapls_pic_availability['summary']); ?></p>
+            <?php if ('' !== $rapls_pic_availability['action']) : ?>
             <p>
-                <strong><?php esc_html_e('ImageMagick is not available.', 'rapls-pdf-image-creator'); ?></strong>
-                <?php esc_html_e('Please contact your hosting provider to enable the Imagick PHP extension with PDF support.', 'rapls-pdf-image-creator'); ?>
+                <strong><?php esc_html_e('What to do:', 'rapls-pdf-image-creator'); ?></strong>
+                <?php echo esc_html($rapls_pic_availability['action']); ?>
+            </p>
+            <?php endif; ?>
+            <?php if ('' !== $rapls_pic_availability['detail']) : ?>
+            <p><code><?php echo esc_html($rapls_pic_availability['detail']); ?></code></p>
+            <?php endif; ?>
+            <p>
+                <a href="<?php echo esc_url(admin_url('site-health.php')); ?>">
+                    <?php esc_html_e('See Site Health for the full report', 'rapls-pdf-image-creator'); ?>
+                </a>
             </p>
         </div>
         <?php endif; ?>

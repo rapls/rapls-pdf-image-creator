@@ -64,8 +64,13 @@ delete_option('rapls_pic_settings');
 delete_option('rapls_pic_version');
 delete_option('rapls_pic_color_notice');
 delete_option('rapls_pic_color_diagnostics');
+delete_option('rapls_pic_engine_unavailable');
 
-// Cached ICC profile locations and the per-user notice dismissal flag
+// Cached ICC profile locations, the cached policy.xml lookup, the activation
+// warning, and the per-user notice dismissal flags
 delete_transient('rapls_pic_icc_path_srgb');
 delete_transient('rapls_pic_icc_path_cmyk');
+delete_transient('rapls_pic_pdf_policy');
+delete_transient('rapls_pic_activation_notice');
 delete_metadata('user', 0, 'rapls_pic_color_notice_dismissed', '', true);
+delete_metadata('user', 0, 'rapls_pic_engine_notice_dismissed', '', true);

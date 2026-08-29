@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.1
-Stable tag: 1.2.1
+Stable tag: 1.3.0
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -139,6 +139,17 @@ Those two settings only scale the rendered page *down*. They never enlarge it. T
 
 Raise Rendering Resolution (Settings > Rapls PDF Image Creator > Image Settings) and the rendered page grows with it; the maximum dimensions then cap the result as before. Bear in mind that memory use during generation grows with the square of the resolution, so raise it in steps if your server is small.
 
+= I uploaded a PDF and no thumbnail appeared. How do I find out why? =
+
+Go to Tools > Site Health. The "PDF thumbnail generation" test says whether this server can render PDFs, and if not, what to ask your hosting provider for. The same report is on the Status tab of the plugin's settings page, and Site Health > Info has a Rapls PDF Image Creator section you can copy into a support request.
+
+There are two different server problems, and they need different requests:
+
+* **The Imagick PHP extension is not installed.** Ask your host to install and enable it. It is the PHP binding for ImageMagick.
+* **ImageMagick is installed but its security policy forbids reading PDFs.** Many hosts ship a `policy.xml` that denies the PDF coder, a precaution left over from a 2018 Ghostscript vulnerability. Ask your host to give the PDF coder read rights. The plugin shows the path of the file responsible.
+
+The plugin tells these apart for you, so you do not have to guess which request to make.
+
 = What image formats are supported? =
 
 JPEG, PNG, and WebP. Configure your preferred format in the Image Settings tab.
@@ -218,6 +229,7 @@ foreach ( $pdfs as $pdf ) {
 * `rapls_pdf_image_creator_thumbnail_image_attributes` - Image tag attributes
 * `rapls_pdf_image_creator_custom_insert_html` - Custom insert HTML
 * `rapls_pdf_image_creator_hide_thumbnails_in_library` - Hide in Media Library
+* `rapls_pdf_image_creator_policy_paths` - ImageMagick policy.xml paths to search when diagnosing blocked PDF support
 
 = Color Conversion Filters =
 
@@ -244,6 +256,15 @@ add_filter( 'rapls_pdf_image_creator_icc_paths', function( $paths, $type ) {
 * `rapls_pdf_image_creator_generation_failed` - When generation fails
 
 == Changelog ==
+= 1.3.0 =
+* Added: a "PDF thumbnail generation" test in Tools > Site Health, plus a Rapls PDF Image Creator section under Site Health > Info. This is where people look first when something does not work, and where support requests get copied from
+* Added: activating the plugin on a server that cannot render PDFs now says so on the next admin screen. Previously activation succeeded in silence, uploads produced no thumbnail, and nothing anywhere explained why
+* Added: a PDF upload that fails because no engine is available is now recorded and reported, instead of failing silently
+* Changed: "ImageMagick is not available" is now two distinct messages. A missing Imagick extension and an ImageMagick security policy that forbids reading PDFs are different server problems needing different requests to a hosting provider, and the plugin now names which one it is — including the path of the policy.xml responsible
+* Changed: the Status tab, the admin notice and Site Health all explain what to ask the host for, rather than only reporting a failure
+* Fixed: the activation routine kept its own copy of the default settings, which had gone out of date and did not include the rendering resolution added in 1.2.0
+* Added: filter `rapls_pdf_image_creator_policy_paths`, for builds that keep policy.xml somewhere unusual
+
 = 1.2.1 =
 * Fixed: twelve strings in the admin screens were shown in English under a translated locale. The bundled Japanese translation had drifted from the code — it still carried fourteen entries for a Status tab that no longer exists, and had none for the strings that replaced them, for the Bulk Generate error messages, or for the review link
 * No functional change; translation files only
@@ -365,6 +386,9 @@ add_filter( 'rapls_pdf_image_creator_icc_paths', function( $paths, $type ) {
 * Japanese translation included
 
 == Upgrade Notice ==
+
+= 1.3.0 =
+Diagnostics. Site Health now reports whether PDF thumbnails can be generated, activation warns when the server cannot render PDFs, and a missing ImageMagick is told apart from an ImageMagick that is forbidden to read PDFs. No change to how thumbnails are produced.
 
 = 1.2.1 =
 Translation fix: twelve admin strings that were stuck in English under a translated locale now display correctly. No functional change.

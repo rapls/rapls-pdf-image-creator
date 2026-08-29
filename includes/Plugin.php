@@ -65,6 +65,11 @@ final class Plugin
     private BulkProcessor $bulkProcessor;
 
     /**
+     * Site Health integration
+     */
+    private ?SiteHealth $siteHealth = null;
+
+    /**
      * Get plugin instance
      */
     public static function getInstance(): self
@@ -105,6 +110,9 @@ final class Plugin
         if (is_admin()) {
             $this->admin = new Admin($this->settings, $this->generator);
             $this->admin->init();
+
+            $this->siteHealth = new SiteHealth($this->settings, $this->generator);
+            $this->siteHealth->init();
         }
 
         // Register shortcodes
