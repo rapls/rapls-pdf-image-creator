@@ -398,7 +398,11 @@ final class ImagickEngine implements EngineInterface
                     'message' => 'ok' === $availability['code']
                         ? __('Available', 'rapls-pdf-image-creator')
                         : $availability['label'],
-                    'detail' => trim($availability['summary'] . ' ' . $availability['detail']),
+                    // When it works, "Available" is the whole story; repeating
+                    // the summary next to it is just noise in the table.
+                    'detail' => 'ok' === $availability['code']
+                        ? ''
+                        : trim($availability['summary'] . ' ' . $availability['detail']),
                 ];
 
                 $requirements['color_management'] = $this->getColorManagementStatus();

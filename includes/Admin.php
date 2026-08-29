@@ -369,7 +369,7 @@ final class Admin
             echo '</a> ';
             echo '<a class="button" href="' . esc_url($this->getEngineNoticeDismissUrl($status['code'])) . '">';
             echo esc_html__('Dismiss', 'rapls-pdf-image-creator');
-            echo '</a>';
+            echo '</a> ';
         }
         echo '<a href="' . esc_url(admin_url('site-health.php')) . '">';
         echo esc_html__('See Site Health for the full report', 'rapls-pdf-image-creator');
