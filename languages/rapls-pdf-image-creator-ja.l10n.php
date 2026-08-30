@@ -63,7 +63,7 @@ return array (
     'Generate on upload' => 'アップロード時に生成',
     'Generate thumbnails for existing PDF files in your Media Library.' => 'メディアライブラリ内の既存 PDF ファイルのサムネイルを生成します。',
     'Generated:' => '生成済み:',
-    'Generating thumbnail %1$d of %2$d...' => 'サムネイル生成中 %1$d / %2$d...',
+    'Generating thumbnail %1$d of %2$d...' => 'サムネイル生成中%1$d / %2$d...',
     'Hide Generated Images' => '生成された画像を非表示',
     'Hide generated thumbnail images in the Media Library' => 'メディアライブラリで生成されたサムネイル画像を非表示にする',
     'If checked, generated image files will be handled as ordinary image files after plugin removal.' => 'チェックすると、プラグイン削除後も生成された画像ファイルは通常の画像ファイルとして扱われます。',
