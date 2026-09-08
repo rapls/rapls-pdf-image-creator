@@ -107,6 +107,20 @@
 
                         if (response.data.note) {
                             $('#rapls-pic-bulk-note').text(response.data.note);
+
+                            if (response.data.retry) {
+                                $('<button>')
+                                    .attr('type', 'button')
+                                    .addClass('button button-secondary')
+                                    .css('margin-left', '8px')
+                                    .text(response.data.retry_label)
+                                    .on('click', function() {
+                                        $('#rapls-pic-include-existing').prop('checked', true);
+                                        self.scan();
+                                    })
+                                    .appendTo('#rapls-pic-bulk-note');
+                            }
+
                             $('#rapls-pic-bulk-note-row').show();
                         } else {
                             $('#rapls-pic-bulk-note-row').hide();

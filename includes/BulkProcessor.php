@@ -74,6 +74,9 @@ final class BulkProcessor
             $rows = $this->countPdfRows();
             $note = '';
 
+            // Whether the screen can turn this dead end into an action.
+            $retry = false;
+
             if (0 === count($pdfs)) {
                 if (0 === $rows['total']) {
                     $note = __('There are no PDF files in the Media Library. Uploading a PDF over FTP or SSH does not add it — it has to go through Media > Add New.', 'rapls-pdf-image-creator');
@@ -86,6 +89,7 @@ final class BulkProcessor
                         $rows['statuses']
                     );
                 } elseif (!$includeExisting) {
+                    $retry = true;
                     $note = sprintf(
                         /* translators: %d: number of PDFs that already have a thumbnail */
                         _n(
@@ -105,6 +109,14 @@ final class BulkProcessor
                 'rows' => $rows['total'],
                 'statuses' => $rows['statuses'],
                 'note' => $note,
+                // Telling someone to go and tick a box above is a poor answer
+                // when the screen could just do it. The box also resets on
+                // every page load, so "tick it and scan again" is easy to have
+                // already done and easy to lose.
+                'retry' => $retry,
+                'retry_label' => $retry
+                    ? __('Scan again, including these', 'rapls-pdf-image-creator')
+                    : '',
                 'pdfs' => $pdfs,
             ]);
         } catch (\Throwable $e) {
