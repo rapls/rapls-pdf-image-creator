@@ -90,7 +90,7 @@ function rapls_diag_list_pdfs(string $base, int $limit = 25): array
  * With no such file the browser route stays closed and the command line still
  * works, which is the safe default for a file that prints server paths.
  */
-const TOKEN = 'Pai314159';
+const TOKEN = 'CHANGE-ME';
 
 /**
  * The token in force: the sibling file if there is one, otherwise the constant.
