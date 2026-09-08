@@ -8,3 +8,4 @@ doc/
 docs/
 *.token
 tools/*.token
+/tools/

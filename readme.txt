@@ -281,6 +281,8 @@ present and are never redistributed.
 
 == Changelog ==
 = 1.4.0 =
+* Fixed: Bulk Generate reported "PDFs found: 0" without saying why. Three different situations produced the same number — an empty Media Library, every PDF already done, and something actually wrong — and only one of them is a problem. It now says which
+* Fixed: the filter that hides generated images from the Media Library was also being applied to Bulk Generate's own scan. The plugin was arguing with itself, and the argument was invisible from the screen where it showed up
 * Fixed: PDFs that came out as a blank white thumbnail on some servers now generate correctly. Asking ImageMagick for one page of a PDF ("file.pdf[0]") makes it pass -dFirstPage and -dLastPage to Ghostscript, and on ImageMagick 6.9.13 with a file carrying a transparency group that returns a raster of exactly the right size with nothing in it — while reading the same file without asking for a page returns the page. The plugin now checks whether the page it got is a single flat colour, reads it the other way when it is, and remembers which route this server needs so the cost is paid once
 * Added: when a thumbnail cannot be generated, the Status tab now says why. Until now a failed generation returned nothing at all — the PDF simply had no thumbnail and no screen anywhere explained it, which is the most common question this plugin gets asked
 * Added: failures are classified. "The server has no PDF support", "this page is too large for ImageMagick to open", "the uploads folder is not writable" and "the file is missing" are four different problems with four different answers, and they no longer look the same

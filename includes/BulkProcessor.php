@@ -65,9 +65,35 @@ final class BulkProcessor
 
             $includeExisting = !empty($_POST['include_existing']);
             $pdfs = $this->getPDFs($includeExisting);
+            $stats = $this->getStats();
+
+            // "PDFs found: 0" on its own leaves the reader with no idea
+            // whether the library is empty, whether everything is already
+            // done, or whether something is broken. Those are three different
+            // situations and only one of them is a problem.
+            $note = '';
+
+            if (0 === count($pdfs)) {
+                if (0 === $stats['total']) {
+                    $note = __('There are no PDF files in the Media Library.', 'rapls-pdf-image-creator');
+                } elseif (!$includeExisting) {
+                    $note = sprintf(
+                        /* translators: %d: number of PDFs that already have a thumbnail */
+                        _n(
+                            '%d PDF already has a thumbnail. Tick "Include PDFs that already have thumbnails" above to generate it again.',
+                            'All %d PDFs already have thumbnails. Tick "Include PDFs that already have thumbnails" above to generate them again.',
+                            $stats['total'],
+                            'rapls-pdf-image-creator'
+                        ),
+                        $stats['total']
+                    );
+                }
+            }
 
             wp_send_json_success([
                 'total' => count($pdfs),
+                'total_pdfs' => $stats['total'],
+                'note' => $note,
                 'pdfs' => $pdfs,
             ]);
         } catch (\Throwable $e) {
@@ -181,6 +207,9 @@ final class BulkProcessor
             'post_status' => 'inherit',
             'posts_per_page' => -1,
             'fields' => 'ids',
+            // Marks this as the plugin asking, so MediaLibrary's pre_get_posts
+            // filter leaves it alone.
+            'rapls_pic_internal' => true,
         ];
 
         $query = new \WP_Query($args);
@@ -219,6 +248,7 @@ final class BulkProcessor
             'post_status' => 'inherit',
             'posts_per_page' => -1,
             'fields' => 'ids',
+            'rapls_pic_internal' => true,
         ];
 
         $query = new \WP_Query($args);

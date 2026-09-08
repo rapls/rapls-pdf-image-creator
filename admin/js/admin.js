@@ -91,6 +91,14 @@
                     if (response.success) {
                         self.pdfs = response.data.pdfs;
                         $('#rapls-pic-bulk-total').text(response.data.total);
+
+                        if (response.data.note) {
+                            $('#rapls-pic-bulk-note').text(response.data.note);
+                            $('#rapls-pic-bulk-note-row').show();
+                        } else {
+                            $('#rapls-pic-bulk-note-row').hide();
+                        }
+
                         $('#rapls-pic-bulk-results').show();
 
                         if (response.data.total > 0) {

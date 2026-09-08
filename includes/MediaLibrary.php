@@ -539,6 +539,15 @@ final class MediaLibrary
             return;
         }
 
+        // The plugin's own queries are not the media library. Bulk Generate
+        // asks for every PDF and then decides what to do with them; hiding
+        // generated images from that answer would be the plugin arguing with
+        // itself, and the argument is invisible from the screen where it shows
+        // up as "PDFs found: 0".
+        if ($query->get('rapls_pic_internal')) {
+            return;
+        }
+
         // Check if we should hide thumbnails (setting + filter)
         $hideThumbnails = $this->settings->shouldHideGeneratedImages();
         $hideThumbnails = apply_filters('rapls_pdf_image_creator_hide_thumbnails_in_library', $hideThumbnails);
