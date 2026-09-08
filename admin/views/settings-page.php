@@ -395,6 +395,10 @@ if (!defined('ABSPATH')) {
                         <td><?php esc_html_e('PDFs found:', 'rapls-pdf-image-creator'); ?></td>
                         <td id="rapls-pic-bulk-total">0</td>
                     </tr>
+                    <tr id="rapls-pic-bulk-rows-row" style="display:none;">
+                        <td><?php esc_html_e('PDF attachments in the database:', 'rapls-pdf-image-creator'); ?></td>
+                        <td id="rapls-pic-bulk-rows">0</td>
+                    </tr>
                     <tr id="rapls-pic-bulk-note-row" style="display:none;">
                         <td colspan="2" id="rapls-pic-bulk-note"></td>
                     </tr>

@@ -92,6 +92,19 @@
                         self.pdfs = response.data.pdfs;
                         $('#rapls-pic-bulk-total').text(response.data.total);
 
+                        // Only worth showing when it disagrees with the scan;
+                        // otherwise it is a second number saying the same thing.
+                        if (typeof response.data.rows !== 'undefined'
+                            && response.data.rows !== response.data.total) {
+                            $('#rapls-pic-bulk-rows').text(
+                                response.data.rows
+                                + (response.data.statuses ? ' (' + response.data.statuses + ')' : '')
+                            );
+                            $('#rapls-pic-bulk-rows-row').show();
+                        } else {
+                            $('#rapls-pic-bulk-rows-row').hide();
+                        }
+
                         if (response.data.note) {
                             $('#rapls-pic-bulk-note').text(response.data.note);
                             $('#rapls-pic-bulk-note-row').show();
