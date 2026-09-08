@@ -6,8 +6,21 @@
  * reports the image state after each one, so a thumbnail that comes out blank,
  * black or wrongly coloured can be traced to the step that did it.
  *
- * Usage:
+ * Usage, from a shell:
  *   php tools/diagnose-pdf.php <file.pdf> [options]
+ *
+ * Usage, from a browser — for hosts whose command-line PHP is not the PHP
+ * that runs WordPress. Xserver is one: its CLI can be 8.0 with no Imagick
+ * while the site runs 8.3 with ImageMagick 6.9. Diagnosing the wrong
+ * interpreter answers a question nobody asked, so:
+ *
+ *   1. Set TOKEN below to something only you know.
+ *   2. Upload this file to the web root.
+ *   3. Open https://example.com/diagnose-pdf.php?token=YOUR_TOKEN&pdf=path/to/file.pdf
+ *   4. DELETE IT afterwards. It prints absolute server paths.
+ *
+ * The pdf parameter is resolved below the directory this file sits in, so it
+ * cannot be used to read anything elsewhere on the server.
  *
  *   --page=0            page index, 0-based (default: plugin setting, else 0)
  *   --format=jpeg       jpeg | png | webp
@@ -24,16 +37,17 @@
  * @package PDFImageCreator\Tools
  */
 
-if ('cli' !== PHP_SAPI) {
-    exit("Run this from the command line.\n");
-}
+/**
+ * Change this before uploading the file to a web root. Left as it is, the
+ * browser route stays closed.
+ */
+const TOKEN = 'CHANGE-ME';
 
 error_reporting(E_ALL);
 ini_set('display_errors', '1');
 
 /* ------------------------------------------------------------------ args */
 
-$argvRest = array_slice($argv, 1);
 $pdfPath = null;
 $opt = [
     'page' => null,
@@ -42,25 +56,61 @@ $opt = [
     'resolution' => 150,
     'dump' => null,
 ];
-
 $skipWordPress = false;
 
-foreach ($argvRest as $arg) {
-    if ('--no-wp' === $arg) {
-        $skipWordPress = true;
-    } elseif (preg_match('/^--([a-z]+)=(.*)$/', $arg, $m) && array_key_exists($m[1], $opt)) {
-        $opt[$m[1]] = $m[2];
-    } elseif ('-' !== substr($arg, 0, 1)) {
-        $pdfPath = $arg;
+if ('cli' === PHP_SAPI) {
+    foreach (array_slice($argv, 1) as $arg) {
+        if ('--no-wp' === $arg) {
+            $skipWordPress = true;
+        } elseif (preg_match('/^--([a-z]+)=(.*)$/', $arg, $m) && array_key_exists($m[1], $opt)) {
+            $opt[$m[1]] = $m[2];
+        } elseif ('-' !== substr($arg, 0, 1)) {
+            $pdfPath = $arg;
+        }
     }
-}
 
-if (null === $pdfPath) {
-    exit("usage: php tools/diagnose-pdf.php <file.pdf> [--page=0] [--format=jpeg] [--bg=white]\n"
-        . "                                 [--resolution=150] [--dump=DIR] [--no-wp]\n");
-}
+    if (null === $pdfPath) {
+        exit("usage: php tools/diagnose-pdf.php <file.pdf> [--page=0] [--format=jpeg] [--bg=white]\n"
+            . "                                 [--resolution=150] [--dump=DIR] [--no-wp]\n"
+            . "                                 [--plugin=/path/to/plugin]\n");
+    }
 
-$pdfPath = realpath($pdfPath) ?: $pdfPath;
+    $pdfPath = realpath($pdfPath) ?: $pdfPath;
+} else {
+    if (!isset($_GET['token']) || 'CHANGE-ME' === TOKEN
+        || !hash_equals(TOKEN, (string) $_GET['token'])) {
+        header('HTTP/1.1 404 Not Found');
+        exit("Not found\n");
+    }
+
+    header('Content-Type: text/plain; charset=UTF-8');
+
+    foreach (['page', 'format', 'bg', 'resolution'] as $key) {
+        if (isset($_GET[$key])) {
+            $opt[$key] = (string) $_GET[$key];
+        }
+    }
+
+    // --dump writes files. Not over the web.
+    $skipWordPress = isset($_GET['no_wp']);
+
+    $requested = isset($_GET['pdf']) ? (string) $_GET['pdf'] : '';
+
+    if ('' === $requested) {
+        exit("Add &pdf=path/to/file.pdf — relative to " . __DIR__ . "\n");
+    }
+
+    // Resolved below this file's own directory, so the parameter cannot be
+    // pointed at anything else on the server.
+    $base = realpath(__DIR__);
+    $resolved = realpath($base . '/' . ltrim($requested, '/'));
+
+    if (false === $resolved || 0 !== strpos($resolved, $base . DIRECTORY_SEPARATOR)) {
+        exit("No such file below " . $base . "\n");
+    }
+
+    $pdfPath = $resolved;
+}
 
 /* ------------------------------------------------------- environment prep */
 
@@ -150,9 +200,13 @@ function rapls_diag_find_plugin(): ?string
 
     // Given explicitly.
     foreach ($_SERVER['argv'] ?? [] as $arg) {
-        if (0 === strpos($arg, '--plugin=')) {
-            $candidates[] = rtrim(substr($arg, 9), '/');
+        if (0 === strpos((string) $arg, '--plugin=')) {
+            $candidates[] = rtrim(substr((string) $arg, 9), '/');
         }
+    }
+
+    if (isset($_GET['plugin'])) {
+        $candidates[] = rtrim((string) $_GET['plugin'], '/');
     }
 
     // Where it sits in the repository.
