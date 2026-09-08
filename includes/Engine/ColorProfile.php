@@ -303,6 +303,12 @@ final class ColorProfile
                 // generated image. The destination profile is a different
                 // question, because that one is embedded in every thumbnail;
                 // see the sRGB list above.
+                // With and without a version directory. Building from source
+                // gives /usr/share/ghostscript/10.04.0/iccprofiles/; the
+                // packages on at least one shared host give
+                // /usr/share/ghostscript/iccprofiles/ with nothing between.
+                '/usr/share/ghostscript/iccprofiles/default_cmyk.icc',
+                '/usr/lib/ghostscript/iccprofiles/default_cmyk.icc',
                 '/usr/share/ghostscript/*/iccprofiles/default_cmyk.icc',
                 '/usr/lib/ghostscript/*/iccprofiles/default_cmyk.icc',
                 '/usr/local/share/ghostscript/*/iccprofiles/default_cmyk.icc',

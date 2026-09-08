@@ -340,6 +340,55 @@ function rapls_diag_alternatives(string $pdfPath, int $page, int $resolution): v
     echo "Each row asks for the same page differently. A row with more than one\n";
     echo "colour is a route that works on this server.\n\n";
 
+    // What the plugin's own looksEmpty() sees. It decides whether the second
+    // route is tried at all, so if it disagrees with the eye, the fix in the
+    // plugin never fires and everything below is academic.
+    echo "  ---- what the plugin's blank check sees ----\n";
+
+    foreach (['with [n]' => true, 'without' => false] as $label => $suffixed) {
+        try {
+            $im = new Imagick();
+            $im->setResolution($resolution, $resolution);
+            $im->readImage($suffixed ? $pdfPath . '[' . $page . ']' : $pdfPath);
+
+            $line = sprintf('  %-32s ', $label);
+
+            try {
+                $r = $im->getImageChannelRange(Imagick::CHANNEL_ALL);
+                $flat = abs((float) $r['maxima'] - (float) $r['minima']) < 1e-9;
+                $line .= sprintf(
+                    'range %.0f–%.0f  → looksEmpty: %s',
+                    $r['minima'],
+                    $r['maxima'],
+                    $flat ? 'true (再読み込みする)' : 'false (しない)'
+                );
+            } catch (Throwable $e) {
+                $line .= 'getImageChannelRange 失敗: ' . substr($e->getMessage(), 0, 40);
+            }
+
+            // A second opinion, in case the channel range is misleading here.
+            try {
+                $stats = $im->getImageChannelStatistics();
+                $sd = 0.0;
+                foreach ($stats as $st) {
+                    if (isset($st['standardDeviation'])) {
+                        $sd = max($sd, (float) $st['standardDeviation']);
+                    }
+                }
+                $line .= sprintf('   maxSD %.1f', $sd);
+            } catch (Throwable $e) {
+                $line .= '   stats 失敗';
+            }
+
+            echo $line . "\n";
+            $im->clear();
+        } catch (Throwable $e) {
+            printf("  %-32s 読めず: %s\n", $label, substr($e->getMessage(), 0, 50));
+        }
+    }
+
+    echo "\n  ---- reading it six ways ----\n";
+
     $attempts = [
         'plain readImage(path[n])' => function (Imagick $im) use ($pdfPath, $page, $resolution) {
             $im->setResolution($resolution, $resolution);
@@ -629,6 +678,27 @@ echo str_repeat('═', 72) . "\n";
 echo "Rapls PDF Image Creator — conversion diagnostic\n";
 echo str_repeat('═', 72) . "\n";
 echo "context            $context\n";
+
+// Which copy of the plugin is being exercised, and which version of it. When
+// a fix does not appear to work, "is the fix installed" is the first question
+// and the answer should not require a second round trip.
+$rapls_diag_version = 'unknown';
+$rapls_diag_main = RAPLS_PIC_PLUGIN_DIR . 'rapls-pdf-image-creator.php';
+
+if (is_readable($rapls_diag_main)) {
+    $rapls_diag_head = (string) file_get_contents($rapls_diag_main, false, null, 0, 8192);
+    if (preg_match('/^[ \t\/*#@]*Version:(.*)$/mi', $rapls_diag_head, $rapls_diag_m)) {
+        $rapls_diag_version = trim($rapls_diag_m[1]);
+    }
+}
+
+printf("plugin             %s\n", $rapls_diag_version);
+printf("plugin path        %s\n", rtrim(RAPLS_PIC_PLUGIN_DIR, '/'));
+printf("readPage fallback  %s\n",
+    is_readable(RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/ImagickEngine.php')
+    && false !== strpos((string) file_get_contents(RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/ImagickEngine.php'), 'private function readPage')
+        ? 'present'
+        : 'ABSENT — this copy predates the blank-page fix');
 echo 'php                ' . PHP_VERSION . "\n";
 
 if (!extension_loaded('imagick') || !class_exists('Imagick')) {
