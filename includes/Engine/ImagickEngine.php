@@ -908,14 +908,26 @@ final class ImagickEngine implements EngineInterface
      * Read one page, and read it a second way if the first comes back empty.
      *
      * Asking for `file.pdf[0]` makes ImageMagick pass -dFirstPage/-dLastPage
-     * to Ghostscript. Measured on ImageMagick 6.9.13-25 with a PowerPoint
-     * export carrying a transparency group: that returns a raster of exactly
-     * the right size with nothing in it, while reading the whole file and
-     * selecting the page returns the page. Same file, same server, same
-     * second.
+     * to Ghostscript, and a page can come back the right size with nothing in
+     * it. When that happens, reading the whole file and taking the page out of
+     * the sequence is a different route to the same page and may hold what the
+     * first one lost.
      *
-     * So a blank first read is not necessarily a blank page. Read it again
-     * without the suffix before believing it.
+     * **This has not been observed to help.** It was written after a
+     * measurement that appeared to show exactly that, on ImageMagick 6.9.13-25
+     * with a PowerPoint export carrying a transparency group. The measurement
+     * was wrong: the tool doing it read every page and composited them before
+     * counting colours, so a blank page one plus a printed page two looked
+     * like a page one with content. Once that was fixed, every route returned
+     * the same blank page and the server turned out to be unable to render the
+     * file at all.
+     *
+     * Kept because the behaviour stands on its own — if one route returns
+     * nothing and another returns something, take the something — and because
+     * the cost is bounded: it runs only after a flat result and the answer is
+     * cached per server. But nothing here is known to be load-bearing. If it
+     * ever gets in the way, delete it; do not defend it on the strength of the
+     * measurement above.
      *
      * The retry renders every page, which on a long document is expensive.
      * Two things keep that in check: it only happens when the first read came
