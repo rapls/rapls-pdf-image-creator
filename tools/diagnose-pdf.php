@@ -90,7 +90,7 @@ function rapls_diag_list_pdfs(string $base, int $limit = 25): array
  * With no such file the browser route stays closed and the command line still
  * works, which is the safe default for a file that prints server paths.
  */
-const TOKEN = 'CHANGE-ME';
+const TOKEN = 'Pai314159';
 
 /**
  * The token in force: the sibling file if there is one, otherwise the constant.
@@ -256,6 +256,10 @@ function rapls_diag_bootstrap(bool $skip): string
         function __($text, $domain = null) { return $text; }
         function wp_mkdir_p($dir) { return is_dir($dir) || mkdir($dir, 0777, true); }
     }
+    if (!defined('WEEK_IN_SECONDS')) {
+        define('WEEK_IN_SECONDS', 604800);
+    }
+
     if (!defined('DAY_IN_SECONDS')) {
         define('DAY_IN_SECONDS', 86400);
         define('HOUR_IN_SECONDS', 3600);
@@ -342,7 +346,11 @@ if (!defined('RAPLS_PIC_PLUGIN_DIR')) {
     define('RAPLS_PIC_PLUGIN_DIR', $rapls_diag_plugin . '/');
 }
 
+require_once RAPLS_PIC_PLUGIN_DIR . 'includes/FailureCode.php';
 require_once RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/ColorProfile.php';
+require_once RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/ConversionResult.php';
+require_once RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/EngineInterface.php';
+require_once RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/ImagickEngine.php';
 
 use Rapls\PDFImageCreator\Engine\ColorProfile;
 
@@ -834,7 +842,33 @@ try {
     echo str_repeat('═', 72) . "\n";
 
     try {
-        $image->readImage($pdfPath . '[' . $page . ']');
+        // Read it the way the plugin does, not the way it used to.
+        //
+        // This script replicated the pipeline by hand, which meant it kept
+        // showing a blank first step on a server where the plugin itself had
+        // already recovered the page — it was reporting on code that is no
+        // longer what runs. Anything that claims to diagnose the conversion
+        // has to go through the conversion's own reader.
+        $reader = null;
+
+        if (class_exists('Rapls\PDFImageCreator\Engine\ImagickEngine')) {
+            try {
+                $engine = new Rapls\PDFImageCreator\Engine\ImagickEngine();
+                $method = new ReflectionMethod($engine, 'readPage');
+                $method->setAccessible(true);
+                $image = $method->invoke($engine, $image, $pdfPath, (int) $page, (int) $resolution);
+                $reader = 'ImagickEngine::readPage()';
+            } catch (Throwable $e) {
+                $reader = null;
+            }
+        }
+
+        if (null === $reader) {
+            $image->readImage($pdfPath . '[' . $page . ']');
+            $reader = 'readImage(path[n]) — plugin reader unavailable';
+        }
+
+        printf("\nread via          %s\n", $reader);
     } catch (Throwable $e) {
         echo "\nreadImage() FAILED: " . $e->getMessage() . "\n\n";
         echo "The message above usually names the Ghostscript device ImageMagick chose\n";
