@@ -8,6 +8,7 @@ define('RAPLS_PIC_PLUGIN_DIR', dirname(__DIR__) . '/');
 define('RAPLS_PIC_TEST_TMP', sys_get_temp_dir() . '/rapls-pic-tests');
 define('DAY_IN_SECONDS', 86400);
 define('HOUR_IN_SECONDS', 3600);
+define('WEEK_IN_SECONDS', 604800);
 
 $GLOBALS['transients'] = [];
 $GLOBALS['filters'] = [];
@@ -48,16 +49,45 @@ class Imagick
     const ALPHACHANNEL_OPAQUE = 4;
     const COMPRESSION_JPEG = 8;
     const FILTER_LANCZOS = 22;
+    const CHANNEL_ALL = 134217727;
 
     public static $log = [];
     public static $readColorspace = self::COLORSPACE_CMYK;
+
+    /**
+     * Which reads come back as one flat colour, keyed by the path handed in.
+     *
+     * 'suffix' covers a read with a [n] on the end, 'whole' a read without.
+     * Modelling them separately is the whole point: on ImageMagick 6.9.13-25
+     * one returns an empty raster and the other returns the page, for the
+     * same file at the same moment.
+     *
+     * @var array<string, bool>
+     */
+    public static $emptyFor = ['suffix' => false, 'whole' => false];
+
+    /** Pages a read without a suffix reports. */
+    public static $pageCount = 3;
+
+    public $flat = false;
 
     public $colorspace = self::COLORSPACE_SRGB;
     public $profiles = [];
     public $w = 2000, $h = 3000;
 
     public function setResolution($x, $y) { self::$log[] = "setResolution($x)"; }
-    public function readImage($p) { self::$log[] = 'readImage'; $this->colorspace = self::$readColorspace; }
+    public function readImage($p) {
+        $suffixed = (bool) preg_match('/\[\d+\]$/', $p);
+        self::$log[] = 'readImage' . ($suffixed ? '[n]' : '(whole)');
+        $this->colorspace = self::$readColorspace;
+        $this->flat = self::$emptyFor[$suffixed ? 'suffix' : 'whole'];
+    }
+    public function getImageChannelRange($channel) {
+        return $this->flat ? ['minima' => 65535.0, 'maxima' => 65535.0] : ['minima' => 0.0, 'maxima' => 65535.0];
+    }
+    public function getNumberImages() { return self::$pageCount; }
+    public function setIteratorIndex($i) { self::$log[] = "setIteratorIndex($i)"; return true; }
+    public function getImage() { self::$log[] = 'getImage'; $n = clone $this; return $n; }
     public function getImageColorspace() { return $this->colorspace; }
     public function setImageColorspace($cs) { self::$log[] = "setImageColorspace($cs)"; $this->colorspace = $cs; }
     public function transformImageColorspace($cs) { self::$log[] = 'transformImageColorspace'; $this->colorspace = $cs; }
@@ -133,7 +163,7 @@ echo "=== R-2: CMYK PDF, profiles present, JPEG ===\n";
 check('conversion succeeded', $r->isSuccess(), true);
 check('step order', $log, [
     'setResolution(150)',
-    'readImage',
+    'readImage[n]',
     'profileImage',                 // 3. colour conversion, before resize
     'setImageRenderingIntent',
     'profileImage',
@@ -153,6 +183,51 @@ check('step order', $log, [
     'destroy',
 ]);
 check('diagnostics recorded CMYK', $GLOBALS['options'][ImagickEngine::DIAGNOSTICS_OPTION]['colorspace'], 12);
+
+echo "\n=== 1.4.0: recovering a page that reads back empty ===\n";
+
+// Measured on ImageMagick 6.9.13-25: asking for file.pdf[0] returns a raster
+// of the right size with nothing in it, while reading the whole file and
+// selecting page 0 returns the page. Same file, same server, same second.
+// A blank first read is therefore not proof of a blank page.
+
+Imagick::$emptyFor = ['suffix' => false, 'whole' => false];
+Imagick::$pageCount = 3;
+[$r, $log] = run(['format' => 'jpeg']);
+check('a page that reads fine is read once', substr_count(implode(' ', $log), 'readImage'), 1);
+check('  ...with the page suffix', in_array('readImage[n]', $log, true), true);
+check('  ...and nothing is remembered', $GLOBALS['transients']['rapls_pic_page_suffix'] ?? null, null);
+
+// The failure this exists for.
+Imagick::$emptyFor = ['suffix' => true, 'whole' => false];
+[$r, $log] = run(['format' => 'jpeg']);
+check('an empty suffixed read is retried', in_array('readImage(whole)', $log, true), true);
+check('  ...and the page is selected from the whole file', in_array('setIteratorIndex(0)', $log, true), true);
+check('  ...the conversion still succeeded', $r->isSuccess(), true);
+check('  ...and the server is remembered as needing it', $GLOBALS['transients']['rapls_pic_page_suffix'] ?? null, 'yes');
+
+// A page that really is blank must not cost a second render every time.
+Imagick::$emptyFor = ['suffix' => true, 'whole' => true];
+[$r, $log] = run(['format' => 'jpeg']);
+check('a genuinely blank page is retried once', in_array('readImage(whole)', $log, true), true);
+check('  ...and recorded as not the suffix', $GLOBALS['transients']['rapls_pic_page_suffix'] ?? null, 'no');
+
+// Once known broken, the suffix is not tried at all.
+Imagick::$emptyFor = ['suffix' => true, 'whole' => false];
+[$r, $log] = run(['format' => 'jpeg'], Imagick::COLORSPACE_CMYK, true, function () {
+    set_transient('rapls_pic_page_suffix', 'yes', 604800);
+});
+check('a known-broken suffix is skipped', in_array('readImage[n]', $log, true), false);
+check('  ...and the whole file is read instead', in_array('readImage(whole)', $log, true), true);
+
+// Asking for a page the file does not have must not lose the thumbnail.
+Imagick::$emptyFor = ['suffix' => true, 'whole' => false];
+Imagick::$pageCount = 1;
+[$r, $log] = run(['format' => 'jpeg', 'page' => 5]);
+check('an out-of-range page falls back to the first read', $r->isSuccess(), true);
+Imagick::$pageCount = 3;
+
+Imagick::$emptyFor = ['suffix' => false, 'whole' => false];
 
 echo "\n=== 1.4.0: the before_resize extension point ===\n";
 
@@ -293,7 +368,7 @@ check('defaults to 150 DPI', in_array('setResolution(150)', $log, true), true);
 
 [$r, $log] = run(['format' => 'jpeg', 'resolution' => 300]);
 check('explicit DPI reaches Imagick', in_array('setResolution(300)', $log, true), true);
-check('  ...and still before readImage', array_search('setResolution(300)', $log, true) < array_search('readImage', $log, true), true);
+check('  ...and still before readImage', array_search('setResolution(300)', $log, true) < array_search('readImage[n]', $log, true), true);
 
 // The setting goes through a filter, so a caller can hand back something that
 // would make Imagick render an empty page.

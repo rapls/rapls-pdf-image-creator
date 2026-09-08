@@ -80,7 +80,7 @@ function rapls_diag_list_pdfs(string $base, int $limit = 25): array
  * Change this before uploading the file to a web root. Left as it is, the
  * browser route stays closed.
  */
-const TOKEN = 'CHANGE-ME';
+const TOKEN = 'Pai314159';
 
 error_reporting(E_ALL);
 ini_set('display_errors', '1');

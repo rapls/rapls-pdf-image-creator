@@ -113,6 +113,7 @@ final class ImagickEngine implements EngineInterface
             self::CMYK_PROBE_TRANSIENT,
             self::PAGE_PROBE_TRANSIENT,
             self::DELEGATE_TRANSIENT,
+            self::PAGE_SUFFIX_TRANSIENT,
         ];
     }
 
@@ -751,7 +752,7 @@ final class ImagickEngine implements EngineInterface
 
             // Read specific page from PDF
             $page = max(0, (int) $options['page']);
-            $imagick->readImage($pdfPath . '[' . $page . ']');
+            $imagick = $this->readPage($imagick, $pdfPath, $page, $resolution);
 
             $sourceColorspace = $imagick->getImageColorspace();
 
@@ -895,6 +896,146 @@ final class ImagickEngine implements EngineInterface
                 $e->getMessage(),
                 \Rapls\PDFImageCreator\FailureCode::fromExceptionMessage($e->getMessage())
             );
+        }
+    }
+
+    /**
+     * Transient remembering that this build cannot be asked for a single page
+     */
+    private const PAGE_SUFFIX_TRANSIENT = 'rapls_pic_page_suffix';
+
+    /**
+     * Read one page, and read it a second way if the first comes back empty.
+     *
+     * Asking for `file.pdf[0]` makes ImageMagick pass -dFirstPage/-dLastPage
+     * to Ghostscript. Measured on ImageMagick 6.9.13-25 with a PowerPoint
+     * export carrying a transparency group: that returns a raster of exactly
+     * the right size with nothing in it, while reading the whole file and
+     * selecting the page returns the page. Same file, same server, same
+     * second.
+     *
+     * So a blank first read is not necessarily a blank page. Read it again
+     * without the suffix before believing it.
+     *
+     * The retry renders every page, which on a long document is expensive.
+     * Two things keep that in check: it only happens when the first read came
+     * back as one flat colour, and the answer is remembered, so a server that
+     * needs the second route stops paying for the first one and a server that
+     * does not never tries it twice.
+     *
+     * @param \Imagick $imagick    Fresh instance with the resolution set.
+     * @param string   $pdfPath    Absolute path.
+     * @param int      $page       Page index, 0-based.
+     * @param int      $resolution DPI, for rebuilding the instance on retry.
+     * @return \Imagick The instance to carry on with.
+     */
+    private function readPage(\Imagick $imagick, string $pdfPath, int $page, int $resolution): \Imagick
+    {
+        $suffixBroken = get_transient(self::PAGE_SUFFIX_TRANSIENT);
+
+        if ('yes' !== $suffixBroken) {
+            $imagick->readImage($pdfPath . '[' . $page . ']');
+
+            if (!$this->looksEmpty($imagick)) {
+                return $imagick;
+            }
+        }
+
+        // Either the suffix is known to be unreliable here, or it just handed
+        // back a flat colour.
+        $whole = $this->readWholePage($pdfPath, $page, $resolution);
+
+        if (null === $whole) {
+            // The retry failed or the page does not exist. Keep what we have;
+            // a blank thumbnail beats no thumbnail, and the caller's other
+            // checks still apply.
+            if ('yes' === $suffixBroken) {
+                $imagick->readImage($pdfPath . '[' . $page . ']');
+            }
+
+            return $imagick;
+        }
+
+        if ('yes' !== $suffixBroken) {
+            // Only now is it worth recording. If both routes give the same
+            // flat colour the page really is blank and says nothing about the
+            // server.
+            set_transient(
+                self::PAGE_SUFFIX_TRANSIENT,
+                $this->looksEmpty($whole) ? 'no' : 'yes',
+                WEEK_IN_SECONDS
+            );
+
+            if ($this->looksEmpty($whole)) {
+                $whole->clear();
+
+                return $imagick;
+            }
+        }
+
+        $imagick->clear();
+
+        return $whole;
+    }
+
+    /**
+     * Read every page and hand back the one asked for
+     *
+     * @return \Imagick|null Null when it could not be read.
+     */
+    private function readWholePage(string $pdfPath, int $page, int $resolution): ?\Imagick
+    {
+        try {
+            $all = new \Imagick();
+            $all->setResolution($resolution, $resolution);
+            $all->readImage($pdfPath);
+
+            if ($all->getNumberImages() <= $page) {
+                $all->clear();
+
+                return null;
+            }
+
+            $all->setIteratorIndex($page);
+            $one = $all->getImage();
+            $all->clear();
+
+            return $one;
+        } catch (\Throwable $e) {
+            // Out of memory on a long document, or anything else. The first
+            // read is still in hand.
+            return null;
+        }
+    }
+
+    /**
+     * Is every pixel the same colour?
+     *
+     * Uses the channel range rather than sampling: min equals max means one
+     * value, exactly, with no grid coarse enough to miss a detail in a corner.
+     * Cheap, because ImageMagick keeps these statistics anyway.
+     */
+    private function looksEmpty(\Imagick $imagick): bool
+    {
+        try {
+            if ($imagick->getImageWidth() < 1 || $imagick->getImageHeight() < 1) {
+                return true;
+            }
+
+            if (!method_exists($imagick, 'getImageChannelRange')) {
+                return false;
+            }
+
+            $range = $imagick->getImageChannelRange(\Imagick::CHANNEL_ALL);
+
+            if (!isset($range['minima'], $range['maxima'])) {
+                return false;
+            }
+
+            return abs((float) $range['maxima'] - (float) $range['minima']) < 1e-9;
+        } catch (\Throwable $e) {
+            // Cannot tell. Say no, so nothing is re-read on a guess.
+            return false;
         }
     }
 
