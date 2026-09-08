@@ -77,10 +77,38 @@ function rapls_diag_list_pdfs(string $base, int $limit = 25): array
 }
 
 /**
- * Change this before uploading the file to a web root. Left as it is, the
- * browser route stays closed.
+ * The browser route needs a token. Do not put yours here.
+ *
+ * Write it into a file called diagnose-pdf.token next to this one instead.
+ * That file is gitignored, so a token cannot reach a commit by being swept up
+ * with everything else — which is how one reached a public repository once
+ * already. tests/test-no-trialware.php fails the suite if this constant is
+ * ever anything but the default.
+ *
+ *   echo 'something-only-you-know' > diagnose-pdf.token
+ *
+ * With no such file the browser route stays closed and the command line still
+ * works, which is the safe default for a file that prints server paths.
  */
-const TOKEN = 'Pai314159';
+const TOKEN = 'CHANGE-ME';
+
+/**
+ * The token in force: the sibling file if there is one, otherwise the constant.
+ */
+function rapls_diag_token(): string
+{
+    $file = __DIR__ . '/diagnose-pdf.token';
+
+    if (is_readable($file)) {
+        $token = trim((string) file_get_contents($file));
+
+        if ('' !== $token) {
+            return $token;
+        }
+    }
+
+    return TOKEN;
+}
 
 error_reporting(E_ALL);
 ini_set('display_errors', '1');
@@ -116,8 +144,10 @@ if ('cli' === PHP_SAPI) {
 
     $pdfPath = realpath($pdfPath) ?: $pdfPath;
 } else {
-    if (!isset($_GET['token']) || 'CHANGE-ME' === TOKEN
-        || !hash_equals(TOKEN, (string) $_GET['token'])) {
+    $expected = rapls_diag_token();
+
+    if (!isset($_GET['token']) || 'CHANGE-ME' === $expected
+        || !hash_equals($expected, (string) $_GET['token'])) {
         header('HTTP/1.1 404 Not Found');
         exit("Not found\n");
     }

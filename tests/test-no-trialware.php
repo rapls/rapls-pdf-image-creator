@@ -204,6 +204,25 @@ check(
 );
 
 // ---------------------------------------------------------------------------
+echo "\n=== no secrets in the tools ===\n";
+
+// A token was once committed to a public repository by being swept up in a
+// `git add -A` alongside everything else. The files that carry one are meant
+// to be edited on the server they are uploaded to, never here, so the copy in
+// the repository must always hold the placeholder.
+foreach (glob(RAPLS_PIC_PLUGIN_DIR . 'tools/*.php') as $tool) {
+    $contents = (string) file_get_contents($tool);
+
+    if (!preg_match("/const TOKEN\s*=\s*'([^']*)'/", $contents, $m)) {
+        continue;
+    }
+
+    check(
+        basename($tool) . ' has no real token in it',
+        $m[1],
+        'CHANGE-ME'
+    );
+}
 
 echo "\n";
 if ($failures) {

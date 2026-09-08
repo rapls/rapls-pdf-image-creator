@@ -6,3 +6,5 @@ node_modules/
 CLAUDE.md
 doc/
 docs/
+*.token
+tools/*.token
