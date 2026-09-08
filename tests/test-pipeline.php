@@ -30,12 +30,16 @@ function wp_mkdir_p($d) { return @mkdir($d, 0777, true) || is_dir($d); }
 class ImagickException extends Exception {}
 class ImagickPixel {
     public $c;
+    public $rgb = ['r' => 255, 'g' => 255, 'b' => 255];
     public function __construct($c = 'white') {
+        // An array is the plugin sampling a pixel; a name is it naming one.
+        if (is_array($c)) { $this->rgb = $c; $this->c = 'sampled'; return; }
         if (!in_array(strtolower($c), ['white', 'black', 'transparent'], true)) {
             throw new ImagickException("unparseable: $c");
         }
         $this->c = strtolower($c);
     }
+    public function getColor() { return $this->rgb; }
     public function __toString() { return $this->c; }
 }
 
@@ -84,6 +88,12 @@ class Imagick
     }
     public function getImageChannelRange($channel) {
         return $this->flat ? ['minima' => 65535.0, 'maxima' => 65535.0] : ['minima' => 0.0, 'maxima' => 65535.0];
+    }
+    /** The colour a flat page reports. White is the failure; ink is a page. */
+    public static $flatColor = ['r' => 255, 'g' => 255, 'b' => 255];
+    public function getImagePixelColor($x, $y) {
+        self::$log[] = 'getImagePixelColor';
+        return new ImagickPixel($this->flat ? self::$flatColor : ['r' => 12, 'g' => 34, 'b' => 56]);
     }
     public function getNumberImages() { return self::$pageCount; }
     public function setIteratorIndex($i) { self::$log[] = "setIteratorIndex($i)"; return true; }
@@ -184,6 +194,33 @@ check('step order', $log, [
 ]);
 check('diagnostics recorded CMYK', $GLOBALS['options'][ImagickEngine::DIAGNOSTICS_OPTION]['colorspace'], 12);
 
+echo "\n=== 1.4.0: a page that renders white is a failure, not a thumbnail ===\n";
+
+// Ghostscript can fail to parse a content stream, report it on stderr where
+// nobody looks, and hand back a correctly sized white page. Nothing throws.
+// Storing that is worse than storing nothing, because it looks like an answer.
+Imagick::$emptyFor = ['suffix' => true, 'whole' => true];
+Imagick::$flatColor = ['r' => 255, 'g' => 255, 'b' => 255];
+[$r, $log] = run(['format' => 'jpeg']);
+check('an all-white page is refused', $r->isSuccess(), false);
+check('  ...with a code that names the cause', $r->getCode(), 'blank_render');
+check('  ...and nothing is written', in_array('writeImage', $log, true), false);
+
+// A page of solid ink is one colour and is a real page.
+Imagick::$flatColor = ['r' => 0, 'g' => 163, 'b' => 218];
+[$r, $log] = run(['format' => 'jpeg']);
+check('a page of solid colour is kept', $r->isSuccess(), true);
+check('  ...and written out', in_array('writeImage', $log, true), true);
+
+// Somebody whose cover page really is blank can say so.
+Imagick::$flatColor = ['r' => 255, 'g' => 255, 'b' => 255];
+[$r, $log] = run(['format' => 'jpeg'], Imagick::COLORSPACE_CMYK, true, function () {
+    add_filter('rapls_pdf_image_creator_refuse_blank_page', function () { return false; });
+});
+check('the filter can allow a blank page through', $r->isSuccess(), true);
+
+Imagick::$emptyFor = ['suffix' => false, 'whole' => false];
+
 echo "\n=== 1.4.0: recovering a page that reads back empty ===\n";
 
 // Measured on ImageMagick 6.9.13-25: asking for file.pdf[0] returns a raster
@@ -221,11 +258,15 @@ check('a known-broken suffix is skipped', in_array('readImage[n]', $log, true), 
 check('  ...and the whole file is read instead', in_array('readImage(whole)', $log, true), true);
 
 // Asking for a page the file does not have must not lose the thumbnail.
+// Solid ink here rather than white, so the fallback is what is under test and
+// not the blank-page refusal above.
 Imagick::$emptyFor = ['suffix' => true, 'whole' => false];
+Imagick::$flatColor = ['r' => 0, 'g' => 163, 'b' => 218];
 Imagick::$pageCount = 1;
 [$r, $log] = run(['format' => 'jpeg', 'page' => 5]);
 check('an out-of-range page falls back to the first read', $r->isSuccess(), true);
 Imagick::$pageCount = 3;
+Imagick::$flatColor = ['r' => 255, 'g' => 255, 'b' => 255];
 
 Imagick::$emptyFor = ['suffix' => false, 'whole' => false];
 

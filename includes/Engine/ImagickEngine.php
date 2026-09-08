@@ -754,6 +754,41 @@ final class ImagickEngine implements EngineInterface
             $page = max(0, (int) $options['page']);
             $imagick = $this->readPage($imagick, $pdfPath, $page, $resolution);
 
+            // A page with nothing on it, when nothing threw.
+            //
+            // Ghostscript can fail to parse a content stream, report it on its
+            // own stderr where nobody sees it, and hand back a correctly sized
+            // white page. ImageMagick raises nothing, the conversion succeeds,
+            // and a white thumbnail is stored — the worst outcome, because it
+            // looks like an answer. Measured: Ghostscript 9.27 does this to a
+            // PowerPoint export that Ghostscript 10.04 renders correctly.
+            //
+            // Refusing is better than pretending. WordPress then shows its PDF
+            // icon, which at least says "PDF" rather than "this document is
+            // blank", and 1.4.0's failure reporting says what to ask the host.
+            if ($this->looksBlankWhite($imagick)) {
+                /**
+                 * Filter whether an all-white page counts as a failure.
+                 *
+                 * Return false to keep the blank image. For the rare document
+                 * whose first page really is empty and whose owner wants a
+                 * white thumbnail anyway.
+                 *
+                 * @since 1.4.0
+                 *
+                 * @param bool                 $refuse  Whether to fail.
+                 * @param array<string, mixed> $options Conversion options.
+                 */
+                if (apply_filters('rapls_pdf_image_creator_refuse_blank_page', true, $options)) {
+                    $imagick->clear();
+
+                    return ConversionResult::failure(
+                        __('The page rendered as a blank white image.', 'rapls-pdf-image-creator'),
+                        \Rapls\PDFImageCreator\FailureCode::BLANK_RENDER
+                    );
+                }
+            }
+
             $sourceColorspace = $imagick->getImageColorspace();
 
             // Colour conversion runs before any resizing: downsampling can
@@ -1017,6 +1052,54 @@ final class ImagickEngine implements EngineInterface
             // Out of memory on a long document, or anything else. The first
             // read is still in hand.
             return null;
+        }
+    }
+
+    /**
+     * Is the page uniformly white?
+     *
+     * Uniform is not the same as blank: a page of solid ink is one colour and
+     * is a legitimate page. Only white counts here, and only when the whole
+     * raster is that one value.
+     */
+    private function looksBlankWhite(\Imagick $imagick): bool
+    {
+        if (!$this->looksEmpty($imagick)) {
+            return false;
+        }
+
+        try {
+            $width = $imagick->getImageWidth();
+            $height = $imagick->getImageHeight();
+
+            if ($width < 1 || $height < 1) {
+                return true;
+            }
+
+            // Sample after converting, because a CMYK raster reports white as
+            // 0,0,0,0 and an sRGB one as 65535 -- the same page, two numbers.
+            $probe = clone $imagick;
+
+            try {
+                $probe->transformImageColorspace(\Imagick::COLORSPACE_SRGB);
+            } catch (\Throwable $e) {
+                // Judge on whatever space it is in.
+            }
+
+            $pixel = $probe->getImagePixelColor((int) ($width / 2), (int) ($height / 2));
+
+            if (!$pixel instanceof \ImagickPixel) {
+                $probe->clear();
+
+                return false;
+            }
+
+            $rgb = $pixel->getColor();
+            $probe->clear();
+
+            return $rgb['r'] > 250 && $rgb['g'] > 250 && $rgb['b'] > 250;
+        } catch (\Throwable $e) {
+            return false;
         }
     }
 

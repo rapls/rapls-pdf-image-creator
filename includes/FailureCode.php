@@ -36,6 +36,7 @@ final class FailureCode
     public const SOURCE_MISSING = 'source_missing';
 
     // This attempt.
+    public const BLANK_RENDER = 'blank_render';
     public const RESOURCE_LIMIT = 'resource_limit';
     public const WRITE_FAILED = 'write_failed';
     public const RENDER_ERROR = 'render_error';
@@ -60,6 +61,7 @@ final class FailureCode
             self::NOT_A_PDF,
             self::SOURCE_MISSING,
             self::RESOURCE_LIMIT,
+            self::BLANK_RENDER,
         ];
     }
 
@@ -127,6 +129,12 @@ final class FailureCode
                     'action' => __('The attachment exists in the Media Library but its file does not. Re-upload the PDF.', 'rapls-pdf-image-creator'),
                 ];
 
+            case self::BLANK_RENDER:
+                return [
+                    'label' => __('The page rendered as a blank white image.', 'rapls-pdf-image-creator'),
+                    'action' => __('Nothing was drawn. ImageMagick raised no error, so this is almost always the PDF renderer underneath it — Ghostscript — being too old for the file. Ghostscript 9.27 fails on PDFs that Ghostscript 10 handles, reporting "Error reading a content stream" and writing an empty page. Ask your hosting provider which version is installed and whether it can be updated.', 'rapls-pdf-image-creator'),
+                ];
+
             case self::RESOURCE_LIMIT:
                 return [
                     'label' => __('The page was too large for ImageMagick to open.', 'rapls-pdf-image-creator'),
@@ -165,6 +173,7 @@ final class FailureCode
             self::NOT_A_PDF,
             self::SOURCE_MISSING,
             self::RESOURCE_LIMIT,
+            self::BLANK_RENDER,
             self::WRITE_FAILED,
             self::RENDER_ERROR,
             self::ERROR,
