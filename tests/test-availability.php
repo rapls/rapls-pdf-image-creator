@@ -283,19 +283,30 @@ check('is a PDF', substr($twoPage, 0, 8), '%PDF-1.4');
 check('declares two pages', false !== strpos($twoPage, '/Count 2'), true);
 check('both pages are in the tree', false !== strpos($twoPage, '/Kids [3 0 R 4 0 R]'), true);
 
-// The whole probe turns on the two pages looking different. If page two ever
-// stops being filled, both renders come back white and the probe reports that
-// page selection is broken on every server in the world.
-check('the second page is filled', false !== strpos($twoPage, '0.0 g'), true);
-check('the first page has no content stream', substr_count($twoPage, '/Contents'), 1);
+// The whole probe turns on the two pages looking different, and on both of
+// them being painted. Leaving page one empty is what broke the first version:
+// an unpainted page is transparent, not white, and sampled before flattening
+// it reads #000000 -- the same as a page painted black. The probe then said
+// page selection was broken on every server in the world.
+check('page one is painted white', false !== strpos($twoPage, '1.0 g'), true);
+check('page two is painted black', false !== strpos($twoPage, '0.0 g'), true);
+check('both pages have a content stream', substr_count($twoPage, '/Contents'), 2);
 
-check('stream length matches the declared /Length', (function () use ($twoPage) {
-    preg_match('/\/Length (\d+) >>\s*stream\n(.*?)endstream/s', $twoPage, $m);
-    return isset($m[1], $m[2]) && (int) $m[1] === strlen($m[2]);
+check('every stream length matches its declared /Length', (function () use ($twoPage) {
+    preg_match_all('/\/Length (\d+) >>\s*stream\n(.*?)endstream/s', $twoPage, $m, PREG_SET_ORDER);
+    if (2 !== count($m)) {
+        return false;
+    }
+    foreach ($m as $one) {
+        if ((int) $one[1] !== strlen($one[2])) {
+            return false;
+        }
+    }
+    return true;
 })(), true);
 
 preg_match_all('/^(\d{10}) 00000 n $/m', $twoPage, $rows2);
-check('five xref entries', count($rows2[1]), 5);
+check('six xref entries', count($rows2[1]), 6);
 $good2 = true;
 foreach ($rows2[1] as $i => $offset) {
     if (substr($twoPage, (int) $offset, strlen((string) ($i + 1)) + 6) !== ($i + 1) . ' 0 obj') {

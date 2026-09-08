@@ -1123,23 +1123,61 @@ final class ImagickEngine implements EngineInterface
             $pdf = self::twoPagePdf();
             $signatures = [];
 
-            foreach ([0, 1] as $index) {
-                $imagick = new \Imagick();
-                $imagick->setResolution(36, 36);
-                $imagick->readImageBlob($pdf, 'rapls-pic-page-probe.pdf[' . $index . ']');
+            // Read the whole file and step through the pages, rather than
+            // asking for one page at a time.
+            //
+            // Two reasons, both measured. readImageBlob() ignores a [n] scene
+            // specifier in the filename it is given -- it returns every page
+            // regardless, so the first version of this probe compared one
+            // two-page read against another and reported page selection broken
+            // on every server in the world. And reading once costs one
+            // Ghostscript run instead of two.
+            $imagick = new \Imagick();
+            $imagick->setResolution(36, 36);
+            $imagick->readImageBlob($pdf, 'rapls-pic-page-probe.pdf');
 
-                $pixel = $imagick->getImagePixelColor(
-                    (int) ($imagick->getImageWidth() / 2),
-                    (int) ($imagick->getImageHeight() / 2)
-                );
-                $rgb = $pixel->getColor();
-                $signatures[$index] = sprintf('%02X%02X%02X', $rgb['r'], $rgb['g'], $rgb['b']);
+            $pages = $imagick->getNumberImages();
+
+            if ($pages < 2) {
+                // One image back from a two-page file means the pages were
+                // merged or the second was dropped. Either way a page number
+                // cannot pick between them here.
+                $imagick->clear();
+                $result['ok'] = false;
+                $result['error'] = sprintf('%d page(s) from a 2-page file', $pages);
+            } else {
+                foreach ([0, 1] as $index) {
+                    $imagick->setIteratorIndex($index);
+                    $page = $imagick->getImage();
+
+                    // Flatten first, as the conversion does. A page arrives
+                    // from the PDF delegate with an alpha channel, and an
+                    // unpainted area sampled straight out of that raster is
+                    // transparent black -- the same #000000 as a page painted
+                    // black.
+                    $page->setImageBackgroundColor(new \ImagickPixel('white'));
+
+                    if (method_exists($page, 'mergeImageLayers')) {
+                        $flat = $page->mergeImageLayers(\Imagick::LAYERMETHOD_FLATTEN);
+                        $page->clear();
+                        $page = $flat;
+                    }
+
+                    $pixel = $page->getImagePixelColor(
+                        (int) ($page->getImageWidth() / 2),
+                        (int) ($page->getImageHeight() / 2)
+                    );
+                    $rgb = $pixel->getColor();
+                    $signatures[$index] = sprintf('%02X%02X%02X', $rgb['r'], $rgb['g'], $rgb['b']);
+
+                    $page->clear();
+                }
 
                 $imagick->clear();
-            }
 
-            $result['ok'] = $signatures[0] !== $signatures[1];
-            $result['error'] = $signatures[0] . ' / ' . $signatures[1];
+                $result['ok'] = $signatures[0] !== $signatures[1];
+                $result['error'] = $signatures[0] . ' / ' . $signatures[1];
+            }
         } catch (\Exception $e) {
             // On a server with no PDF support this is the expected answer, and
             // the PDF Support row has already said so. Nothing to add.
@@ -1168,14 +1206,20 @@ final class ImagickEngine implements EngineInterface
      */
     private static function twoPagePdf(): string
     {
-        $stream = "0.0 g\n0 0 72 72 re\nf\n";
+        // Both pages are painted. Leaving the first one empty and relying on
+        // it being white is what made this probe wrong: an unpainted page is
+        // transparent, not white, and the two only differ once something has
+        // decided what transparent means.
+        $white = "1.0 g\n0 0 72 72 re\nf\n";
+        $black = "0.0 g\n0 0 72 72 re\nf\n";
 
         return self::buildPdf([
             '<< /Type /Catalog /Pages 2 0 R >>',
             '<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>',
-            '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 72 72] /Resources << >> >>',
             '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 72 72] /Resources << >> /Contents 5 0 R >>',
-            '<< /Length ' . strlen($stream) . " >>\nstream\n" . $stream . 'endstream',
+            '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 72 72] /Resources << >> /Contents 6 0 R >>',
+            '<< /Length ' . strlen($white) . " >>\nstream\n" . $white . 'endstream',
+            '<< /Length ' . strlen($black) . " >>\nstream\n" . $black . 'endstream',
         ]);
     }
 
