@@ -316,6 +316,132 @@ require_once RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/ColorProfile.php';
 
 use Rapls\PDFImageCreator\Engine\ColorProfile;
 
+/* --------------------------------------------------------- rescue attempts */
+
+/**
+ * Try other ways of asking for the same page, and say which produce pixels.
+ *
+ * A blank first step means the renderer handed over an empty raster, which is
+ * usually the end of the story. Usually, not always: ImageMagick decides which
+ * Ghostscript device to use by looking for CMYK markers in the PDF, and on
+ * ImageMagick 6 the CMYK route is the one with a history of coming back empty.
+ * If asking for the page a different way fills it in, that is a workaround the
+ * plugin could adopt, and worth knowing before telling someone their host has
+ * to change a configuration file.
+ *
+ * Read-only, and each attempt is independent: one throwing tells us something
+ * and must not stop the others.
+ */
+function rapls_diag_alternatives(string $pdfPath, int $page, int $resolution): void
+{
+    echo "\n" . str_repeat('═', 72) . "\n";
+    echo "IS THERE ANOTHER WAY TO READ IT?\n";
+    echo str_repeat('═', 72) . "\n\n";
+    echo "Each row asks for the same page differently. A row with more than one\n";
+    echo "colour is a route that works on this server.\n\n";
+
+    $attempts = [
+        'plain readImage(path[n])' => function (Imagick $im) use ($pdfPath, $page, $resolution) {
+            $im->setResolution($resolution, $resolution);
+            $im->readImage($pdfPath . '[' . $page . ']');
+        },
+        'setColorspace(sRGB) first' => function (Imagick $im) use ($pdfPath, $page, $resolution) {
+            $im->setResolution($resolution, $resolution);
+            $im->setColorspace(Imagick::COLORSPACE_SRGB);
+            $im->readImage($pdfPath . '[' . $page . ']');
+        },
+        'setColorspace(RGB) first' => function (Imagick $im) use ($pdfPath, $page, $resolution) {
+            $im->setResolution($resolution, $resolution);
+            $im->setColorspace(Imagick::COLORSPACE_RGB);
+            $im->readImage($pdfPath . '[' . $page . ']');
+        },
+        'no page suffix' => function (Imagick $im) use ($pdfPath, $resolution) {
+            $im->setResolution($resolution, $resolution);
+            $im->readImage($pdfPath);
+        },
+        'lower resolution (72)' => function (Imagick $im) use ($pdfPath, $page) {
+            $im->setResolution(72, 72);
+            $im->readImage($pdfPath . '[' . $page . ']');
+        },
+        'read whole file, then iterate' => function (Imagick $im) use ($pdfPath, $page, $resolution) {
+            $im->setResolution($resolution, $resolution);
+            $im->readImage($pdfPath);
+            $im->setIteratorIndex($page);
+        },
+    ];
+
+    $worked = [];
+
+    foreach ($attempts as $label => $attempt) {
+        $line = sprintf('  %-32s ', $label);
+
+        try {
+            $im = new Imagick();
+            $attempt($im);
+
+            $w = $im->getImageWidth();
+            $h = $im->getImageHeight();
+
+            // Flatten onto white before sampling, the way the conversion does.
+            $im->setImageBackgroundColor(new ImagickPixel('white'));
+            if (method_exists($im, 'mergeImageLayers')) {
+                $flat = $im->mergeImageLayers(Imagick::LAYERMETHOD_FLATTEN);
+                $im->clear();
+                $im = $flat;
+            }
+
+            $sample = rapls_diag_sample($im);
+
+            // Uniform is not the same as blank. A page filled edge to edge
+            // with one ink is a single colour and is not what we are hunting;
+            // an empty render is a single colour that happens to be white.
+            // Treating the first as the second reported a solid cyan test page
+            // as blank.
+            $blank = !empty($sample['uniform'])
+                && preg_match('/^#([0-9A-F]{2})\1\1$/i', (string) $sample['dominant'], $m)
+                && hexdec($m[1]) > 240;
+
+            $line .= sprintf(
+                '%5dx%-5d %-22s %s',
+                $w,
+                $h,
+                rapls_diag_constant_name('COLORSPACE_', $im->getImageColorspace()),
+                $blank
+                    ? '真っ白'
+                    : sprintf('★ %d 色 mean %s', $sample['distinct'], $sample['mean'])
+            );
+
+            if (!$blank) {
+                $worked[] = $label;
+            }
+
+            $im->clear();
+        } catch (Throwable $e) {
+            $line .= '失敗: ' . str_replace("\n", ' ', substr($e->getMessage(), 0, 60));
+        }
+
+        echo $line . "\n";
+    }
+
+    echo "\n";
+
+    if ($worked) {
+        echo "少なくとも1つの経路で絵が出ました:\n";
+        foreach ($worked as $w) {
+            echo '  - ' . $w . "\n";
+        }
+        echo "\nつまりサーバーはこのPDFを描けます。プラグインの読み方を変えれば\n";
+        echo "済む可能性があります。この出力を開発元に送ってください。\n";
+    } else {
+        echo "どの経路でも真っ白でした。\n\n";
+        echo "ImageMagick からこのPDFを描く手立ては、このサーバーにはありません。\n";
+        echo "ホスティング事業者に次のどちらかを依頼してください。\n";
+        echo "  1. ImageMagick 7 への更新\n";
+        echo "  2. delegates.xml の ps:cmyk が使うデバイスの変更\n";
+        echo "     (現在の設定は管理画面の Status タブに出ています)\n";
+    }
+}
+
 /* --------------------------------------------------------------- helpers */
 
 /**
@@ -683,9 +809,10 @@ try {
     if (!empty($final['uniform'])) {
         printf("The final image is a single flat colour: %s\n\n", $final['dominant']);
         echo "Look back through the steps above for the first one reporting UNIFORM.\n";
-        echo "That step is the culprit. If step 1 is already uniform, Ghostscript\n";
-        echo "returned a blank page and nothing in the plugin can recover it — the\n";
-        echo "problem is in the render, not the conversion.\n";
+        echo "That step is the culprit. If step 1 is already uniform, the page came\n";
+        echo "out of the renderer blank and no later step can put anything back.\n";
+
+        rapls_diag_alternatives($pdfPath, (int) $page, (int) $resolution);
     } else {
         printf(
             "The final image has %d distinct colours (mean %s). It is not blank.\n",
