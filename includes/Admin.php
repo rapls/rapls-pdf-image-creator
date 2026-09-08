@@ -64,6 +64,7 @@ final class Admin
         add_action('admin_init', [$this, 'registerSettings']);
         add_action('admin_init', [$this, 'maybeDismissColorNotice']);
         add_action('admin_init', [$this, 'maybeDismissEngineNotice']);
+        add_action('admin_init', [$this, 'maybeRecheckProbes']);
         add_action('admin_enqueue_scripts', [$this, 'enqueueAssets']);
         add_action('admin_notices', [$this, 'showAdminNotices']);
     }
@@ -419,6 +420,57 @@ final class Admin
     /**
      * Render settings page
      */
+    /**
+     * Throw away the cached probe results and measure again
+     *
+     * The probes cache for twelve hours, which is right for a value read on
+     * every admin page load and wrong for the moment after a host says "we
+     * have enabled PDFs for you". Without this the site owner waits half a day
+     * to find out whether that is true.
+     */
+    public function maybeRecheckProbes(): void
+    {
+        if (!isset($_GET['rapls_pic_recheck'])) {
+            return;
+        }
+
+        if (!current_user_can('manage_options')) {
+            return;
+        }
+
+        if (!isset($_GET['_wpnonce']) || !wp_verify_nonce(sanitize_key(wp_unslash($_GET['_wpnonce'])), 'rapls_pic_recheck')) {
+            return;
+        }
+
+        foreach (\Rapls\PDFImageCreator\Engine\ImagickEngine::probeTransients() as $transient) {
+            delete_transient($transient);
+        }
+
+        // Whatever the last failure was, it was measured against the old
+        // answer. Let the next generation decide.
+        delete_option(Generator::UNAVAILABLE_OPTION);
+
+        wp_safe_redirect(add_query_arg(
+            ['page' => 'rapls-pdf-image-creator', 'rapls_pic_rechecked' => '1'],
+            admin_url('options-general.php')
+        ) . '#tab-status');
+        exit;
+    }
+
+    /**
+     * URL for the re-check button
+     */
+    public function getRecheckUrl(): string
+    {
+        return wp_nonce_url(
+            add_query_arg(
+                ['page' => 'rapls-pdf-image-creator', 'rapls_pic_recheck' => '1'],
+                admin_url('options-general.php')
+            ),
+            'rapls_pic_recheck'
+        );
+    }
+
     public function renderSettingsPage(): void
     {
         if (!current_user_can('manage_options')) {
@@ -427,6 +479,8 @@ final class Admin
 
         $config = $this->settings->get();
         $capabilities = $this->generator->checkCapabilities();
+        $last_failure = $this->generator->getLastFailure();
+        $recheck_url = $this->getRecheckUrl();
 
         include RAPLS_PIC_PLUGIN_DIR . 'admin/views/settings-page.php';
     }

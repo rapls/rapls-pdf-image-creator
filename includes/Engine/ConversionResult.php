@@ -64,6 +64,15 @@ final class ConversionResult
     private float $conversionTime;
 
     /**
+     * Machine-readable reason for a failure
+     *
+     * Empty on success. See Rapls\PDFImageCreator\FailureCode.
+     *
+     * @var string
+     */
+    private string $code;
+
+    /**
      * Constructor
      *
      * @param bool $success Whether conversion succeeded
@@ -81,8 +90,10 @@ final class ConversionResult
         int $width = 0,
         int $height = 0,
         int $fileSize = 0,
-        float $conversionTime = 0.0
+        float $conversionTime = 0.0,
+        string $code = ''
     ) {
+        $this->code = $code;
         $this->success = $success;
         $this->outputPath = $outputPath;
         $this->error = $error;
@@ -124,11 +135,22 @@ final class ConversionResult
      * Create a failed result
      *
      * @param string $error Error message
+     * @param string $code  Machine-readable reason. See FailureCode.
      * @return self
      */
-    public static function failure(string $error): self
+    public static function failure(string $error, string $code = \Rapls\PDFImageCreator\FailureCode::RENDER_ERROR): self
     {
-        return new self(false, '', $error);
+        return new self(false, '', $error, 0, 0, 0, 0.0, $code);
+    }
+
+    /**
+     * Why it failed, as a code rather than a sentence
+     *
+     * Empty string on success.
+     */
+    public function getCode(): string
+    {
+        return $this->code;
     }
 
     /**

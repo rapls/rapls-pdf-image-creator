@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.1
-Stable tag: 1.3.2
+Stable tag: 1.4.0
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -257,7 +257,44 @@ add_filter( 'rapls_pdf_image_creator_icc_paths', function( $paths, $type ) {
 * `rapls_pdf_image_creator_after_generate` - After successful generation
 * `rapls_pdf_image_creator_generation_failed` - When generation fails
 
+== Bundled third-party assets ==
+
+= sRGB2014.icc =
+
+An ICC colour profile from the International Color Consortium's profile
+registry (https://www.color.org/srgbprofiles.xalter), used as the destination
+profile when converting CMYK PDF pages to sRGB, and attached to the generated
+image.
+
+Licence, from https://registry.color.org/profile-library/ :
+
+"This profile is made available by the International Color Consortium, and may
+be copied, distributed, embedded, made, used, and sold without restriction.
+Altered versions of this profile shall have the original identification and
+copyright information removed and shall not be misrepresented as the original
+profile."
+
+Shipped unaltered. Compatible with GPL-2.0-or-later.
+
+No other profile is bundled. CMYK profiles are read from the host when one is
+present and are never redistributed.
+
 == Changelog ==
+= 1.4.0 =
+* Added: when a thumbnail cannot be generated, the Status tab now says why. Until now a failed generation returned nothing at all — the PDF simply had no thumbnail and no screen anywhere explained it, which is the most common question this plugin gets asked
+* Added: failures are classified. "The server has no PDF support", "this page is too large for ImageMagick to open", "the uploads folder is not writable" and "the file is missing" are four different problems with four different answers, and they no longer look the same
+* Added: a Page Selection row on the Status tab. The setting to pick which page becomes the thumbnail has been here since the beginning and nothing ever checked that it worked; the plugin now renders two pages of a test file built in memory and reports whether they came out different
+* Added: a "Check this server again" button on the Status tab. Measurements are remembered for twelve hours, which is too long to wait after a host says they have enabled something
+* Added for developers: `rapls_pdf_image_creator_before_resize` runs on the rendered page after transparency is flattened and before it is resized. The conversion options now also carry `attachment_id` and `source_path`, so a listener can tell which attachment it is looking at
+* Changed for developers: `rapls_pdf_image_creator_generation_failed` now fires on every failure rather than only on a conversion error, and passes a machine-readable code and the engine result as third and fourth arguments. Existing two-argument listeners are unaffected
+* Fixed: the CMYK test on the Status tab could report "may produce a blank image" without saying that it had not actually been able to run the test. It captured the reason and then discarded it, so the one answer that means "I do not know" was also the one that gave you nothing to act on. It now says it was not tested, and what stopped it
+* Added: the Status tab now names the Ghostscript device your ImageMagick uses for CMYK PDFs, read from delegates.xml. Two servers reporting the same ImageMagick 6 version can behave differently, and the device is what tells them apart — `bmpsep8` is the one that produces blank thumbnails, `pamcmyk32` is fine. It turns "some ImageMagick 6 builds" into a request your host can act on
+* Added: Ghostscript's own `default_cmyk.icc` is now searched for. Any server that can render a PDF has Ghostscript on it, so this is the one CMYK profile present almost everywhere — on a server with no colour profiles at all, finding it moves the conversion from the arithmetic fallback to real colour management. Measured on a mixed CMYK/RGB brochure that is a 32 delta-E difference: the greens stop coming out fluorescent
+* Added: an sRGB profile is bundled, so the output side of the conversion no longer depends on the host having one
+* Fixed: the Color Management row reported only one missing profile. The conversion needs a CMYK and an sRGB one, and being told about the first meant you could not tell whether finding a single profile would be enough
+* Fixed: the policy.xml reader counted rules inside `<!-- -->` as active. The 1.3.1 changelog said this was fixed; the fix went into the standalone probe in tools/ and never reached the copy that ships. Hosting providers usually unblock PDF by commenting the deny rule out rather than deleting it, so an already-unblocked server could have the wrong policy file named in the explanation
+* Fixed: the same test treated an empty result as inconclusive rather than as the failure it is. Reading a separation BMP on ImageMagick 6 sometimes throws and sometimes returns an image with no pixels, and the second case is exactly what becomes a blank white thumbnail — it is now reported as broken, tested, with what to ask your host
+
 = 1.3.2 =
 * Changed: the ImageMagick 6 CMYK warning is now measured rather than assumed. It used to appear on every ImageMagick 6 server on the strength of the version number alone. Measured on Xserver's ImageMagick 6.9.13-25, a CMYK page renders correctly, so that warning was wrong there
 * The Status tab now renders a CMYK test page — one inch of solid cyan, built in memory — and reports what actually came back. A blank result is stated as tested and confirmed, with what to ask the host; a correct result says so, while noting that complex PDF/X files can still take a different path
@@ -399,6 +436,9 @@ add_filter( 'rapls_pdf_image_creator_icc_paths', function( $paths, $type ) {
 * Japanese translation included
 
 == Upgrade Notice ==
+
+= 1.4.0 =
+When a thumbnail fails to generate, the Status tab now tells you why instead of leaving you with a PDF and no picture. Also checks whether picking a page other than the first actually works on your server.
 
 = 1.3.2 =
 The ImageMagick 6 CMYK warning is now based on rendering a test page instead of the version number, so servers where CMYK works are no longer warned.

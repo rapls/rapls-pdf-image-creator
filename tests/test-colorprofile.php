@@ -168,5 +168,76 @@ $cp->findProfilePath('srgb');            // caches $tmp
 unlink($tmp);                            // profile disappears from the host
 check('rescans after cached path vanishes', strlen((string) $cp->loadProfile('srgb')), 200);
 
+echo "\n--- Ghostscript's own profiles (1.4.0) ---\n";
+
+// Any server that can render a PDF has Ghostscript on it, and Ghostscript
+// always ships iccprofiles/. That makes default_cmyk.icc the one CMYK profile
+// present almost everywhere the plugin runs. It installs under a directory
+// named for the version, so the candidate list carries a wildcard.
+// Earlier cases left icc_paths filters registered; the candidate list runs
+// through that filter, so clear it before asking what the defaults are.
+$GLOBALS['filters'] = [];
+$GLOBALS['transients'] = [];
+
+$ref = new ReflectionMethod('Rapls\PDFImageCreator\Engine\ColorProfile', 'getCandidates');
+$ref->setAccessible(true);
+$cmykList = $ref->invoke(new Rapls\PDFImageCreator\Engine\ColorProfile(), 'cmyk');
+$srgbList = $ref->invoke(new Rapls\PDFImageCreator\Engine\ColorProfile(), 'srgb');
+
+$hasGsCmyk = false;
+foreach ($cmykList as $candidate) {
+    if (false !== strpos($candidate, 'ghostscript') && false !== strpos($candidate, 'default_cmyk.icc')) {
+        $hasGsCmyk = true;
+    }
+}
+check('gs default_cmyk is searched for', $hasGsCmyk, true);
+
+// Measured against a real page: ps_cmyk.icc lands 32 delta-E from a proper
+// CMYK profile, which is exactly where the arithmetic fallback already sits.
+// Finding it would look like colour management and change nothing.
+$hasPsCmyk = false;
+foreach ($cmykList as $candidate) {
+    if (false !== strpos($candidate, 'ps_cmyk')) {
+        $hasPsCmyk = true;
+    }
+}
+check('but ps_cmyk.icc is not', $hasPsCmyk, false);
+
+// The destination profile is embedded in every generated thumbnail, so a
+// Ghostscript one would put an AGPL file into images the site then serves.
+// The source profile is replaced during the transform and never reaches the
+// output, which is why the two lists differ.
+$srgbFromGs = false;
+foreach ($srgbList as $candidate) {
+    if (false !== strpos($candidate, 'ghostscript')) {
+        $srgbFromGs = true;
+    }
+}
+check('no Ghostscript profile is used as the destination', $srgbFromGs, false);
+
+echo "\n--- wildcard expansion ---\n";
+
+$expand = new ReflectionMethod('Rapls\PDFImageCreator\Engine\ColorProfile', 'expandCandidates');
+$expand->setAccessible(true);
+$cp2 = new Rapls\PDFImageCreator\Engine\ColorProfile();
+
+$gsRoot = RAPLS_PIC_TEST_TMP . '/gs';
+foreach (['9.25', '10.04.0'] as $ver) {
+    @mkdir("$gsRoot/$ver/iccprofiles", 0777, true);
+    makeIcc("$gsRoot/$ver/iccprofiles/default_cmyk.icc", 300);
+}
+
+$literal = RAPLS_PIC_TEST_TMP . '/icc/sRGB2014.icc';
+$out = $expand->invoke($cp2, [$literal, "$gsRoot/*/iccprofiles/default_cmyk.icc"]);
+
+check('literals survive untouched', $out[0], $literal);
+check('the wildcard found both installs', count($out), 3);
+// A host that upgraded in place keeps the old directory. ImageMagick uses the
+// new Ghostscript, so the profile search should agree with it.
+check('newest version first', false !== strpos($out[1], '10.04.0'), true);
+
+$none = $expand->invoke($cp2, [RAPLS_PIC_TEST_TMP . '/nothing/*/x.icc']);
+check('a wildcard matching nothing drops out', $none, []);
+
 printf("\n%d passed, %d failed\n", $pass, $fail);
 exit($fail === 0 ? 0 : 1);

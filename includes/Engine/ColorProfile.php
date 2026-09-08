@@ -206,7 +206,7 @@ final class ColorProfile
             return '' === $cached ? null : (string) $cached;
         }
 
-        foreach ($this->getCandidates($type) as $path) {
+        foreach ($this->expandCandidates($this->getCandidates($type)) as $path) {
             if (false !== $this->readIccFile($path)) {
                 set_transient($key, $path, DAY_IN_SECONDS);
                 return $path;
@@ -218,6 +218,46 @@ final class ColorProfile
         set_transient($key, '', HOUR_IN_SECONDS);
 
         return null;
+    }
+
+    /**
+     * Resolve any wildcards in the candidate list, keeping the order.
+     *
+     * Ghostscript installs under a directory named for its version, so the
+     * path cannot be written out in full. Everything else is a literal and
+     * passes through untouched -- glob() is only called for entries that
+     * actually contain a wildcard, so the common case costs nothing.
+     *
+     * Newest version first when several are installed, which on a host that
+     * has upgraded in place is the one ImageMagick is using.
+     *
+     * @param string[] $candidates
+     * @return string[]
+     */
+    private function expandCandidates(array $candidates): array
+    {
+        $paths = [];
+
+        foreach ($candidates as $candidate) {
+            if (false === strpos($candidate, '*')) {
+                $paths[] = $candidate;
+                continue;
+            }
+
+            $matches = @glob($candidate, GLOB_NOSORT);
+
+            if (!is_array($matches) || [] === $matches) {
+                continue;
+            }
+
+            rsort($matches, SORT_NATURAL);
+
+            foreach ($matches as $match) {
+                $paths[] = $match;
+            }
+        }
+
+        return array_values(array_unique($paths));
     }
 
     /**
@@ -244,6 +284,29 @@ final class ColorProfile
                 '/usr/share/color/icc/ISOcoated_v2_300_eci.icc',
                 '/usr/share/color/icc/colord/CoatedFOGRA27.icc',
                 '/System/Library/ColorSync/Profiles/Generic CMYK Profile.icc',
+
+                // Ghostscript ships its own profiles, and any server that can
+                // render a PDF at all has Ghostscript on it. That makes this
+                // the one CMYK profile which is present almost everywhere the
+                // plugin runs, on shared hosting included.
+                //
+                // Only default_cmyk.icc. The neighbouring ps_cmyk.icc is the
+                // naive PostScript conversion written as a profile: measured
+                // against a real page it lands 32 ΔE from a proper CMYK
+                // profile, which is where the arithmetic fallback already is.
+                // Using it would be doing the same wrong thing more slowly.
+                //
+                // These are Artifex's files under Ghostscript's AGPL. Reading
+                // one the host installed is not distributing it, and this is
+                // the source profile -- it drives the transform and is then
+                // replaced by the destination, so no copy of it reaches the
+                // generated image. The destination profile is a different
+                // question, because that one is embedded in every thumbnail;
+                // see the sRGB list above.
+                '/usr/share/ghostscript/*/iccprofiles/default_cmyk.icc',
+                '/usr/lib/ghostscript/*/iccprofiles/default_cmyk.icc',
+                '/usr/local/share/ghostscript/*/iccprofiles/default_cmyk.icc',
+                '/opt/homebrew/share/ghostscript/*/iccprofiles/default_cmyk.icc',
             ];
         }
 

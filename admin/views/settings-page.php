@@ -436,6 +436,21 @@ if (!defined('ABSPATH')) {
             <?php esc_html_e('This plugin requires ImageMagick (Imagick PHP extension) with PDF support to generate thumbnails.', 'rapls-pdf-image-creator'); ?>
         </p>
 
+        <?php if (!empty($_GET['rapls_pic_rechecked'])) : ?>
+        <div class="notice notice-success inline">
+            <p><?php esc_html_e('The server was checked again just now.', 'rapls-pdf-image-creator'); ?></p>
+        </div>
+        <?php endif; ?>
+
+        <p>
+            <a href="<?php echo esc_url($recheck_url); ?>" class="button">
+                <?php esc_html_e('Check this server again', 'rapls-pdf-image-creator'); ?>
+            </a>
+            <span class="description">
+                <?php esc_html_e('Results below are measured, then remembered for twelve hours. Use this after your host changes something.', 'rapls-pdf-image-creator'); ?>
+            </span>
+        </p>
+
         <?php
         $rapls_pic_imagick_engine = $capabilities['engines']['imagick'] ?? null;
         $rapls_pic_is_available = $rapls_pic_imagick_engine && $rapls_pic_imagick_engine['available'];
@@ -465,6 +480,44 @@ if (!defined('ABSPATH')) {
                 <a href="<?php echo esc_url(admin_url('site-health.php')); ?>">
                     <?php esc_html_e('See Site Health for the full report', 'rapls-pdf-image-creator'); ?>
                 </a>
+            </p>
+        </div>
+        <?php endif; ?>
+
+        <?php
+        // The server can be perfectly capable and a particular file still fail.
+        // Before 1.4.0 that produced a PDF with no thumbnail and no explanation
+        // anywhere; the reason was thrown away as soon as generate() returned.
+        $rapls_pic_failure = $last_failure ?? null;
+        $rapls_pic_failure_text = $rapls_pic_failure
+            ? \Rapls\PDFImageCreator\FailureCode::describe($rapls_pic_failure['code'])
+            : ['label' => '', 'action' => ''];
+        ?>
+
+        <?php if ($rapls_pic_failure && '' !== $rapls_pic_failure_text['label']) : ?>
+        <div class="notice notice-warning inline">
+            <p><strong><?php echo esc_html($rapls_pic_failure_text['label']); ?></strong></p>
+            <?php if ('' !== $rapls_pic_failure_text['action']) : ?>
+            <p>
+                <strong><?php esc_html_e('What to do:', 'rapls-pdf-image-creator'); ?></strong>
+                <?php echo esc_html($rapls_pic_failure_text['action']); ?>
+            </p>
+            <?php endif; ?>
+            <p>
+                <?php
+                printf(
+                    /* translators: 1: attachment title, 2: how long ago, e.g. "3 hours" */
+                    esc_html__('Last seen on %1$s, %2$s ago.', 'rapls-pdf-image-creator'),
+                    esc_html(get_the_title($rapls_pic_failure['pdf_id']) ?: '#' . $rapls_pic_failure['pdf_id']),
+                    esc_html(human_time_diff($rapls_pic_failure['time']))
+                );
+                ?>
+            </p>
+            <?php if ('' !== $rapls_pic_failure['message']) : ?>
+            <p><code><?php echo esc_html($rapls_pic_failure['message']); ?></code></p>
+            <?php endif; ?>
+            <p class="description">
+                <?php esc_html_e('This clears itself the next time a thumbnail is generated successfully.', 'rapls-pdf-image-creator'); ?>
             </p>
         </div>
         <?php endif; ?>

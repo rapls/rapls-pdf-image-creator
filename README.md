@@ -113,6 +113,67 @@ gs --version
 
 ---
 
+## フィルターとアクション（開発者向け）
+
+### 生成オプション
+
+`Generator::generate()` は変換オプションを**すべて PDF 単位のフィルター経由**で組み立てます。第 2 引数に添付 ID が渡るので、PDF ごとに違う値を返せます。
+
+| フィルター | 既定値 | 型 |
+|---|---|---|
+| `rapls_pdf_image_creator_thumbnail_page` | 設定画面の値（**0 = 1 ページ目**） | int |
+| `rapls_pdf_image_creator_thumbnail_max_width` | 1024 | int |
+| `rapls_pdf_image_creator_thumbnail_max_height` | 1024 | int |
+| `rapls_pdf_image_creator_thumbnail_resolution` | 150 | int |
+| `rapls_pdf_image_creator_thumbnail_quality` | 90 | int |
+| `rapls_pdf_image_creator_thumbnail_format` | `jpeg` | string |
+| `rapls_pdf_image_creator_thumbnail_bgcolor` | `white` | string |
+
+```php
+// report-*.pdf だけ 3 ページ目を使う（ページ番号は 0 起点）
+add_filter('rapls_pdf_image_creator_thumbnail_page', function ($page, $pdfId) {
+    return 0 === strpos(basename(get_attached_file($pdfId)), 'report-') ? 2 : $page;
+}, 10, 2);
+```
+
+### 描画後・リサイズ前のフック（1.4.0〜）
+
+```php
+add_filter('rapls_pdf_image_creator_before_resize', function (Imagick $image, array $options) {
+    // $options['attachment_id'] — 元 PDF の添付 ID
+    // $options['source_path']   — 元 PDF の絶対パス
+    return $image;   // 別インスタンスを返してもよい
+}, 10, 2);
+```
+
+透過を背景色に合成し、アルファチャンネルを落とした**直後**、リサイズの**直前**に走ります。この位置である理由は 2 つあります。アルファが残っていると、内容と余白を見分ける処理が意味をなしません。そして縮小後に測ると、境界がぼやけた測定になります。
+
+戻り値が `Imagick` でなければ無視され、画像はそのまま処理を続けます。**リスナーが 1 つも無いときに挙動が変わってはいけない**ので、返り値は必ず型検査してください、ではなく、プラグイン側が型検査します。
+
+### 生成の前後
+
+| フック | 引数 |
+|---|---|
+| `rapls_pdf_image_creator_before_generate` | `$pdfId`, `$pdfPath` |
+| `rapls_pdf_image_creator_after_generate` | `$thumbnailId`, `$pdfId`, `$result` |
+| `rapls_pdf_image_creator_generation_failed` | `$message`, `$pdfId`, `$code`, `$result` |
+
+`generation_failed` は 1.4.0 で変わりました。**すべての失敗経路で発火し**（それ以前は変換エラーのときだけ）、第 3 引数に機械可読なコードが付きます。既存の 2 引数のリスナーはそのまま動きます。
+
+コードの一覧は `includes/FailureCode.php` にあります。`FailureCode::isPermanent()` は、同じ設定でやり直しても同じ結果になるものを `true` で返します。ディスクが一杯（`write_failed`）は後で解消しますが、2 億ピクセルのページ（`resource_limit`）は明日も 2 億ピクセルです。
+
+### その他
+
+| フィルター | 用途 |
+|---|---|
+| `rapls_pdf_image_creator_engines` | 変換エンジンの差し替え |
+| `rapls_pdf_image_creator_icc_paths` | ICC プロファイルの探索先 |
+| `rapls_pdf_image_creator_color_conversion` | 色変換の方式を固定する |
+| `rapls_pdf_image_creator_policy_paths` | policy.xml の探索先 |
+| `rapls_pdf_image_creator_flatten_background` | 合成する背景色 |
+| `rapls_pdf_image_creator_hide_thumbnails_in_library` | 生成画像をライブラリで隠すか |
+| `rapls_pdf_image_creator_thumbnail_image_attributes` | 出力する `img` の属性 |
+
 ## Documentation
 
 - [ガイド](https://raplsworks.com/rapls-pdf-image-creator-guide/)

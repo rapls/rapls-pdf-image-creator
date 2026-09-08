@@ -86,6 +86,37 @@ final class ImagickEngine implements EngineInterface
     private const CMYK_PROBE_TRANSIENT = 'rapls_pic_cmyk_render';
 
     /**
+     * Transient caching the page-selection probe
+     */
+    private const PAGE_PROBE_TRANSIENT = 'rapls_pic_page_select';
+
+    /**
+     * Transient caching the delegates.xml lookup
+     */
+    private const DELEGATE_TRANSIENT = 'rapls_pic_cmyk_delegate';
+
+    /**
+     * Every transient this class caches a measurement in
+     *
+     * The Status tab's re-check button deletes these, and so does uninstall.
+     * Keeping the list here means neither has to guess, and a probe added
+     * without a matching entry shows up as a failing test rather than as an
+     * answer nobody can clear.
+     *
+     * @return array<int, string>
+     */
+    public static function probeTransients(): array
+    {
+        return [
+            self::POLICY_TRANSIENT,
+            self::READ_PROBE_TRANSIENT,
+            self::CMYK_PROBE_TRANSIENT,
+            self::PAGE_PROBE_TRANSIENT,
+            self::DELEGATE_TRANSIENT,
+        ];
+    }
+
+    /**
      * {@inheritdoc}
      *
      * Nothing here may throw: this runs on every admin page load through the
@@ -119,7 +150,12 @@ final class ImagickEngine implements EngineInterface
             return $this->statusFor('ok');
         }
 
-        if (preg_match('/not\s*authoriz|security policy/i', $probe['error'])) {
+        // Same classifier the conversion path uses, so that "why can this
+        // server not render PDFs" and "why did this render fail" cannot start
+        // disagreeing with each other.
+        $code = \Rapls\PDFImageCreator\FailureCode::fromExceptionMessage($probe['error']);
+
+        if (\Rapls\PDFImageCreator\FailureCode::PDF_BLOCKED_BY_POLICY === $code) {
             $policyFile = $this->findPdfPolicyBlock();
 
             return $this->statusFor(
@@ -131,7 +167,7 @@ final class ImagickEngine implements EngineInterface
             );
         }
 
-        if (preg_match('/no decode delegate|FailedToExecuteCommand|delegate/i', $probe['error'])) {
+        if (\Rapls\PDFImageCreator\FailureCode::PDF_UNSUPPORTED === $code) {
             return $this->statusFor('pdf_unsupported', $probe['error']);
         }
 
@@ -340,6 +376,125 @@ final class ImagickEngine implements EngineInterface
      */
     private function getPolicyFileCandidates(): array
     {
+        $files = [];
+        foreach ($this->getConfigDirectories() as $dir) {
+            $files[] = $dir . '/policy.xml';
+        }
+
+        /**
+         * Filter the policy.xml paths searched
+         *
+         * Builds in unusual locations, and the test suite, need to point this
+         * somewhere else.
+         *
+         * @param array<int, string> $files Candidate paths, most authoritative first.
+         */
+        $files = apply_filters('rapls_pdf_image_creator_policy_paths', array_values(array_unique($files)));
+
+        return is_array($files) ? array_values(array_filter($files, 'is_string')) : [];
+    }
+
+    /**
+     * Which Ghostscript device this build uses for CMYK PDFs
+     *
+     * ImageMagick picks the device from delegates.xml, and on ImageMagick 6
+     * the historical choice for ps:cmyk is bmpsep8 -- a separation BMP that
+     * ImageMagick's own reader cannot decode, which is where blank white
+     * thumbnails come from. Newer builds and distribution patches use
+     * pamcmyk32 instead and are fine.
+     *
+     * Reading the file is the only way to tell from PHP: Imagick exposes the
+     * format list and the resource limits, but nothing about delegates, and
+     * `identify -list delegate` is a process this plugin may not start.
+     *
+     * @return string|null Device name, or null when it could not be read.
+     */
+    private function getCmykDelegateDevice(): ?string
+    {
+        $cached = get_transient(self::DELEGATE_TRANSIENT);
+        if (is_array($cached) && array_key_exists('device', $cached)) {
+            return is_string($cached['device']) ? $cached['device'] : null;
+        }
+
+        $device = null;
+
+        foreach ($this->getDelegateFileCandidates() as $file) {
+            if (!is_readable($file)) {
+                continue;
+            }
+
+            $contents = @file_get_contents($file);
+            if (false === $contents || '' === $contents) {
+                continue;
+            }
+
+            $device = $this->cmykDeviceFromDelegates($contents);
+
+            if (null !== $device) {
+                break;
+            }
+        }
+
+        set_transient(self::DELEGATE_TRANSIENT, ['device' => $device], DAY_IN_SECONDS);
+
+        return $device;
+    }
+
+    /**
+     * Pull the -sDEVICE out of the ps:cmyk delegate
+     *
+     * @param string $xml Contents of a delegates.xml.
+     */
+    private function cmykDeviceFromDelegates(string $xml): ?string
+    {
+        // Same lesson as policy.xml: a delegate inside <!-- --> is not in use.
+        $xml = (string) preg_replace('/<!--.*?-->/s', '', $xml);
+
+        if (!preg_match('/<delegate\b[^>]*decode\s*=\s*"ps:cmyk"[^>]*>/is', $xml, $tag)) {
+            return null;
+        }
+
+        // The command attribute is XML-escaped, so the device may be wrapped
+        // in &quot; rather than a literal quote.
+        if (!preg_match('/-sDEVICE=(?:&quot;|"|\')?([A-Za-z0-9_]+)/i', $tag[0], $device)) {
+            return null;
+        }
+
+        return strtolower($device[1]);
+    }
+
+    /**
+     * Candidate delegates.xml paths, most authoritative first
+     *
+     * @return array<int, string>
+     */
+    private function getDelegateFileCandidates(): array
+    {
+        $files = [];
+        foreach ($this->getConfigDirectories() as $dir) {
+            $files[] = $dir . '/delegates.xml';
+        }
+
+        /**
+         * Filter the delegates.xml paths searched
+         *
+         * @param array<int, string> $files Candidate paths, most authoritative first.
+         */
+        $files = apply_filters('rapls_pdf_image_creator_delegate_paths', array_values(array_unique($files)));
+
+        return is_array($files) ? array_values(array_filter($files, 'is_string')) : [];
+    }
+
+    /**
+     * Where ImageMagick keeps its configuration, most authoritative first
+     *
+     * policy.xml and delegates.xml live side by side, so both readers want the
+     * same list.
+     *
+     * @return array<int, string>
+     */
+    private function getConfigDirectories(): array
+    {
         $dirs = [];
 
         // Runtime overrides win over anything compiled in, and ImageMagick
@@ -388,26 +543,15 @@ final class ImagickEngine implements EngineInterface
             '/opt/homebrew/etc/ImageMagick-7',
         ]);
 
-        $files = [];
+        $clean = [];
         foreach ($dirs as $dir) {
             $dir = rtrim(trim((string) $dir), '/');
-            if ('' === $dir) {
-                continue;
+            if ('' !== $dir) {
+                $clean[] = $dir;
             }
-            $files[] = $dir . '/policy.xml';
         }
 
-        /**
-         * Filter the policy.xml paths searched
-         *
-         * Builds in unusual locations, and the test suite, need to point this
-         * somewhere else.
-         *
-         * @param array<int, string> $files Candidate paths, most authoritative first.
-         */
-        $files = apply_filters('rapls_pdf_image_creator_policy_paths', array_values(array_unique($files)));
-
-        return is_array($files) ? array_values(array_filter($files, 'is_string')) : [];
+        return array_values(array_unique($clean));
     }
 
     /**
@@ -420,6 +564,17 @@ final class ImagickEngine implements EngineInterface
      */
     private function policyDeniesPdf(string $xml): bool
     {
+        // Strip comments first. A rule inside <!-- --> is switched off, and
+        // hosting providers unblock PDF by commenting the deny rule out far
+        // more often than by deleting it -- the upstream policy.xml is mostly
+        // examples inside comments to begin with. Counting those as active
+        // reports an already-fixed server as still blocked.
+        //
+        // This was written for tools/probe-imagemagick.php in 1.3.1 and the
+        // changelog said the reader was fixed. It was fixed in the tool only;
+        // the copy that ships never had it.
+        $xml = (string) preg_replace('/<!--.*?-->/s', '', $xml);
+
         if (!preg_match_all('/<policy\b[^>]*>/i', $xml, $matches)) {
             return false;
         }
@@ -525,6 +680,11 @@ final class ImagickEngine implements EngineInterface
                         : trim($availability['summary'] . ' ' . $availability['detail']),
                 ];
 
+                $pageSelection = $this->getPageSelectionStatus();
+                if (null !== $pageSelection) {
+                    $requirements['page_selection'] = $pageSelection;
+                }
+
                 $requirements['color_management'] = $this->getColorManagementStatus();
 
                 $cmykPdf = $this->getCmykPdfStatus();
@@ -565,13 +725,15 @@ final class ImagickEngine implements EngineInterface
         // Validate PDF file
         if (!file_exists($pdfPath)) {
             return ConversionResult::failure(
-                __('PDF file not found.', 'rapls-pdf-image-creator')
+                __('PDF file not found.', 'rapls-pdf-image-creator'),
+                \Rapls\PDFImageCreator\FailureCode::SOURCE_MISSING
             );
         }
 
         if (!is_readable($pdfPath)) {
             return ConversionResult::failure(
-                __('PDF file is not readable.', 'rapls-pdf-image-creator')
+                __('PDF file is not readable.', 'rapls-pdf-image-creator'),
+                \Rapls\PDFImageCreator\FailureCode::SOURCE_MISSING
             );
         }
 
@@ -614,6 +776,33 @@ final class ImagickEngine implements EngineInterface
                 $this->removeAlphaChannel($imagick);
             }
 
+            /**
+             * Filter the rendered page before it is resized.
+             *
+             * Here rather than anywhere else for two reasons. After the alpha
+             * channel is gone, because anything measuring the page against its
+             * background -- cropping to the content, for instance -- reads
+             * nonsense while transparency is still present. Before the resize,
+             * because a measurement taken on a downsampled page is a blurred
+             * measurement.
+             *
+             * A listener may return a different Imagick instance; anything else
+             * is ignored and the page carries on untouched. With no listener
+             * this is a no-op, and it has to stay one: the plugin's own output
+             * may not depend on someone being hooked here.
+             *
+             * @since 1.4.0
+             *
+             * @param \Imagick             $imagick Rendered page.
+             * @param array<string, mixed> $options Conversion options, including
+             *                                      attachment_id and source_path.
+             */
+            $filtered = apply_filters('rapls_pdf_image_creator_before_resize', $imagick, $options);
+
+            if ($filtered instanceof \Imagick) {
+                $imagick = $filtered;
+            }
+
             // Resize if necessary
             $this->resizeImage($imagick, $options['max_width'], $options['max_height']);
 
@@ -629,6 +818,21 @@ final class ImagickEngine implements EngineInterface
 
             // stripImage() also drops the sRGB profile the ICC conversion
             // wrote, so put it back on colour-managed output.
+            //
+            // Measured on ImageMagick 7.1.1: this reaches the file for JPEG
+            // and WebP, and does not for PNG -- PNG output carries no iCCP and
+            // no sRGB chunk, so it ships untagged. That is a limitation rather
+            // than a defect in what people see: the pixels are sRGB and an
+            // untagged image is read as sRGB everywhere, so PNG thumbnails
+            // look the same as the other two.
+            //
+            // It can be forced with png:include-chunk=all, and the price is
+            // not worth paying: this build then writes the profile twice, once
+            // as iCCP and again as a "Raw profile type icc" zTXt chunk, taking
+            // a 5.7 KB file where an untagged one is 87 bytes. Narrower values
+            // for that option are ignored. Since the plugin writes a thumbnail
+            // in every registered size, doubling the metadata on all of them
+            // buys nothing a viewer could see.
             if (ColorProfile::MODE_ICC === $colorMode) {
                 $this->colorProfile->attachSrgb($imagick);
             }
@@ -642,7 +846,8 @@ final class ImagickEngine implements EngineInterface
             if (!is_dir($outputDir)) {
                 if (!wp_mkdir_p($outputDir)) {
                     return ConversionResult::failure(
-                        __('Failed to create output directory.', 'rapls-pdf-image-creator')
+                        __('Failed to create output directory.', 'rapls-pdf-image-creator'),
+                        \Rapls\PDFImageCreator\FailureCode::WRITE_FAILED
                     );
                 }
             }
@@ -682,10 +887,14 @@ final class ImagickEngine implements EngineInterface
                     /* translators: %s: error message */
                     __('Imagick error: %s', 'rapls-pdf-image-creator'),
                     $e->getMessage()
-                )
+                ),
+                \Rapls\PDFImageCreator\FailureCode::fromExceptionMessage($e->getMessage())
             );
         } catch (\Exception $e) {
-            return ConversionResult::failure($e->getMessage());
+            return ConversionResult::failure(
+                $e->getMessage(),
+                \Rapls\PDFImageCreator\FailureCode::fromExceptionMessage($e->getMessage())
+            );
         }
     }
 
@@ -717,13 +926,30 @@ final class ImagickEngine implements EngineInterface
         // Measured on Xserver's ImageMagick 6.9.13-25: a DeviceCMYK page
         // renders correctly, colorspace and all. So render one and look.
         $probe = $this->probeCmykRender();
+        $device = $this->getCmykDelegateDevice();
+
+        // "some ImageMagick 6 builds" is a sentence nobody can act on. The
+        // device name turns it into a request a hosting provider can carry
+        // out, and tells two servers running the same version number apart.
+        $deviceNote = '';
+        if (null !== $device) {
+            $deviceNote = ' ' . sprintf(
+                /* translators: %s: a Ghostscript output device name, e.g. bmpsep8 */
+                __('This build renders CMYK PDFs through the %s device.', 'rapls-pdf-image-creator'),
+                $device
+            );
+
+            if ('bmpsep8' === $device) {
+                $deviceNote .= ' ' . __('That is the one ImageMagick cannot read back.', 'rapls-pdf-image-creator');
+            }
+        }
 
         if (true === $probe['ok']) {
             return [
                 'name' => __('CMYK PDF Rendering', 'rapls-pdf-image-creator'),
                 'status' => true,
                 'message' => __('Working on this server (tested)', 'rapls-pdf-image-creator'),
-                'detail' => __('ImageMagick 6 renders some CMYK PDFs as a blank image. A test page rendered correctly here, so the common case works. Complex print-ready files (PDF/X) can still take a different path — check one of your own if you rely on them.', 'rapls-pdf-image-creator'),
+                'detail' => __('ImageMagick 6 renders some CMYK PDFs as a blank image. A test page rendered correctly here, so the common case works. Complex print-ready files (PDF/X) can still take a different path — check one of your own if you rely on them.', 'rapls-pdf-image-creator') . $deviceNote,
             ];
         }
 
@@ -732,16 +958,29 @@ final class ImagickEngine implements EngineInterface
                 'name' => __('CMYK PDF Rendering', 'rapls-pdf-image-creator'),
                 'status' => false,
                 'message' => __('Broken on this server (tested)', 'rapls-pdf-image-creator'),
-                'detail' => __('A CMYK test page came back blank. Ask your hosting provider to update ImageMagick to version 7, or to change the ps:cmyk delegate from bmpsep8 to pamcmyk32. RGB PDFs are not affected.', 'rapls-pdf-image-creator'),
+                'detail' => __('A CMYK test page came back blank. Ask your hosting provider to update ImageMagick to version 7, or to change the ps:cmyk delegate from bmpsep8 to pamcmyk32. RGB PDFs are not affected.', 'rapls-pdf-image-creator') . $deviceNote,
             ];
         }
 
-        // Could not test. Say so rather than guessing either way.
+        // Could not test. Say so rather than guessing either way -- and say
+        // why, which until 1.4.0 this branch did not do. It captured the
+        // reason and then threw it away, so the one answer that means "I do
+        // not know" was also the one that gave the reader nothing to go on.
+        $detail = __('RGB PDFs are not affected.', 'rapls-pdf-image-creator') . $deviceNote;
+
+        if ('' !== $probe['error']) {
+            $detail = sprintf(
+                /* translators: %s: the error ImageMagick or PHP reported */
+                __('The test could not be run, so this is a guess based on the version number rather than a measurement. What stopped it: %s', 'rapls-pdf-image-creator'),
+                $probe['error']
+            ) . ' ' . $detail;
+        }
+
         return [
             'name' => __('CMYK PDF Rendering', 'rapls-pdf-image-creator'),
             'status' => false,
-            'message' => __('ImageMagick 6 — CMYK PDFs may produce a blank image', 'rapls-pdf-image-creator'),
-            'detail' => __('RGB PDFs are not affected.', 'rapls-pdf-image-creator'),
+            'message' => __('ImageMagick 6 — CMYK PDFs may produce a blank image (not tested)', 'rapls-pdf-image-creator'),
+            'detail' => $detail,
         ];
     }
 
@@ -780,10 +1019,48 @@ final class ImagickEngine implements EngineInterface
                 // Keep whatever space it came back in and judge on that.
             }
 
-            $pixel = $imagick->getImagePixelColor(
-                (int) ($imagick->getImageWidth() / 2),
-                (int) ($imagick->getImageHeight() / 2)
-            );
+            $width = $imagick->getImageWidth();
+            $height = $imagick->getImageHeight();
+
+            // A read that comes back with no raster is not an inconclusive
+            // test, it is the failure this probe exists to find: ImageMagick 6
+            // handed a separation BMP it cannot decode sometimes throws and
+            // sometimes returns an empty image, and the empty image is what
+            // becomes a blank white thumbnail.
+            if ($width < 1 || $height < 1) {
+                $imagick->clear();
+                $result['ok'] = false;
+                $result['error'] = sprintf('empty raster (%dx%d)', $width, $height);
+
+                set_transient(
+                    self::CMYK_PROBE_TRANSIENT,
+                    $result + ['version' => $version],
+                    12 * HOUR_IN_SECONDS
+                );
+
+                return $result;
+            }
+
+            $pixel = $imagick->getImagePixelColor((int) ($width / 2), (int) ($height / 2));
+
+            // Older Imagick builds return false here rather than throwing.
+            // Calling getColor() on that is a PHP Error, not an Exception, so
+            // it fell past the catch that would have called this a failure and
+            // landed in the one that says "could not test".
+            if (!$pixel instanceof \ImagickPixel) {
+                $imagick->clear();
+                $result['ok'] = false;
+                $result['error'] = 'getImagePixelColor() returned no pixel';
+
+                set_transient(
+                    self::CMYK_PROBE_TRANSIENT,
+                    $result + ['version' => $version],
+                    12 * HOUR_IN_SECONDS
+                );
+
+                return $result;
+            }
+
             $rgb = $pixel->getColor();
             $imagick->clear();
 
@@ -812,6 +1089,125 @@ final class ImagickEngine implements EngineInterface
         );
 
         return $result;
+    }
+
+    /**
+     * Can this server render a page other than the first?
+     *
+     * The setting to pick a page has been here since the beginning, and until
+     * now nothing checked that it worked. It is a plain readImage with an
+     * index, so it fails the ways any read fails -- but a site owner who sets
+     * page 3 and gets page 1 has no way to tell whether the setting is broken,
+     * the PDF is odd, or the server is.
+     *
+     * Two pages, one white and one black. If both renders come back the same
+     * colour, the index was ignored.
+     *
+     * @return array{ok: bool|null, error: string}
+     */
+    private function probePageSelection(): array
+    {
+        $version = $this->getVersionString();
+
+        $cached = get_transient(self::PAGE_PROBE_TRANSIENT);
+        if (is_array($cached) && array_key_exists('ok', $cached) && isset($cached['version'])
+            && $cached['version'] === $version) {
+            return ['ok' => $cached['ok'], 'error' => (string) ($cached['error'] ?? '')];
+        }
+
+        // null means "could not be tested", which is not the same as "does not
+        // work" and must not be shown as though it were.
+        $result = ['ok' => null, 'error' => ''];
+
+        try {
+            $pdf = self::twoPagePdf();
+            $signatures = [];
+
+            foreach ([0, 1] as $index) {
+                $imagick = new \Imagick();
+                $imagick->setResolution(36, 36);
+                $imagick->readImageBlob($pdf, 'rapls-pic-page-probe.pdf[' . $index . ']');
+
+                $pixel = $imagick->getImagePixelColor(
+                    (int) ($imagick->getImageWidth() / 2),
+                    (int) ($imagick->getImageHeight() / 2)
+                );
+                $rgb = $pixel->getColor();
+                $signatures[$index] = sprintf('%02X%02X%02X', $rgb['r'], $rgb['g'], $rgb['b']);
+
+                $imagick->clear();
+            }
+
+            $result['ok'] = $signatures[0] !== $signatures[1];
+            $result['error'] = $signatures[0] . ' / ' . $signatures[1];
+        } catch (\Exception $e) {
+            // On a server with no PDF support this is the expected answer, and
+            // the PDF Support row has already said so. Nothing to add.
+            $result['ok'] = null;
+            $result['error'] = $e->getMessage();
+        } catch (\Throwable $e) {
+            $result['ok'] = null;
+            $result['error'] = $e->getMessage();
+        }
+
+        set_transient(
+            self::PAGE_PROBE_TRANSIENT,
+            $result + ['version' => $version],
+            12 * HOUR_IN_SECONDS
+        );
+
+        return $result;
+    }
+
+    /**
+     * Two pages that cannot be confused with each other
+     *
+     * Page one is left white, page two is filled black edge to edge. Built
+     * rather than bundled, for the same reason as the other probes: no file to
+     * ship and no question about its licence.
+     */
+    private static function twoPagePdf(): string
+    {
+        $stream = "0.0 g\n0 0 72 72 re\nf\n";
+
+        return self::buildPdf([
+            '<< /Type /Catalog /Pages 2 0 R >>',
+            '<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>',
+            '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 72 72] /Resources << >> >>',
+            '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 72 72] /Resources << >> /Contents 5 0 R >>',
+            '<< /Length ' . strlen($stream) . " >>\nstream\n" . $stream . 'endstream',
+        ]);
+    }
+
+    /**
+     * The Status tab row for page selection
+     *
+     * @return array{name: string, status: bool, message: string, detail: string}|null
+     */
+    private function getPageSelectionStatus(): ?array
+    {
+        $probe = $this->probePageSelection();
+
+        if (null === $probe['ok']) {
+            // Untestable. The PDF Support row has already explained why.
+            return null;
+        }
+
+        if ($probe['ok']) {
+            return [
+                'name' => __('Page Selection', 'rapls-pdf-image-creator'),
+                'status' => true,
+                'message' => __('Working on this server (tested)', 'rapls-pdf-image-creator'),
+                'detail' => __('A thumbnail can be made from any page, not only the first. Set the page on the Settings tab.', 'rapls-pdf-image-creator'),
+            ];
+        }
+
+        return [
+            'name' => __('Page Selection', 'rapls-pdf-image-creator'),
+            'status' => false,
+            'message' => __('Not working on this server (tested)', 'rapls-pdf-image-creator'),
+            'detail' => __('Two different pages of a test file rendered identically, so the page number setting will have no effect here. The first page still works.', 'rapls-pdf-image-creator'),
+        ];
     }
 
     /**
@@ -884,9 +1280,28 @@ final class ImagickEngine implements EngineInterface
             ];
         }
 
-        $missing = null === $status['cmyk']
-            ? __('No CMYK profile found on this server.', 'rapls-pdf-image-creator')
-            : __('No sRGB profile found on this server.', 'rapls-pdf-image-creator');
+        // Report both, not whichever is checked first. The conversion needs a
+        // source and a destination, and "CMYK is missing" left a reader unable
+        // to tell whether finding one profile would be enough.
+        $absent = [];
+        if (null === $status['cmyk']) {
+            $absent[] = __('CMYK', 'rapls-pdf-image-creator');
+        }
+        if (null === $status['srgb']) {
+            $absent[] = __('sRGB', 'rapls-pdf-image-creator');
+        }
+
+        if (count($absent) > 1) {
+            $missing = __('Neither a CMYK nor an sRGB profile was found on this server. Colour conversion needs both.', 'rapls-pdf-image-creator');
+        } elseif ($absent) {
+            $missing = sprintf(
+                /* translators: %s: a colour profile type, CMYK or sRGB */
+                __('No %s profile found on this server. Colour conversion needs both a CMYK and an sRGB profile; the other one is present.', 'rapls-pdf-image-creator'),
+                $absent[0]
+            );
+        } else {
+            $missing = __('Colour conversion is switched off.', 'rapls-pdf-image-creator');
+        }
 
         return [
             'name' => __('Color Management', 'rapls-pdf-image-creator'),

@@ -108,7 +108,25 @@ reset_state();
 add_filter('rapls_pdf_image_creator_icc_paths', function ($p, $t) { return []; });
 $row = priv($engine, $ref, 'getColorManagementStatus');
 check('unmanaged status false', $row['status'], false);
-check('explains the gap', $row['detail'], 'No CMYK profile found on this server.');
+check('explains the gap', $row['detail'], 'Neither a CMYK nor an sRGB profile was found on this server. Colour conversion needs both.');
+
+// One present and one missing is the case that decides what to do next: a
+// server needing one profile is a different errand from a server needing two.
+// Reporting whichever was checked first left that unanswerable.
+reset_state();
+add_filter('rapls_pdf_image_creator_icc_paths', function ($p, $t) use ($goodSrgb) {
+    return 'srgb' === $t ? [$goodSrgb] : [];
+});
+$row = priv($engine, $ref, 'getColorManagementStatus');
+check('only CMYK missing is said so', false !== strpos($row['detail'], 'No CMYK profile'), true);
+check('  ...and the other is reported present', false !== strpos($row['detail'], 'the other one is present'), true);
+
+reset_state();
+add_filter('rapls_pdf_image_creator_icc_paths', function ($p, $t) use ($goodCmyk) {
+    return 'cmyk' === $t ? [$goodCmyk] : [];
+});
+$row = priv($engine, $ref, 'getColorManagementStatus');
+check('only sRGB missing is said so', false !== strpos($row['detail'], 'No sRGB profile'), true);
 
 reset_state();
 add_filter('rapls_pdf_image_creator_color_conversion', function ($m) { return 'naive'; });
@@ -126,7 +144,14 @@ check('IM6 major version parsed', priv($engine, $ref, 'getImageMagickMajorVersio
 $row = priv($engine, $ref, 'getCmykPdfStatus');
 check('IM6 gets a warning row', is_array($row), true);
 check('  ...flagged as a problem', $row['status'], false);
-check('  ...names the version', $row['message'], 'ImageMagick 6 — CMYK PDFs may produce a blank image');
+check('  ...names the version', $row['message'], 'ImageMagick 6 — CMYK PDFs may produce a blank image (not tested)');
+// The stub has no readImageBlob, so the probe cannot run. That is the branch
+// under test: it must admit it did not measure anything, and it must say what
+// stopped it. Until 1.4.0 it captured the reason and then discarded it, which
+// left the one answer meaning "I do not know" with nothing to act on.
+check('  ...admits it is not a measurement', false !== strpos($row['message'], '(not tested)'), true);
+check('  ...says what stopped it', false !== strpos($row['detail'], 'What stopped it'), true);
+check('  ...and RGB is still exonerated', false !== strpos($row['detail'], 'RGB PDFs are not affected'), true);
 
 reset_state();
 Imagick::$versionString = 'ImageMagick 6.9.11-35 Q16 x86_64';

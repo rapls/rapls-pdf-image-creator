@@ -81,6 +81,7 @@ class Imagick
     public static function getVersion() { return ['versionString' => 'ImageMagick 7.1.1-47']; }
 }
 
+require RAPLS_PIC_PLUGIN_DIR . 'includes/FailureCode.php';
 require RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/EngineInterface.php';
 require RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/ConversionResult.php';
 require RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/ColorProfile.php';
@@ -104,7 +105,7 @@ function check($label, $got, $want) {
     printf("%s %s\n", $ok ? 'ok  ' : 'FAIL', $label);
     if (!$ok) { echo "     got:  " . json_encode($got) . "\n     want: " . json_encode($want) . "\n"; }
 }
-function run(array $options, $colorspace = Imagick::COLORSPACE_CMYK, $withProfiles = true) {
+function run(array $options, $colorspace = Imagick::COLORSPACE_CMYK, $withProfiles = true, ?callable $alsoHook = null) {
     global $pdf, $dir;
     $GLOBALS['transients'] = [];
     $GLOBALS['filters'] = [];
@@ -117,6 +118,11 @@ function run(array $options, $colorspace = Imagick::COLORSPACE_CMYK, $withProfil
         });
     } else {
         add_filter('rapls_pdf_image_creator_icc_paths', function ($p, $t) { return []; });
+    }
+    // run() wipes the filter table, so anything a test wants hooked has to be
+    // registered here rather than before the call.
+    if (null !== $alsoHook) {
+        $alsoHook();
     }
     $r = (new ImagickEngine())->convert($pdf, RAPLS_PIC_TEST_TMP . '/out.img', $options);
     return [$r, Imagick::$log];
@@ -147,6 +153,72 @@ check('step order', $log, [
     'destroy',
 ]);
 check('diagnostics recorded CMYK', $GLOBALS['options'][ImagickEngine::DIAGNOSTICS_OPTION]['colorspace'], 12);
+
+echo "\n=== 1.4.0: the before_resize extension point ===\n";
+
+// With nothing listening it must be invisible. The whole argument for adding a
+// filter to a shipped plugin is that its absence changes nothing.
+check('no listener leaves the log untouched', in_array('before_resize', $log, true), false);
+
+$seen = [];
+$watch = function () use (&$seen) {
+    add_filter('rapls_pdf_image_creator_before_resize', function ($image, $options) use (&$seen) {
+        $seen['class'] = get_class($image);
+        $seen['size'] = $image->getImageWidth() . 'x' . $image->getImageHeight();
+        $seen['attachment_id'] = $options['attachment_id'] ?? null;
+        $seen['source_path'] = $options['source_path'] ?? null;
+        Imagick::$log[] = 'before_resize';
+        return $image;
+    });
+};
+
+[$r2, $log2] = run(
+    ['format' => 'jpeg', 'attachment_id' => 42, 'source_path' => '/uploads/x.pdf'],
+    Imagick::COLORSPACE_CMYK,
+    true,
+    $watch
+);
+
+check('the filter ran', isset($seen['class']), true);
+check('it is handed an Imagick', $seen['class'] ?? '', 'Imagick');
+check('it carries the attachment id', $seen['attachment_id'] ?? null, 42);
+check('it carries the source path', $seen['source_path'] ?? null, '/uploads/x.pdf');
+
+// Position is the point. After the alpha channel is gone, because measuring a
+// page against its background is meaningless while transparency survives;
+// before the resize, because a bounding box read off a downsampled page is a
+// blurred bounding box.
+$alphaAt = array_search('setImageAlphaChannel(12)', $log2, true);
+$filterAt = array_search('before_resize', $log2, true);
+$resizeAt = false;
+foreach ($log2 as $i => $entry) {
+    if (0 === strpos($entry, 'resizeImage')) { $resizeAt = $i; break; }
+}
+check('runs after the alpha channel is removed', $alphaAt < $filterAt, true);
+check('runs before the resize', $filterAt < $resizeAt, true);
+
+// The page it sees is the full render, not something already scaled down.
+// The stub renders 2000x3000 and the resize step takes it to 683x1024. The
+// filter has to see the former.
+check('sees the unresized page', $seen['size'] ?? '', '2000x3000');
+
+// A listener that returns rubbish must not take the thumbnail with it.
+[$r3, $log3] = run(['format' => 'jpeg'], Imagick::COLORSPACE_CMYK, true, function () {
+    add_filter('rapls_pdf_image_creator_before_resize', function ($image, $options) { return null; });
+});
+check('a filter returning null is ignored', $r3->isSuccess(), true);
+check('and the page still gets written', in_array('writeImage', $log3, true), true);
+
+// One that swaps the instance is honoured: cropping produces a new Imagick.
+[$r4, $log4] = run(['format' => 'jpeg'], Imagick::COLORSPACE_CMYK, true, function () {
+    add_filter('rapls_pdf_image_creator_before_resize', function ($image, $options) {
+        $replacement = new Imagick();
+        $replacement->w = 400;
+        $replacement->h = 400;
+        return $replacement;
+    });
+});
+check('a replacement instance is used', $r4->getWidth(), 400);
 check('diagnostics recorded icc', $GLOBALS['options'][ImagickEngine::DIAGNOSTICS_OPTION]['mode'], 'icc');
 
 echo "\n=== R-1: RGB PDF is untouched by colour code ===\n";

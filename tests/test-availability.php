@@ -277,6 +277,102 @@ foreach ($rows[1] as $i => $offset) {
 }
 check('every xref offset lands on its object', $good, true);
 
+echo "\n=== the page-selection probe PDF (1.4.0) ===\n";
+$twoPage = call_private($engine, 'twoPagePdf');
+check('is a PDF', substr($twoPage, 0, 8), '%PDF-1.4');
+check('declares two pages', false !== strpos($twoPage, '/Count 2'), true);
+check('both pages are in the tree', false !== strpos($twoPage, '/Kids [3 0 R 4 0 R]'), true);
+
+// The whole probe turns on the two pages looking different. If page two ever
+// stops being filled, both renders come back white and the probe reports that
+// page selection is broken on every server in the world.
+check('the second page is filled', false !== strpos($twoPage, '0.0 g'), true);
+check('the first page has no content stream', substr_count($twoPage, '/Contents'), 1);
+
+check('stream length matches the declared /Length', (function () use ($twoPage) {
+    preg_match('/\/Length (\d+) >>\s*stream\n(.*?)endstream/s', $twoPage, $m);
+    return isset($m[1], $m[2]) && (int) $m[1] === strlen($m[2]);
+})(), true);
+
+preg_match_all('/^(\d{10}) 00000 n $/m', $twoPage, $rows2);
+check('five xref entries', count($rows2[1]), 5);
+$good2 = true;
+foreach ($rows2[1] as $i => $offset) {
+    if (substr($twoPage, (int) $offset, strlen((string) ($i + 1)) + 6) !== ($i + 1) . ' 0 obj') {
+        $good2 = false;
+    }
+}
+check('every xref offset lands on its object', $good2, true);
+
+echo "\n=== policy.xml: rules inside comments are switched off (1.4.0) ===\n";
+
+// Hosting providers unblock PDF by commenting the deny rule out far more often
+// than by deleting it -- the upstream policy.xml is mostly examples inside
+// comments to begin with. 1.3.1's changelog said this reader was fixed; the
+// fix landed in tools/probe-imagemagick.php only, and the copy that ships
+// never had it.
+$xserver = <<<'XML'
+<policymap>
+  <policy domain="coder" rights="none" pattern="EPHEMERAL" />
+  <policy domain="coder" rights="none" pattern="MVG" />
+  <!-- <policy domain="coder" rights="none" pattern="*" /> -->
+  <!-- <policy domain="coder" rights="read|write" pattern="{GIF,JPEG,PNG,WEBP}" /> -->
+</policymap>
+XML;
+check('a commented-out blanket deny is ignored', call_private($engine, 'policyDeniesPdf', [$xserver]), false);
+check('the same rules uncommented do deny', call_private($engine, 'policyDeniesPdf', [str_replace(['<!-- ', ' -->'], '', $xserver)]), true);
+
+$mixed = "<policymap>\n  <!-- <policy domain=\"coder\" rights=\"none\" pattern=\"PDF\" /> -->\n  <policy domain=\"coder\" rights=\"none\" pattern=\"PS\" />\n</policymap>";
+check('a live rule next to a dead one still counts', call_private($engine, 'policyDeniesPdf', [$mixed]), false);
+
+echo "\n=== delegates.xml: which device CMYK PDFs go through (1.4.0) ===\n";
+
+// Two servers reporting the same ImageMagick 6 can behave differently, and the
+// device name is what tells them apart. bmpsep8 writes a separation BMP that
+// ImageMagick's own reader cannot decode -- measured: even ImageMagick 7 fails
+// to read one back.
+$delegates = function (string $device): string {
+    return '<delegatemap><delegate decode="ps:cmyk" stealth="True" command="&quot;gs&quot;'
+        . ' -dQUIET -dSAFER -dBATCH &quot;-sDEVICE=' . $device . '&quot; &quot;-r%s&quot;"/></delegatemap>';
+};
+
+check('the broken device is named', call_private($engine, 'cmykDeviceFromDelegates', [$delegates('bmpsep8')]), 'bmpsep8');
+check('the working one too', call_private($engine, 'cmykDeviceFromDelegates', [$delegates('pamcmyk32')]), 'pamcmyk32');
+
+// Same comment lesson as policy.xml, in the same file format.
+check(
+    'a commented-out delegate is not in use',
+    call_private($engine, 'cmykDeviceFromDelegates', ['<delegatemap><!-- ' . substr($delegates('bmpsep8'), 13, -14) . ' --></delegatemap>']),
+    null
+);
+check(
+    'no ps:cmyk entry means no answer',
+    call_private($engine, 'cmykDeviceFromDelegates', ['<delegatemap><delegate decode="ps:alpha" command="&quot;-sDEVICE=pngalpha&quot;"/></delegatemap>']),
+    null
+);
+check('an unreadable file is not guessed at', call_private($engine, 'cmykDeviceFromDelegates', ['']), null);
+
+echo "\n=== the probe transient list ===\n";
+// The re-check button and uninstall both read this list. A probe whose
+// transient is missing from it caches an answer nobody can clear.
+$transients = \Rapls\PDFImageCreator\Engine\ImagickEngine::probeTransients();
+check('policy lookup is listed', in_array('rapls_pic_pdf_policy', $transients, true), true);
+check('read probe is listed', in_array('rapls_pic_pdf_read', $transients, true), true);
+check('cmyk probe is listed', in_array('rapls_pic_cmyk_render', $transients, true), true);
+check('page probe is listed', in_array('rapls_pic_page_select', $transients, true), true);
+check('no duplicates', count($transients), count(array_unique($transients)));
+
+// uninstall.php cannot load the class -- the autoloader is gone by then -- so
+// it keeps its own copy of the list. This is what stops the two drifting.
+$uninstall = file_get_contents(RAPLS_PIC_PLUGIN_DIR . 'uninstall.php');
+$missing = [];
+foreach ($transients as $transient) {
+    if (false === strpos($uninstall, $transient)) {
+        $missing[] = $transient;
+    }
+}
+check('uninstall.php deletes every one of them', $missing, []);
+
 echo "\n=== requirements still readable without the extension ===\n";
 $reqs = $engine->getRequirements();
 check('extension row present', $reqs['extension']['status'], false);

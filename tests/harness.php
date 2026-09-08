@@ -76,6 +76,7 @@ class ImagickPixel { public $c; public function __construct($c = 'white') {
     }
     $this->c = $c; } public function __toString() { return $this->c; } }
 
+require RAPLS_PIC_PLUGIN_DIR . 'includes/FailureCode.php';
 require RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/ColorProfile.php';
 
 use Rapls\PDFImageCreator\Engine\ColorProfile;

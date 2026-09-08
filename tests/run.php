@@ -9,7 +9,14 @@
  * touch is stubbed in harness.php.
  */
 
-$suites = ['test-colorprofile.php', 'test-engine.php', 'test-pipeline.php', 'test-availability.php'];
+$suites = [
+    'test-colorprofile.php',
+    'test-engine.php',
+    'test-pipeline.php',
+    'test-availability.php',
+    'test-failure-codes.php',
+    'test-no-trialware.php',
+];
 $failed = [];
 
 foreach ($suites as $suite) {

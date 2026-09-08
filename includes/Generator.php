@@ -12,6 +12,7 @@ namespace Rapls\PDFImageCreator;
 use Rapls\PDFImageCreator\Engine\EngineInterface;
 use Rapls\PDFImageCreator\Engine\ImagickEngine;
 use Rapls\PDFImageCreator\Engine\ConversionResult;
+use Rapls\PDFImageCreator\FailureCode;
 
 /**
  * Generates thumbnail images from PDF files
@@ -80,6 +81,15 @@ final class Generator
      * safe to display and cheap to read on an admin page.
      */
     public const UNAVAILABLE_OPTION = 'rapls_pic_engine_unavailable';
+
+    /**
+     * Option holding the last generation failure, for the Status tab
+     *
+     * Holds a code, the message, which attachment it was and when. Overwritten
+     * on each failure and deleted on the next success, so it answers "is
+     * anything wrong right now" rather than accumulating a log.
+     */
+    public const LAST_FAILURE_OPTION = 'rapls_pic_last_failure';
 
     /**
      * Explain whether thumbnails can be generated on this server, and why not
@@ -231,13 +241,13 @@ final class Generator
         // Check if PDF exists
         $pdf = get_post($pdfId);
         if (!$pdf || $pdf->post_type !== 'attachment') {
-            return null;
+            return $this->fail($pdfId, FailureCode::NOT_A_PDF, __('No such attachment.', 'rapls-pdf-image-creator'));
         }
 
         // Check if it's a PDF
         $mimeType = get_post_mime_type($pdfId);
         if ($mimeType !== 'application/pdf') {
-            return null;
+            return $this->fail($pdfId, FailureCode::NOT_A_PDF, __('Not a PDF file.', 'rapls-pdf-image-creator'));
         }
 
         // Check if thumbnail already exists
@@ -253,7 +263,11 @@ final class Generator
         // Get PDF file path
         $pdfPath = get_attached_file($pdfId);
         if (!$pdfPath || !file_exists($pdfPath)) {
-            return null;
+            return $this->fail(
+                $pdfId,
+                FailureCode::SOURCE_MISSING,
+                __('The PDF file is missing from the uploads folder.', 'rapls-pdf-image-creator')
+            );
         }
 
         // Get available engine
@@ -270,11 +284,7 @@ final class Generator
                 update_option(self::UNAVAILABLE_OPTION, $status['code'], false);
             }
 
-            if (defined('WP_DEBUG') && WP_DEBUG) {
-                error_log('Rapls PDF Image Creator: no conversion engine available (' . $status['code'] . ') - ' . $status['summary']);
-            }
-
-            return null;
+            return $this->fail($pdfId, $status['code'], $status['summary']);
         }
 
         // Prepare output path
@@ -302,8 +312,16 @@ final class Generator
          */
         do_action('rapls_pdf_image_creator_before_generate', $pdfId, $pdfPath);
 
-        // Build conversion options
+        // Build conversion options.
+        //
+        // attachment_id and source_path are context, not settings: they are not
+        // filtered and the engine does not read them. They are there so that a
+        // listener on rapls_pdf_image_creator_before_resize can tell which
+        // attachment it is looking at -- the engine signature is (path, path,
+        // options) and carries no attachment anywhere else.
         $options = [
+            'attachment_id' => $pdfId,
+            'source_path' => $pdfPath,
             'page' => apply_filters('rapls_pdf_image_creator_thumbnail_page', $this->settings->getPage(), $pdfId),
             'max_width' => apply_filters('rapls_pdf_image_creator_thumbnail_max_width', $this->settings->getMaxWidth(), $pdfId),
             'max_height' => apply_filters('rapls_pdf_image_creator_thumbnail_max_height', $this->settings->getMaxHeight(), $pdfId),
@@ -317,14 +335,12 @@ final class Generator
         $result = $engine->convert($pdfPath, $outputPath, $options);
 
         if (!$result->isSuccess()) {
-            /**
-             * Action when generation fails
-             *
-             * @param string $error Error message
-             * @param int $pdfId PDF attachment ID
-             */
-            do_action('rapls_pdf_image_creator_generation_failed', $result->getError(), $pdfId);
-            return null;
+            return $this->fail(
+                $pdfId,
+                $result->getCode() ?: FailureCode::RENDER_ERROR,
+                (string) $result->getError(),
+                $result
+            );
         }
 
         // Create attachment for thumbnail
@@ -333,7 +349,12 @@ final class Generator
         if (!$thumbnailId) {
             // Clean up file
             wp_delete_file($outputPath);
-            return null;
+
+            return $this->fail(
+                $pdfId,
+                FailureCode::WRITE_FAILED,
+                __('The image was rendered but could not be added to the Media Library.', 'rapls-pdf-image-creator')
+            );
         }
 
         // Store thumbnail ID in PDF meta
@@ -351,9 +372,97 @@ final class Generator
          * @param int $pdfId PDF attachment ID
          * @param ConversionResult $result Conversion result
          */
+        // Something worked. Whatever the Status tab was complaining about is
+        // no longer true.
+        if (false !== get_option(self::LAST_FAILURE_OPTION, false)) {
+            delete_option(self::LAST_FAILURE_OPTION);
+        }
+
         do_action('rapls_pdf_image_creator_after_generate', $thumbnailId, $pdfId, $result);
 
         return $thumbnailId;
+    }
+
+    /**
+     * Record a failure, announce it, and return null.
+     *
+     * Every path out of generate() that does not produce a thumbnail comes
+     * through here. Before 1.4.0 most of them returned null in silence, which
+     * meant the thumbnail simply never appeared and nothing anywhere said why
+     * -- the single most common support question this plugin gets.
+     *
+     * @param int                   $pdfId   Attachment the attempt was for.
+     * @param string                $code    See FailureCode.
+     * @param string                $message Sentence for a person, already translated.
+     * @param ConversionResult|null $result  The engine's result, when there was one.
+     * @return null Always. Callers return this straight back.
+     */
+    private function fail(int $pdfId, string $code, string $message, ?ConversionResult $result = null)
+    {
+        // NOT_A_PDF is not recorded. It means someone asked for a thumbnail of
+        // something that was never a PDF -- a template call with the wrong ID,
+        // usually -- and putting that on the Status tab would be alarming a
+        // site owner about their theme's bug.
+        if (FailureCode::NOT_A_PDF !== $code) {
+            update_option(
+                self::LAST_FAILURE_OPTION,
+                [
+                    'code' => $code,
+                    'message' => $message,
+                    'pdf_id' => $pdfId,
+                    'time' => time(),
+                ],
+                false
+            );
+        }
+
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log(sprintf(
+                'Rapls PDF Image Creator: generation failed for #%d (%s) - %s',
+                $pdfId,
+                $code,
+                $message
+            ));
+        }
+
+        /**
+         * Action when generation fails.
+         *
+         * @since 1.0.0
+         * @since 1.4.0 The $code and $result arguments were added, and the
+         *              action fires on every failure rather than only on a
+         *              conversion error.
+         *
+         * @param string                $message Human-readable error.
+         * @param int                   $pdfId   PDF attachment ID.
+         * @param string                $code    Machine-readable reason. See FailureCode.
+         * @param ConversionResult|null $result  Engine result, or null when the
+         *                                       failure happened before the engine ran.
+         */
+        do_action('rapls_pdf_image_creator_generation_failed', $message, $pdfId, $code, $result);
+
+        return null;
+    }
+
+    /**
+     * What went wrong the last time a thumbnail was attempted
+     *
+     * @return array{code: string, message: string, pdf_id: int, time: int}|null
+     */
+    public function getLastFailure(): ?array
+    {
+        $stored = get_option(self::LAST_FAILURE_OPTION, false);
+
+        if (!is_array($stored) || empty($stored['code'])) {
+            return null;
+        }
+
+        return [
+            'code' => (string) $stored['code'],
+            'message' => (string) ($stored['message'] ?? ''),
+            'pdf_id' => (int) ($stored['pdf_id'] ?? 0),
+            'time' => (int) ($stored['time'] ?? 0),
+        ];
     }
 
     /**
