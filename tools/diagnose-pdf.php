@@ -134,8 +134,74 @@ function rapls_diag_bootstrap(bool $skip): string
 
 $context = rapls_diag_bootstrap($skipWordPress);
 
+/**
+ * Find the plugin this script belongs to.
+ *
+ * Normally it is one directory up, because this file lives in tools/. But the
+ * whole point of the script is diagnosing a server, and getting it onto a
+ * server usually means copying the one file somewhere convenient rather than
+ * cloning the repository. Failing with a require error and an absolute path
+ * that means nothing to the reader is a poor way to greet someone who is
+ * already trying to work out why their thumbnails are blank.
+ */
+function rapls_diag_find_plugin(): ?string
+{
+    $candidates = [];
+
+    // Given explicitly.
+    foreach ($_SERVER['argv'] ?? [] as $arg) {
+        if (0 === strpos($arg, '--plugin=')) {
+            $candidates[] = rtrim(substr($arg, 9), '/');
+        }
+    }
+
+    // Where it sits in the repository.
+    $candidates[] = dirname(__DIR__);
+
+    // Copied next to the plugin, or into it.
+    $candidates[] = __DIR__;
+    $candidates[] = __DIR__ . '/rapls-pdf-image-creator';
+
+    // A WordPress install somewhere above.
+    $dir = __DIR__;
+    for ($i = 0; $i < 8; $i++) {
+        $candidates[] = $dir . '/wp-content/plugins/rapls-pdf-image-creator';
+        $parent = dirname($dir);
+        if ($parent === $dir) {
+            break;
+        }
+        $dir = $parent;
+    }
+
+    if (defined('WP_PLUGIN_DIR')) {
+        $candidates[] = WP_PLUGIN_DIR . '/rapls-pdf-image-creator';
+    }
+
+    foreach ($candidates as $candidate) {
+        if (is_readable($candidate . '/includes/Engine/ColorProfile.php')) {
+            return $candidate;
+        }
+    }
+
+    return null;
+}
+
 if (!defined('RAPLS_PIC_PLUGIN_DIR')) {
-    define('RAPLS_PIC_PLUGIN_DIR', dirname(__DIR__) . '/');
+    $rapls_diag_plugin = rapls_diag_find_plugin();
+
+    if (null === $rapls_diag_plugin) {
+        fwrite(STDERR, "\n");
+        fwrite(STDERR, "Rapls PDF Image Creator が見つかりません。\n\n");
+        fwrite(STDERR, "このスクリプトはプラグインの includes/ を読みます。探した場所:\n");
+        fwrite(STDERR, '  ' . dirname(__DIR__) . "\n");
+        fwrite(STDERR, '  ' . __DIR__ . "\n");
+        fwrite(STDERR, "  ここから上の wp-content/plugins/rapls-pdf-image-creator/\n\n");
+        fwrite(STDERR, "場所を指定してください:\n");
+        fwrite(STDERR, '  php ' . basename(__FILE__) . " file.pdf --no-wp --plugin=/path/to/wp-content/plugins/rapls-pdf-image-creator\n\n");
+        exit(1);
+    }
+
+    define('RAPLS_PIC_PLUGIN_DIR', $rapls_diag_plugin . '/');
 }
 
 require_once RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/ColorProfile.php';
