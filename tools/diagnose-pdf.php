@@ -38,6 +38,45 @@
  */
 
 /**
+ * PDFs below a directory, as paths to paste back into the pdf parameter.
+ *
+ * A wrong path is the likeliest reason to land here, and "no such file" on
+ * its own leaves the reader guessing. WordPress buries uploads under a year
+ * and a month, which is rarely where anyone looks first.
+ *
+ * @return array<int, string>
+ */
+function rapls_diag_list_pdfs(string $base, int $limit = 25): array
+{
+    $found = [];
+
+    try {
+        $walker = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($base, FilesystemIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::LEAVES_ONLY
+        );
+
+        foreach ($walker as $file) {
+            if (!$file->isFile() || 0 !== strcasecmp($file->getExtension(), 'pdf')) {
+                continue;
+            }
+
+            $found[] = ltrim(str_replace($base, '', $file->getPathname()), DIRECTORY_SEPARATOR);
+
+            if (count($found) >= $limit) {
+                break;
+            }
+        }
+    } catch (Throwable $e) {
+        // A directory we may not read is not worth failing over.
+    }
+
+    sort($found);
+
+    return $found;
+}
+
+/**
  * Change this before uploading the file to a web root. Left as it is, the
  * browser route stays closed.
  */
@@ -96,17 +135,32 @@ if ('cli' === PHP_SAPI) {
 
     $requested = isset($_GET['pdf']) ? (string) $_GET['pdf'] : '';
 
-    if ('' === $requested) {
-        exit("Add &pdf=path/to/file.pdf — relative to " . __DIR__ . "\n");
-    }
-
     // Resolved below this file's own directory, so the parameter cannot be
     // pointed at anything else on the server.
     $base = realpath(__DIR__);
-    $resolved = realpath($base . '/' . ltrim($requested, '/'));
+    $resolved = '' === $requested ? false : realpath($base . '/' . ltrim($requested, '/'));
 
     if (false === $resolved || 0 !== strpos($resolved, $base . DIRECTORY_SEPARATOR)) {
-        exit("No such file below " . $base . "\n");
+        echo '' === $requested
+            ? "pdf パラメータがありません。\n"
+            : "その場所に PDF がありません: " . $requested . "\n";
+
+        echo "\n探せるのは、このファイルのあるディレクトリの下だけです:\n  " . $base . "\n";
+        echo "\nWordPress のメディアは wp-content/uploads/年/月/ の下にあります。\n";
+
+        $found = rapls_diag_list_pdfs($base);
+
+        if ($found) {
+            echo "\nこの下に見えるPDF:\n";
+            foreach ($found as $rel) {
+                echo '  &pdf=' . $rel . "\n";
+            }
+        } else {
+            echo "\nこの下にPDFは1つもありませんでした。\n";
+            echo "調べたいPDFを、このファイルと同じディレクトリに置いてください。\n";
+        }
+
+        exit;
     }
 
     $pdfPath = $resolved;
