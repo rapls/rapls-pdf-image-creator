@@ -256,7 +256,9 @@ final class Generator
         }
 
         // Delete existing thumbnail if forcing
+        $replacing = false;
         if ($force) {
+            $replacing = $this->hasThumbnail($pdfId);
             $this->deleteThumbnail($pdfId);
         }
 
@@ -294,12 +296,29 @@ final class Generator
         $extension = $this->settings->getFileExtension();
 
         $outputFilename = $pdfBasename . '-pdf-thumbnail.' . $extension;
+
+        // A replacement needs a name of its own.
+        //
+        // Deleting the old thumbnail frees its filename, so the loop below
+        // hands the new file the name the old one had, and every browser that
+        // cached the old image goes on showing it. That is worst for exactly
+        // the people who need it least: someone regenerating a thumbnail is
+        // usually replacing one that came out wrong. Measured on a live site
+        // -- a blank thumbnail, correctly regenerated after the server was
+        // fixed, still looked blank until the file was given a different name.
+        //
+        // Only on a forced regeneration, so a first run keeps the plain name.
+        if ($replacing) {
+            $outputFilename = $pdfBasename . '-pdf-thumbnail-' . dechex(time()) . '.' . $extension;
+        }
+
         $outputPath = $pdfDir . '/' . $outputFilename;
 
         // Ensure unique filename
         $counter = 1;
+        $stem = pathinfo($outputFilename, PATHINFO_FILENAME);
         while (file_exists($outputPath)) {
-            $outputFilename = $pdfBasename . '-pdf-thumbnail-' . $counter . '.' . $extension;
+            $outputFilename = $stem . '-' . $counter . '.' . $extension;
             $outputPath = $pdfDir . '/' . $outputFilename;
             $counter++;
         }
