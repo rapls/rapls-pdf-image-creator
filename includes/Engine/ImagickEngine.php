@@ -114,6 +114,7 @@ final class ImagickEngine implements EngineInterface
             self::PAGE_PROBE_TRANSIENT,
             self::DELEGATE_TRANSIENT,
             self::PAGE_SUFFIX_TRANSIENT,
+            self::GS_OPTIONS_TRANSIENT,
         ];
     }
 
@@ -692,6 +693,11 @@ final class ImagickEngine implements EngineInterface
                 if (null !== $cmykPdf) {
                     $requirements['cmyk_pdf'] = $cmykPdf;
                 }
+
+                $ghostscript = $this->getGhostscriptWorkaroundStatus();
+                if (null !== $ghostscript) {
+                    $requirements['ghostscript'] = $ghostscript;
+                }
             } catch (\Exception $e) {
                 $requirements['error'] = [
                     'name' => 'Error',
@@ -940,6 +946,43 @@ final class ImagickEngine implements EngineInterface
     private const PAGE_SUFFIX_TRANSIENT = 'rapls_pic_page_suffix';
 
     /**
+     * Transient remembering whether Ghostscript here needed a nudge
+     */
+    private const GS_OPTIONS_TRANSIENT = 'rapls_pic_gs_options';
+
+    /**
+     * Read one page, trying every rescue this server might need
+     *
+     * Two of them, in order, and both reached only when the page came back as
+     * one flat colour: a different route to the same page, then the same
+     * route with Ghostscript configured differently.
+     *
+     * @param \Imagick $imagick    Fresh instance with the resolution set.
+     * @param string   $pdfPath    Absolute path.
+     * @param int      $page       Page index, 0-based.
+     * @param int      $resolution DPI.
+     * @return \Imagick The instance to carry on with.
+     */
+    private function readPage(\Imagick $imagick, string $pdfPath, int $page, int $resolution): \Imagick
+    {
+        $imagick = $this->readPageDirect($imagick, $pdfPath, $page, $resolution);
+
+        if (!$this->looksEmpty($imagick)) {
+            return $imagick;
+        }
+
+        $rescued = $this->readWithGhostscriptOptions($pdfPath, $page, $resolution);
+
+        if (null === $rescued) {
+            return $imagick;
+        }
+
+        $imagick->clear();
+
+        return $rescued;
+    }
+
+    /**
      * Read one page, and read it a second way if the first comes back empty.
      *
      * Asking for `file.pdf[0]` makes ImageMagick pass -dFirstPage/-dLastPage
@@ -976,7 +1019,7 @@ final class ImagickEngine implements EngineInterface
      * @param int      $resolution DPI, for rebuilding the instance on retry.
      * @return \Imagick The instance to carry on with.
      */
-    private function readPage(\Imagick $imagick, string $pdfPath, int $page, int $resolution): \Imagick
+    private function readPageDirect(\Imagick $imagick, string $pdfPath, int $page, int $resolution): \Imagick
     {
         $suffixBroken = get_transient(self::PAGE_SUFFIX_TRANSIENT);
 
@@ -1053,6 +1096,155 @@ final class ImagickEngine implements EngineInterface
             // read is still in hand.
             return null;
         }
+    }
+
+    /**
+     * Read the page again with GS_OPTIONS set
+     *
+     * Ghostscript 9.27 throws `/typecheck in /--.pdfexectoken--` on an image
+     * XObject inside a transparency group, reports it on a stderr nobody
+     * reads, and hands back a correctly sized white page. `-dNOTRANSPARENCY`
+     * stops it. Measured on Xserver sv17007 with a PowerPoint export: 11,018
+     * bytes of white without the flag, 624,109 bytes of picture with it, on
+     * every Ghostscript device tried (png16m, pngalpha, pamcmyk32).
+     *
+     * There is no way to hand ImageMagick an extra Ghostscript switch. That
+     * build is compiled `--with-gslib`, so it calls Ghostscript as a linked
+     * library and assembles the argument list in its own C code: editing
+     * `delegates.xml` changed the output of `convert -list delegate` and
+     * changed nothing about the render, and `-debug delegate` logged no
+     * external command at all. What is left is `GS_OPTIONS`, which
+     * Ghostscript reads from the environment while initialising, and which
+     * therefore reaches the library call as readily as the command line.
+     * Measured through PHP-FPM on that host: blank without it, drawn with it.
+     *
+     * **`putenv()` is not `exec()`.** Nothing here starts a process. A string
+     * is left in this process's own environment for the length of one read
+     * and put back afterwards, and whether Ghostscript runs at all stays
+     * ImageMagick's decision, as the constraints in CLAUDE.md require.
+     *
+     * It is a retry and never the first attempt, because `-dNOTRANSPARENCY`
+     * costs something real: a PDF that uses transparency correctly renders
+     * differently with it. A page that already has content never gets here.
+     *
+     * @return \Imagick|null Null when the retry is unavailable or no better.
+     */
+    private function readWithGhostscriptOptions(string $pdfPath, int $page, int $resolution): ?\Imagick
+    {
+        if (!$this->canSetEnvironment()) {
+            return null;
+        }
+
+        /**
+         * Filter the Ghostscript options a blank page is retried with.
+         *
+         * Return an empty string to skip the retry entirely.
+         *
+         * @since 1.4.0
+         *
+         * @param string $flags   Value for the GS_OPTIONS environment variable.
+         * @param string $pdfPath Absolute path to the PDF being read.
+         */
+        $flags = apply_filters(
+            'rapls_pdf_image_creator_ghostscript_options',
+            '-dNOTRANSPARENCY',
+            $pdfPath
+        );
+
+        if (!is_string($flags)) {
+            return null;
+        }
+
+        $flags = trim($flags);
+
+        // Only what a Ghostscript switch is made of. A newline in here would
+        // be a second environment entry.
+        if ('' === $flags || !preg_match('#\A[-A-Za-z0-9_=.,:/ ]+\z#', $flags)) {
+            return null;
+        }
+
+        $previous = getenv('GS_OPTIONS');
+        $one = null;
+
+        try {
+            putenv('GS_OPTIONS=' . $flags);
+            $one = $this->readAnyRoute($pdfPath, $page, $resolution);
+        } catch (\Throwable $e) {
+            $one = null;
+        } finally {
+            // Restore rather than clear: this environment outlives the
+            // request in a persistent worker, and something else may be
+            // relying on a value the site set deliberately.
+            if (is_string($previous) && '' !== $previous) {
+                putenv('GS_OPTIONS=' . $previous);
+            } else {
+                putenv('GS_OPTIONS');
+            }
+        }
+
+        if (null === $one) {
+            return null;
+        }
+
+        if ($this->looksEmpty($one)) {
+            $one->clear();
+            set_transient(self::GS_OPTIONS_TRANSIENT, 'no', WEEK_IN_SECONDS);
+
+            return null;
+        }
+
+        // Worth remembering, and worth saying on the Status tab: this host
+        // ships a Ghostscript that cannot render some files unaided.
+        set_transient(self::GS_OPTIONS_TRANSIENT, 'yes', WEEK_IN_SECONDS);
+
+        return $one;
+    }
+
+    /**
+     * Read one page by whichever route this server has been seen to manage
+     *
+     * @return \Imagick|null Null when neither route produced anything.
+     */
+    private function readAnyRoute(string $pdfPath, int $page, int $resolution): ?\Imagick
+    {
+        if ('yes' !== get_transient(self::PAGE_SUFFIX_TRANSIENT)) {
+            try {
+                $one = new \Imagick();
+                $one->setResolution($resolution, $resolution);
+                $one->readImage($pdfPath . '[' . $page . ']');
+
+                if (!$this->looksEmpty($one)) {
+                    return $one;
+                }
+
+                $one->clear();
+            } catch (\Throwable $e) {
+                // Fall through to the whole-document route.
+            }
+        }
+
+        return $this->readWholePage($pdfPath, $page, $resolution);
+    }
+
+    /**
+     * May this process change its own environment?
+     *
+     * `putenv` is on more than one host's `disable_functions`, and a plugin
+     * that assumes otherwise is a fatal error on those hosts.
+     */
+    private function canSetEnvironment(): bool
+    {
+        if (!function_exists('putenv') || !function_exists('getenv')) {
+            return false;
+        }
+
+        foreach (explode(',', (string) ini_get('disable_functions')) as $name) {
+            if ('putenv' === strtolower(trim($name))) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -1487,6 +1679,28 @@ final class ImagickEngine implements EngineInterface
             'status' => false,
             'message' => __('Not working on this server (tested)', 'rapls-pdf-image-creator'),
             'detail' => __('Two different pages of a test file rendered identically, so the page number setting will have no effect here. The first page still works.', 'rapls-pdf-image-creator'),
+        ];
+    }
+
+    /**
+     * The Status tab row for the Ghostscript blank-page workaround
+     *
+     * Only appears once it has actually been needed. Nobody wants a row
+     * about a fault their server does not have.
+     *
+     * @return array{name: string, status: bool, message: string, detail: string}|null
+     */
+    private function getGhostscriptWorkaroundStatus(): ?array
+    {
+        if ('yes' !== get_transient(self::GS_OPTIONS_TRANSIENT)) {
+            return null;
+        }
+
+        return [
+            'name' => __('Ghostscript', 'rapls-pdf-image-creator'),
+            'status' => true,
+            'message' => __('Needed a workaround on this server (measured)', 'rapls-pdf-image-creator'),
+            'detail' => __('A PDF here came back blank until transparency was switched off, which is a fault in Ghostscript 9.27 and earlier. The thumbnail was made, but transparent areas of such a file may not look right. Asking your host to update Ghostscript is the real fix.', 'rapls-pdf-image-creator'),
         ];
     }
 

@@ -172,5 +172,73 @@ Imagick::$versionString = 'ImageMagick 6.9.10-68 Q16 x86_64';
 $reqs = $engine->getRequirements();
 check('no cmyk_pdf key without the extension', isset($reqs['cmyk_pdf']), false);
 
+/*
+ * The Ghostscript blank-page retry.
+ *
+ * Modelled on what Xserver sv17007 actually does: Ghostscript 9.27 returns a
+ * flat white page for a PDF carrying a transparency group, and returns the
+ * picture once GS_OPTIONS carries -dNOTRANSPARENCY. The stub's readImage()
+ * reads the environment the same way, so these exercise the real decision.
+ */
+echo "\n--- the Ghostscript blank-page retry ---\n";
+
+reset_state();
+check('this process may set its own environment', priv($engine, $ref, 'canSetEnvironment'), true);
+
+reset_state();
+Imagick::$blankWithoutGsOptions = true;
+$page = priv($engine, $ref, 'readPage', new Imagick(), '/tmp/none.pdf', 0, 150);
+check('a blank page is retried and recovered', $page->uniform, false);
+check('  ...and the server is remembered as needing it', get_transient('rapls_pic_gs_options'), 'yes');
+check('  ...and GS_OPTIONS is left unset afterwards', getenv('GS_OPTIONS'), false);
+
+reset_state();
+check(
+    'no Ghostscript row until it has been needed',
+    priv($engine, $ref, 'getGhostscriptWorkaroundStatus'),
+    null
+);
+set_transient('rapls_pic_gs_options', 'yes', 1);
+check(
+    'the Status tab says so once it has',
+    is_array(priv($engine, $ref, 'getGhostscriptWorkaroundStatus')),
+    true
+);
+
+reset_state();
+$page = priv($engine, $ref, 'readPage', new Imagick(), '/tmp/none.pdf', 0, 150);
+check('a page with content is read once, not twice', count(array_keys(Imagick::$log, 'readImage')), 1);
+check('  ...and nothing is recorded about Ghostscript', get_transient('rapls_pic_gs_options'), false);
+
+reset_state();
+add_filter('rapls_pdf_image_creator_ghostscript_options', function () { return ''; });
+check(
+    'an empty filter value skips the retry',
+    priv($engine, $ref, 'readWithGhostscriptOptions', '/tmp/none.pdf', 0, 150),
+    null
+);
+check('  ...without reading anything', Imagick::$log, []);
+
+reset_state();
+add_filter('rapls_pdf_image_creator_ghostscript_options', function () { return "-dSAFER\nPATH=/evil"; });
+check(
+    'a newline in the filter value is refused',
+    priv($engine, $ref, 'readWithGhostscriptOptions', '/tmp/none.pdf', 0, 150),
+    null
+);
+
+reset_state();
+putenv('GS_OPTIONS=-dFirstPage=2');
+priv($engine, $ref, 'readWithGhostscriptOptions', '/tmp/none.pdf', 0, 150);
+check('an existing GS_OPTIONS is restored, not cleared', getenv('GS_OPTIONS'), '-dFirstPage=2');
+putenv('GS_OPTIONS');
+
+echo "\n--- the retry is one of the transients the re-check button clears ---\n";
+check(
+    'probeTransients() lists it',
+    in_array('rapls_pic_gs_options', ImagickEngine::probeTransients(), true),
+    true
+);
+
 printf("\n%d passed, %d failed\n", $pass, $fail);
 exit($fail === 0 ? 0 : 1);

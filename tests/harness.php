@@ -8,6 +8,7 @@ define('RAPLS_PIC_PLUGIN_DIR', dirname(__DIR__) . '/');
 define('RAPLS_PIC_TEST_TMP', sys_get_temp_dir() . '/rapls-pic-tests');
 define('DAY_IN_SECONDS', 86400);
 define('HOUR_IN_SECONDS', 3600);
+define('WEEK_IN_SECONDS', 604800);
 
 $GLOBALS['transients'] = [];
 $GLOBALS['filters'] = [];
@@ -39,6 +40,7 @@ class Imagick
     const ALPHACHANNEL_OPAQUE = 4;
     const COMPRESSION_JPEG = 8;
     const FILTER_LANCZOS = 22;
+    const CHANNEL_ALL = 134217727;
 
     public static $log = [];
     public $colorspace;
@@ -49,7 +51,33 @@ class Imagick
     /** version string reported by getVersion(); tests swap this out */
     public static $versionString = 'ImageMagick 7.1.1-47 Q16 aarch64';
 
+    /**
+     * When true, readImage() comes back flat unless GS_OPTIONS is set -- the
+     * Ghostscript 9.27 fault, modelled. Off by default so that every other
+     * suite reads a page with content in it.
+     */
+    public static $blankWithoutGsOptions = false;
+
+    /** Whether this instance's raster is one flat colour. */
+    public $uniform = false;
+
     public function __construct($colorspace = self::COLORSPACE_CMYK) { $this->colorspace = $colorspace; }
+    public function setResolution($x, $y) { self::$log[] = "setResolution($x)"; }
+    public function readImage($p) {
+        self::$log[] = 'readImage';
+        if (self::$blankWithoutGsOptions) {
+            $gs = getenv('GS_OPTIONS');
+            $this->uniform = (false === $gs || '' === $gs);
+        }
+        return true;
+    }
+    public function getImageWidth() { return 100; }
+    public function getImageHeight() { return 100; }
+    public function getImageChannelRange($channel) {
+        return $this->uniform
+            ? ['minima' => 65535.0, 'maxima' => 65535.0]
+            : ['minima' => 0.0, 'maxima' => 65535.0];
+    }
     public static function getVersion() { return ['versionString' => self::$versionString]; }
     public static function queryFormats($p = '*') { return ['PDF']; }
     public function getImageColorspace() { return $this->colorspace; }
@@ -110,4 +138,6 @@ function reset_state() {
     Imagick::$log = [];
     Imagick::$profileImageFails = false;
     Imagick::$versionString = 'ImageMagick 7.1.1-47 Q16 aarch64';
+    Imagick::$blankWithoutGsOptions = false;
+    putenv('GS_OPTIONS');
 }
