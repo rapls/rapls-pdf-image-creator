@@ -10,13 +10,26 @@ Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-The first page of each uploaded PDF becomes an image in every registered size, ready to use as a post cover or inside content. Needs ImageMagick.
+Turns PDFs into images. Refuses to save a blank thumbnail, works around a Ghostscript fault that makes one, and tells you what to ask your host.
 
  == Description ==
 
  Rapls PDF Image Creator automatically generates thumbnail images when you upload PDF files to your WordPress Media Library. The plugin uses ImageMagick (Imagick PHP extension) to convert the first page of a PDF into an image.
 
 👉 **Setup guide & troubleshooting:** [How to fix CMYK black thumbnails and PDF/X issues](https://raplsworks.com/rapls-pdf-image-creator-guide/)
+
+ = Why this one =
+
+On a server with an older Ghostscript, a PDF page can come back completely white -- and Ghostscript does not report it as an error. Anything that hands the page over and stores whatever comes back saves that white image, including WordPress's own PDF preview. It looks like a thumbnail. It looks like the job worked.
+
+Measured on a live shared host running Ghostscript 9.27, in a single upload: the built-in preview came back with a standard deviation of 0, one flat colour across every pixel. This plugin's thumbnail of the same page, in the same request, came back at 0.31.
+
+* **It looks at what came back.** A page that renders as flat white is refused, not stored. WordPress shows its PDF icon and the Status tab says why, which is more use than a white square
+* **It works around the cause.** Ghostscript 9.27 and earlier fail on an image inside a transparency group -- the kind of file PowerPoint and Illustrator produce. Retried with transparency switched off, the same page went from 11,018 bytes of white to 624,109 bytes of picture. Only ever as a retry: a page that rendered the first time is never touched
+* **Every check is a measurement.** Whether this server can read a PDF, render CMYK, or select a page other than the first is answered by doing it, not by reading a version number. The Status tab names the Ghostscript device your ImageMagick uses
+* **It tells you what to ask your host.** "No PDF support", "the page is too large", "the uploads folder is not writable" and "the file is missing" are four problems with four different answers, and they no longer look the same
+* **Real colour management, without the weight.** CMYK is converted through ICC profiles rather than the arithmetic shortcut that turns greens fluorescent. The bundled sRGB profile is 3 KB, not the 64 KB kind that ends up embedded in every registered size
+* **Nothing starts a process.** No exec(), no shell. It works on locked-down shared hosting
 
  = Key Features =
 
