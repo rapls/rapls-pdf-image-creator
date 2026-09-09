@@ -4,9 +4,9 @@
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: Rapls PDF Image Creator 1.3.2\n"
+"Project-Id-Version: Rapls PDF Image Creator 1.4.1\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2024-01-01 00:00+0000\n"
+"POT-Creation-Date: 2026-09-09 11:08+0900\n"
 "PO-Revision-Date: 2024-01-01 00:00+0000\n"
 "Last-Translator: \n"
 "Language-Team: Japanese\n"
@@ -16,743 +16,850 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=1; plural=0;\n"
 
-#: rapls-pdf-image-creator.php
-msgid "Rapls PDF Image Creator requires PHP 7.4 or higher."
-msgstr "Rapls PDF Image Creator を使用するには PHP 7.4以上が必要です。"
-
-#: admin/views/settings-page.php
-msgid "Rapls PDF Image Creator"
-msgstr "Rapls PDF Image Creator"
-
-#: includes/Admin.php
-msgid "Rapls PDF Image Creator:"
-msgstr "Rapls PDF Image Creator:"
-
-#: admin/views/settings-page.php
-msgid "Automatically generate thumbnail images from PDF files uploaded to the Media Library."
-msgstr "メディアライブラリにアップロードされた PDF ファイルからサムネイル画像を自動生成します。"
-
-#: admin/views/settings-page.php
-msgid "Settings"
-msgstr "設定"
-
-#: admin/views/settings-page.php
-msgid "Bulk Generate"
-msgstr "一括生成"
-
-#: admin/views/settings-page.php
-msgid "Status"
-msgstr "ステータス"
-
-#: admin/views/settings-page.php
-msgid "Image Settings"
-msgstr "画像設定"
-
-#: admin/views/settings-page.php
-msgid "Max Width"
-msgstr "最大幅"
-
-#: admin/views/settings-page.php
-msgid "Maximum width of generated thumbnail. (100-4096)"
-msgstr "生成されるサムネイルの最大幅 (100-4096)。"
-
-#: admin/views/settings-page.php
-msgid "Max Height"
-msgstr "最大高さ"
-
-#: admin/views/settings-page.php
-msgid "Maximum height of generated thumbnail. (100-4096)"
-msgstr "生成されるサムネイルの最大高さ (100-4096)。"
-
-#: admin/views/settings-page.php
-msgid "Rendering Resolution"
-msgstr "描画解像度"
-
-#: admin/views/settings-page.php
-msgid "Resolution the PDF page is rendered at. (72-600)"
-msgstr "PDF のページを描画する解像度 (72-600)。"
-
-#: admin/views/settings-page.php
-msgid "Raise this to get a larger thumbnail: the maximum dimensions above only scale the rendered page down, never up. Higher values use more memory during generation."
-msgstr "サムネイルを大きくするには、この値を上げてください。上の最大幅・最大高さは、描画されたページを縮小するだけで、拡大はしません。値を大きくすると、生成時のメモリ使用量が増えます。"
-
-#: admin/views/settings-page.php
-msgid "Quality"
-msgstr "品質"
-
-#: admin/views/settings-page.php
-msgid "Image quality for JPEG/WebP output. (10-100)"
-msgstr "JPEG/WebP 出力の画像品質 (10-100)。"
-
-#: admin/views/settings-page.php
-msgid "Output Format"
-msgstr "出力形式"
-
-#: admin/views/settings-page.php
-msgid "JPEG"
-msgstr "JPEG"
-
-#: admin/views/settings-page.php
-msgid "PNG"
-msgstr "PNG"
-
-#: admin/views/settings-page.php
-msgid "WebP"
-msgstr "WebP"
-
-#: admin/views/settings-page.php
-msgid "Background Color"
-msgstr "背景色"
-
-#: admin/views/settings-page.php
-msgid "White"
-msgstr "白"
-
-#: admin/views/settings-page.php
-msgid "Black"
-msgstr "黒"
-
-#: admin/views/settings-page.php
-msgid "Transparent (PNG only)"
-msgstr "透明 (PNG のみ)"
-
-#: admin/views/settings-page.php
-msgid "Background color for transparent areas in PDFs."
-msgstr "PDF 内の透明部分の背景色。"
-
-#: admin/views/settings-page.php
-msgid "Page Number"
-msgstr "ページ番号"
-
-#: admin/views/settings-page.php
-msgid "Page to use for thumbnail (0 = first page)."
-msgstr "サムネイルに使用するページ (0 = 最初のページ)。"
-
-#: admin/views/settings-page.php
-msgid "Behavior Settings"
-msgstr "動作設定"
-
-#: admin/views/settings-page.php
-msgid "Auto Generate"
-msgstr "自動生成"
-
-#: admin/views/settings-page.php
-msgid "Automatically generate thumbnail when PDF is uploaded"
-msgstr "PDF アップロード時にサムネイルを自動生成"
-
-#: admin/views/settings-page.php
-msgid "Featured Image"
-msgstr "アイキャッチ画像"
-
-#: admin/views/settings-page.php
-msgid "Set generated thumbnail as PDF featured image"
-msgstr "生成したサムネイルを PDF のアイキャッチ画像として設定"
-
-#: admin/views/settings-page.php
-msgid "Enables using get_post_thumbnail_id() with PDF attachments."
-msgstr "PDF 添付ファイルで get_post_thumbnail_id() を使用可能にします。"
-
-#: admin/views/settings-page.php
-msgid "Bulk Generate Thumbnails"
-msgstr "サムネイル一括生成"
-
-#: admin/views/settings-page.php
-msgid "Generate thumbnails for existing PDF files in your Media Library."
-msgstr "メディアライブラリ内の既存 PDF ファイルのサムネイルを生成します。"
-
-#: admin/views/settings-page.php
-msgid "Options"
-msgstr "オプション"
-
-#: admin/views/settings-page.php
-msgid "Include PDFs that already have thumbnails (regenerate)"
-msgstr "すでにサムネイルがある PDF も含める (再生成)"
-
-#: admin/views/settings-page.php
-msgid "Scan for PDFs"
-msgstr "PDF をスキャン"
-
-#: admin/views/settings-page.php
-msgid "Start Generation"
-msgstr "生成開始"
-
-#: admin/views/settings-page.php
-msgid "Stop"
-msgstr "停止"
-
-#: admin/views/settings-page.php
-msgid "Scan Results"
-msgstr "スキャン結果"
-
-#: admin/views/settings-page.php
-msgid "PDFs found:"
-msgstr "見つかった PDF:"
-
-#: admin/views/settings-page.php
-msgid "Progress"
-msgstr "進行状況"
-
-#: admin/views/settings-page.php
-msgid "Ready"
-msgstr "準備完了"
-
-#: admin/views/settings-page.php
-msgid "Generated:"
-msgstr "生成済み:"
-
-#: admin/views/settings-page.php
-msgid "Failed:"
-msgstr "失敗:"
-
-#: admin/views/settings-page.php
-msgid "Log"
-msgstr "ログ"
-
-#: admin/views/settings-page.php
-msgid "Server Status"
-msgstr "サーバーステータス"
-
-#: admin/views/settings-page.php
-msgid "Available"
-msgstr "利用可能"
-
-#: admin/views/settings-page.php
-msgid "Statistics"
-msgstr "統計"
-
-#: admin/views/settings-page.php
-msgid "Refresh Statistics"
-msgstr "統計を更新"
-
-#: admin/views/settings-page.php
-msgid "Total PDFs:"
-msgstr "PDF 総数:"
-
-#: admin/views/settings-page.php
-msgid "With thumbnail:"
-msgstr "サムネイルあり:"
-
-#: admin/views/settings-page.php
-msgid "Without thumbnail:"
-msgstr "サムネイルなし:"
-
-#: includes/Admin.php
-msgid "Processing..."
-msgstr "処理中..."
-
-#: includes/Admin.php
-msgid "Complete!"
-msgstr "完了 !"
-
-#: includes/Admin.php
-msgid "An error occurred."
-msgstr "エラーが発生しました。"
-
-#: includes/BulkProcessor.php
-msgid "An error occurred while scanning for PDFs."
-msgstr "PDF の検索中にエラーが発生しました。"
-
-#: includes/BulkProcessor.php
-msgid "An error occurred while generating thumbnail."
-msgstr "サムネイルの生成中にエラーが発生しました。"
-
-#: includes/BulkProcessor.php
-msgid "An error occurred while fetching status."
-msgstr "ステータスの取得中にエラーが発生しました。"
-
-#: includes/Admin.php
-msgid "Start bulk generation? This may take a while."
-msgstr "一括生成を開始しますか ? 時間がかかる場合があります。"
-
-#: includes/Admin.php
-msgid "Generating thumbnail %1$d of %2$d..."
-msgstr "サムネイル生成中%1$d / %2$d..."
-
-#: includes/Admin.php
-msgid "PDF thumbnail generated successfully."
-msgstr "PDF サムネイルが正常に生成されました。"
-
-#: includes/Admin.php
-msgid "Failed to generate PDF thumbnail."
-msgstr "PDF サムネイルの生成に失敗しました。"
-
-#: includes/BulkProcessor.php
-msgid "Permission denied."
-msgstr "権限がありません。"
-
-#: includes/BulkProcessor.php
-msgid "Invalid PDF ID."
-msgstr "無効な PDF ID です。"
-
-#: includes/BulkProcessor.php
-msgid "Not a PDF file."
-msgstr "PDF ファイルではありません。"
-
-#: includes/BulkProcessor.php
-msgid "Thumbnail generated."
-msgstr "サムネイルを生成しました。"
-
-#: includes/BulkProcessor.php
-msgid "Failed to generate thumbnail."
-msgstr "サムネイルの生成に失敗しました。"
-
-#: includes/MediaLibrary.php
-msgid "PDF Thumbnail"
-msgstr "PDF サムネイル"
-
-#: includes/MediaLibrary.php
-msgid "Thumbnail generated"
-msgstr "サムネイル生成済み"
-
-#: includes/MediaLibrary.php
-msgid "No thumbnail"
-msgstr "サムネイルなし"
-
-#: includes/MediaLibrary.php
-msgid "Regenerate Thumbnail"
-msgstr "サムネイル再生成"
-
-#: includes/MediaLibrary.php
-msgid "Generate Thumbnail"
-msgstr "サムネイル生成"
-
-#: includes/MediaLibrary.php
-msgid "Security check failed."
-msgstr "セキュリティチェックに失敗しました。"
-
-#: includes/MediaLibrary.php
-msgid "You do not have permission to do this."
-msgstr "この操作を行う権限がありません。"
-
-#: includes/MediaLibrary.php
-msgid "Invalid attachment ID."
-msgstr "無効な添付ファイル ID です。"
-
-#: includes/MediaLibrary.php
-msgid "Thumbnail generated successfully."
-msgstr "サムネイルが正常に生成されました。"
-
-#: includes/Engine/ImagickEngine.php
-msgid "Installed"
-msgstr "インストール済み"
-
-#: includes/Engine/ImagickEngine.php
-msgid "Not installed"
-msgstr "未インストール"
-
-#: includes/Engine/ImagickEngine.php
-msgid "Unknown"
-msgstr "不明"
-
-#: includes/Engine/ImagickEngine.php
-msgid "PDF file not found."
-msgstr "PDF ファイルが見つかりません。"
-
-#: includes/Engine/ImagickEngine.php
-msgid "PDF file is not readable."
-msgstr "PDF ファイルを読み込めません。"
-
-#: includes/Engine/ImagickEngine.php
-msgid "Failed to create output directory."
-msgstr "出力先ディレクトリを作成できませんでした。"
-
-#. translators: %s: error message
-#: includes/Engine/ImagickEngine.php
-msgid "Imagick error: %s"
-msgstr "Imagick エラー: %s"
-
-#: admin/views/settings-page.php
-msgid "This plugin requires ImageMagick (Imagick PHP extension) with PDF support to generate thumbnails."
-msgstr "このプラグインはサムネイル生成に ImageMagick (Imagick PHP 拡張) と PDF サポートが必要です。"
-
-#: admin/views/settings-page.php
-msgid "Requirement"
-msgstr "要件"
-
-#: admin/views/settings-page.php
-msgid "Unable to check requirements."
-msgstr "要件を確認できません。"
-
-#: admin/views/settings-page.php
-msgid "Insert Settings"
-msgstr "挿入設定"
-
-#: admin/views/settings-page.php
-msgid "Configure how PDF thumbnails are inserted into content."
-msgstr "PDF サムネイルをコンテンツに挿入する方法を設定します。"
-
-#: admin/views/settings-page.php
-msgid "Default Insert Type"
-msgstr "デフォルト挿入タイプ"
-
-#: admin/views/settings-page.php
-msgid "Thumbnail Image"
-msgstr "サムネイル画像"
-
-#: admin/views/settings-page.php
-msgid "Title (text link only)"
-msgstr "タイトル (テキストリンクのみ)"
-
-#: admin/views/settings-page.php
-msgid "Custom HTML"
-msgstr "カスタム HTML"
-
-#: admin/views/settings-page.php
-msgid "\"Title\" inserts only a text link to the PDF. \"Custom HTML\" allows using document viewer plugins."
-msgstr "「タイトル」は PDF へのテキストリンクのみを挿入します。「カスタム HTML」はドキュメントビュープラグインの使用を可能にします。"
-
-#: admin/views/settings-page.php
-msgid "Default Insert Size"
-msgstr "デフォルト挿入サイズ"
-
-#: admin/views/settings-page.php
-msgid "Image size to use when inserting PDF thumbnails."
-msgstr "PDF サムネイルを挿入する際に使用する画像サイズ。"
-
-#: admin/views/settings-page.php
-msgid "Link To"
-msgstr "リンク先"
-
-#: admin/views/settings-page.php
-msgid "PDF File"
-msgstr "PDF ファイル"
-
-#: admin/views/settings-page.php
-msgid "Attachment Page"
-msgstr "添付ファイルページ"
-
-#: admin/views/settings-page.php
-msgid "None (no link)"
-msgstr "なし (リンクなし)"
-
-#: admin/views/settings-page.php
-msgid "Custom HTML Template"
-msgstr "カスタム HTML テンプレート"
-
-#: admin/views/settings-page.php
-msgid "Available placeholders:"
-msgstr "利用可能なプレースホルダー:"
-
-#: admin/views/settings-page.php
-msgid "URL to the PDF file"
-msgstr "PDF ファイルの URL"
-
-#: admin/views/settings-page.php
-msgid "URL to the thumbnail image"
-msgstr "サムネイル画像の URL"
-
-#: admin/views/settings-page.php
-msgid "PDF title"
-msgstr "PDF タイトル"
-
-#: admin/views/settings-page.php
-msgid "PDF attachment ID"
-msgstr "PDF 添付ファイル ID"
-
-#: admin/views/settings-page.php
-msgid "URL to the attachment page"
-msgstr "添付ファイルページの URL"
-
-#: admin/views/settings-page.php
-msgid "Example for Google Doc Embedder:"
-msgstr "Google Doc Embedder の例:"
-
-#: admin/views/settings-page.php
-msgid "Display Settings"
-msgstr "表示設定"
-
-#: admin/views/settings-page.php
-msgid "Display Thumbnail Icon"
-msgstr "サムネイルアイコンを表示"
-
-#: admin/views/settings-page.php
-msgid "Display generated thumbnail instead of default PDF mime-type icon"
-msgstr "デフォルトの PDF MIME タイプアイコンの代わりに生成されたサムネイルを表示"
-
-#: admin/views/settings-page.php
-msgid "Shows the generated thumbnail image as the PDF icon in the Media Library."
-msgstr "メディアライブラリで PDF のアイコンとして生成されたサムネイル画像を表示します。"
-
-#: admin/views/settings-page.php
-msgid "Hide Generated Images"
-msgstr "生成された画像を非表示"
-
-#: admin/views/settings-page.php
-msgid "Hide generated thumbnail images in the Media Library"
-msgstr "メディアライブラリで生成されたサムネイル画像を非表示にする"
-
-#: admin/views/settings-page.php
-msgid "When unchecked and a PDF is deleted, the generated image will NOT be deleted together."
-msgstr "チェックを外すと、PDF を削除しても生成された画像は一緒に削除されません。"
-
-#: admin/views/settings-page.php
-msgid "Keep Images on Uninstall"
-msgstr "アンインストール時に画像を保持"
-
-#: admin/views/settings-page.php
-msgid "Keep generated images after the plugin is uninstalled"
-msgstr "プラグインをアンインストールした後も生成された画像を保持する"
-
-#: admin/views/settings-page.php
-msgid "If checked, generated image files will be handled as ordinary image files after plugin removal."
-msgstr "チェックすると、プラグイン削除後も生成された画像ファイルは通常の画像ファイルとして扱われます。"
-
-#: admin/views/settings-page.php
-msgid "Support This Plugin"
-msgstr "このプラグインをサポート"
-
-#: admin/views/settings-page.php
-msgid "If you find this plugin useful, please consider supporting its development."
-msgstr "このプラグインが役に立った場合は、開発をサポートしていただけると幸いです。"
-
-#: admin/views/settings-page.php
-msgid "Buy me a coffee"
-msgstr "Buy me a coffee"
-
-#: admin/views/settings-page.php
-msgid "Leave a review"
-msgstr "レビューを書く"
-
-#: admin/views/settings-page.php
-msgid "Your reviews help other users discover this plugin. Thank you!"
-msgstr "レビューは、このプラグインを他のユーザーに見つけてもらう助けになります。ご協力ありがとうございます !"
-
-#: includes/Engine/ImagickEngine.php
-msgid "Color Management"
-msgstr "カラー管理"
-
-#: includes/Engine/ImagickEngine.php
-msgid "Active (ICC)"
-msgstr "有効 (ICC)"
-
-#: includes/Engine/ImagickEngine.php
-#. translators: 1: CMYK profile filename, 2: sRGB profile filename
-msgid "Converting %1$s to %2$s"
-msgstr "%1$s → %2$s で変換"
-
-#: includes/Engine/ImagickEngine.php
-msgid "Inactive — using simple conversion"
-msgstr "無効 — 簡易変換で動作中"
-
-#: includes/Engine/ImagickEngine.php
-msgid "Disabled by filter — using simple conversion"
-msgstr "フィルターで無効化 — 簡易変換で動作中"
-
-#: includes/Engine/ImagickEngine.php
-msgid "No CMYK profile found on this server."
-msgstr "このサーバーに CMYK プロファイルが見つかりません。"
-
-#: includes/Engine/ImagickEngine.php
-msgid "No sRGB profile found on this server."
-msgstr "このサーバーに sRGB プロファイルが見つかりません。"
-
-#: includes/Admin.php
-msgid "Color conversion has been improved. Thumbnails generated before this update keep their old colors."
-msgstr "カラー変換の処理を改善しました。この更新より前に生成されたサムネイルは、以前の色のままになっています。"
-
-#: includes/Admin.php
-msgid "Regenerate thumbnails"
-msgstr "サムネイルを再生成"
-
-#: includes/Admin.php
-msgid "Dismiss"
-msgstr "非表示"
-
-#: admin/views/settings-page.php
-msgid "CMYK PDFs may render more vivid than the original. Install a CMYK ICC profile on the server, or point the rapls_pdf_image_creator_icc_paths filter at one, to restore accurate colors."
-msgstr "CMYK の PDF では、色が実際より鮮やかに再現される場合があります。サーバーに CMYK の ICC プロファイルを設置するか、rapls_pdf_image_creator_icc_paths フィルターでパスを指定してください。"
-
-#: includes/Engine/ImagickEngine.php
-msgid "CMYK PDF Rendering"
-msgstr "CMYK PDF の描画"
-
-#: includes/Engine/ImagickEngine.php
-msgid "ImageMagick 6 — CMYK PDFs may produce a blank image"
-msgstr "ImageMagick 6 — CMYK の PDF で画像が真っ白になる場合があります"
-
-#: includes/Engine/ImagickEngine.php
-msgid "RGB PDFs are not affected."
-msgstr "RGB の PDF には影響しません。"
-
-#: admin/views/settings-page.php
-msgid "CMYK PDFs may generate a blank white thumbnail on this server."
-msgstr "このサーバーでは、CMYK の PDF から真っ白なサムネイルが生成される場合があります。"
-
-#: admin/views/settings-page.php
-msgid "ImageMagick 6 renders CMYK PDFs through Ghostscript's bmpsep8 device, which produces a separation BMP that ImageMagick cannot read back. ImageMagick 7 does not have this problem."
-msgstr "ImageMagick 6 は CMYK の PDF を Ghostscript の bmpsep8 デバイスで描画しますが、これが出力する分版 BMP を ImageMagick 自身が読み戻せません。ImageMagick 7 ではこの問題は起きません。"
-
-#: admin/views/settings-page.php
-msgid "Ask your hosting provider for either of the following:"
-msgstr "ホスティングプロバイダーに、次のいずれかを依頼してください。"
-
-#: admin/views/settings-page.php
-msgid "Upgrade ImageMagick to version 7."
-msgstr "ImageMagick をバージョン 7 に更新する。"
-
-#: admin/views/settings-page.php
-#. translators: 1: delegates.xml, 2: ps:cmyk, 3: bmpsep8, 4: pamcmyk32
-msgid "In %1$s, change the %2$s delegate from %3$s to %4$s."
-msgstr "%1$s の %2$s デリゲートを %3$s から %4$s に変更する。"
-
-#: includes/Engine/ImagickEngine.php
-msgid "Imagick extension not installed"
-msgstr "Imagick 拡張が未インストール"
-
-#: includes/Engine/ImagickEngine.php
-msgid "The Imagick PHP extension is not loaded, so no PDF can be rendered."
-msgstr "Imagick PHP 拡張が読み込まれていないため、PDF を描画できません。"
-
-#: includes/Engine/ImagickEngine.php
-msgid "Ask your hosting provider to install and enable the Imagick PHP extension (the ImageMagick binding for PHP)."
-msgstr "Imagick PHP 拡張 (ImageMagick の PHP バインディング) をインストールして有効にするよう、ホスティング事業者に依頼してください。"
-
-#: includes/Engine/ImagickEngine.php
-msgid "PDF blocked by ImageMagick policy"
-msgstr "ImageMagick のポリシーで PDF が禁止されています"
-
-#: includes/Engine/ImagickEngine.php
-msgid "ImageMagick is installed, but its security policy forbids reading PDF files. This is a server setting, not a missing component."
-msgstr "ImageMagick はインストールされていますが、セキュリティポリシーが PDF ファイルの読み込みを禁止しています。これはサーバーの設定であり、何かが足りないわけではありません。"
-
-#: includes/Engine/ImagickEngine.php
-msgid "Ask your hosting provider to allow the PDF coder in policy.xml. The rule currently denies it, and it needs read rights."
-msgstr "policy.xml で PDF コーダーを許可するよう、ホスティング事業者に依頼してください。現在は拒否する設定になっており、読み取り権限が必要です。"
-
-#: includes/Engine/ImagickEngine.php
-msgid "PDF support missing"
-msgstr "PDF に対応していません"
-
-#: includes/Engine/ImagickEngine.php
-msgid "ImageMagick is installed, but it reports no PDF support. Usually the PDF delegate is absent from the build; a security policy elsewhere on the server can also cause this."
-msgstr "ImageMagick はインストールされていますが、PDF に対応していないと報告しています。多くはビルドに PDF デリゲートが含まれていない場合です。サーバー上の別のセキュリティポリシーが原因のこともあります。"
-
-#: includes/Engine/ImagickEngine.php
-msgid "Ask your hosting provider to enable PDF support in ImageMagick, and to confirm that policy.xml does not deny the PDF coder."
-msgstr "ImageMagick で PDF を扱えるようにし、policy.xml が PDF コーダーを拒否していないか確認するよう、ホスティング事業者に依頼してください。"
-
-#: includes/Engine/ImagickEngine.php
-msgid "ImageMagick could not be asked which formats it supports."
-msgstr "ImageMagick に対応形式を問い合わせられませんでした。"
-
-#: includes/Engine/ImagickEngine.php
-msgid "Ask your hosting provider to check the ImageMagick installation."
-msgstr "ImageMagick のインストール状態を確認するよう、ホスティング事業者に依頼してください。"
-
-#: includes/Engine/ImagickEngine.php
-msgid "ImageMagick is installed and PDF rendering is permitted."
-msgstr "ImageMagick がインストールされており、PDF の描画も許可されています。"
-
-#: includes/Engine/ImagickEngine.php
-msgid "Unable to check"
-msgstr "確認できません"
-
-#. translators: %s: absolute path to the policy.xml file
-#: includes/Engine/ImagickEngine.php
-msgid "Policy file: %s"
-msgstr "ポリシーファイル: %s"
-
-#: includes/Generator.php
-msgid "No conversion engine"
-msgstr "変換エンジンがありません"
-
-#: includes/Generator.php
-msgid "No PDF conversion engine is registered."
-msgstr "PDF 変換エンジンが登録されていません。"
-
-#: includes/Admin.php
-msgid "A PDF was uploaded and no thumbnail could be generated for this reason."
-msgstr "PDF がアップロードされましたが、この理由でサムネイルを生成できませんでした。"
-
-#: includes/Admin.php
-msgid "What to do:"
-msgstr "対処方法:"
-
-#: includes/Admin.php
-msgid "Plugin status"
-msgstr "プラグインのステータス"
-
-#: includes/Admin.php
-msgid "See Site Health for the full report"
-msgstr "詳しい状況はサイトヘルスで確認できます"
-
-#: includes/SiteHealth.php
-msgid "PDF thumbnail generation"
-msgstr "PDF サムネイルの生成"
-
-#: includes/SiteHealth.php
-msgid "PDF thumbnails can be generated"
-msgstr "PDF サムネイルを生成できます"
-
-#: includes/SiteHealth.php
-msgid "PDF thumbnails cannot be generated"
-msgstr "PDF サムネイルを生成できません"
-
-#: includes/SiteHealth.php
-msgid "Media"
-msgstr "メディア"
-
-#: includes/SiteHealth.php
-msgid "Rapls PDF Image Creator can render PDF files, so thumbnails are generated when a PDF is uploaded."
-msgstr "Rapls PDF Image Creator は PDF ファイルを描画できます。PDF をアップロードすると、サムネイルが生成されます。"
-
-#: includes/SiteHealth.php
-msgid "Open the plugin status page"
-msgstr "プラグインのステータス画面を開く"
-
-#: includes/SiteHealth.php
-msgid "Plugin version"
-msgstr "プラグインのバージョン"
-
-#: includes/SiteHealth.php
-msgid "PDF rendering"
-msgstr "PDF の描画"
-
-#: includes/SiteHealth.php
-msgid "PDF rendering detail"
-msgstr "PDF の描画 (詳細)"
-
-#. translators: %d: resolution in dots per inch
-#: includes/SiteHealth.php
+msgid ""
+"\"Title\" inserts only a text link to the PDF. \"Custom HTML\" allows using "
+"document viewer plugins."
+msgstr ""
+"「タイトル」は PDF へのテキストリンクのみを挿入します。「カスタム HTML」はド"
+"キュメントビュープラグインの使用を可能にします。"
+
+#, php-format
 msgid "%d DPI"
 msgstr "%d DPI"
 
-#: includes/SiteHealth.php
-msgid "Maximum dimensions"
-msgstr "最大サイズ"
+#, php-format
+msgid ""
+"%d PDF already has a thumbnail. Tick \"Include PDFs that already have "
+"thumbnails\" above to generate it again."
+msgid_plural ""
+"All %d PDFs already have thumbnails. Tick \"Include PDFs that already have "
+"thumbnails\" above to generate them again."
+msgstr[0] ""
+"%d件の PDF にはすでにサムネイルがあります。もう一度生成するには、上の「すでに"
+"サムネイルがある PDF も含める (再生成)」にチェックしてください。"
 
-#: includes/SiteHealth.php
-msgid "Output format"
-msgstr "出力形式"
+msgid ""
+"A CMYK test page came back blank. Ask your hosting provider to update "
+"ImageMagick to version 7, or to change the ps:cmyk delegate from bmpsep8 to "
+"pamcmyk32. RGB PDFs are not affected."
+msgstr ""
+"CMYK のテストページが真っ白で返りました。ImageMagick をバージョン7に更新する"
+"か、ps:cmyk デリゲートを bmpsep8 から pamcmyk32 に変更するよう、ホスティング"
+"事業者に依頼してください。RGB の PDF には影響しません。"
 
-#: includes/SiteHealth.php
-msgid "Generate on upload"
-msgstr "アップロード時に生成"
+msgid ""
+"A PDF here came back blank until transparency was switched off, which is a "
+"fault in Ghostscript 9.27 and earlier. The thumbnail was made, but "
+"transparent areas of such a file may not look right. Asking your host to "
+"update Ghostscript is the real fix."
+msgstr ""
+"このサーバーでは、透明効果を無効にするまで PDF が真っ白なまま返ってきました。"
+"Ghostscript 9.27以前の不具合です。サムネイルは作成できましたが、そうしたファ"
+"イルでは透明部分の見え方が正しくない場合があります。本来の解決策は、ホスティ"
+"ング事業者に Ghostscript の更新を依頼することです。"
 
-#: includes/SiteHealth.php
-msgid "Enabled"
-msgstr "有効"
+msgid "A PDF was uploaded and no thumbnail could be generated for this reason."
+msgstr ""
+"PDF がアップロードされましたが、この理由でサムネイルを生成できませんでした。"
 
-#: includes/SiteHealth.php
-msgid "Disabled"
-msgstr "無効"
+msgid ""
+"A thumbnail can be made from any page, not only the first. Set the page on "
+"the Settings tab."
+msgstr ""
+"最初のページに限らず、どのページからでもサムネイルを作成できます。ページ番号"
+"は「設定」タブで指定します。"
 
-#: includes/SiteHealth.php
-msgid "Server requirements and settings for PDF thumbnail generation."
-msgstr "PDF サムネイル生成に関するサーバー要件と設定。"
+msgid "Active (ICC)"
+msgstr "有効 (ICC)"
 
-#: includes/Engine/ImagickEngine.php
-msgid "Working on this server (tested)"
-msgstr "このサーバーでは動作します (実測)"
+msgid "An error occurred while fetching status."
+msgstr "ステータスの取得中にエラーが発生しました。"
 
-#: includes/Engine/ImagickEngine.php
-msgid "ImageMagick 6 renders some CMYK PDFs as a blank image. A test page rendered correctly here, so the common case works. Complex print-ready files (PDF/X) can still take a different path — check one of your own if you rely on them."
-msgstr "ImageMagick 6 では CMYK の PDF が真っ白な画像になることがあります。このサーバーではテストページが正しく描画されたので、通常のケースは問題ありません。ただし印刷入稿用の複雑な PDF (PDF/X) は別の経路を通ることがあるため、実際に使うファイルで確認してください。"
+msgid "An error occurred while generating thumbnail."
+msgstr "サムネイルの生成中にエラーが発生しました。"
 
-#: includes/Engine/ImagickEngine.php
+msgid "An error occurred while scanning for PDFs."
+msgstr "PDF の検索中にエラーが発生しました。"
+
+msgid "An error occurred."
+msgstr "エラーが発生しました。"
+
+msgid "Ask your hosting provider for either of the following:"
+msgstr "ホスティングプロバイダーに、次のいずれかを依頼してください。"
+
+msgid ""
+"Ask your hosting provider to allow the PDF coder in policy.xml. The rule "
+"currently denies it, and it needs read rights."
+msgstr ""
+"policy.xml で PDF コーダーを許可するよう、ホスティング事業者に依頼してくださ"
+"い。現在は拒否する設定になっており、読み取り権限が必要です。"
+
+msgid "Ask your hosting provider to check the ImageMagick installation."
+msgstr ""
+"ImageMagick のインストール状態を確認するよう、ホスティング事業者に依頼してく"
+"ださい。"
+
+msgid ""
+"Ask your hosting provider to enable PDF support in ImageMagick, and to "
+"confirm that policy.xml does not deny the PDF coder."
+msgstr ""
+"ImageMagick で PDF を扱えるようにし、policy.xml が PDF コーダーを拒否していな"
+"いか確認するよう、ホスティング事業者に依頼してください。"
+
+msgid ""
+"Ask your hosting provider to install and enable the Imagick PHP extension "
+"(the ImageMagick binding for PHP)."
+msgstr ""
+"Imagick PHP 拡張 (ImageMagick の PHP バインディング) をインストールして有効に"
+"するよう、ホスティング事業者に依頼してください。"
+
+msgid "Attachment Page"
+msgstr "添付ファイルページ"
+
+msgid "Auto Generate"
+msgstr "自動生成"
+
+msgid ""
+"Automatically generate thumbnail images from PDF files uploaded to the Media "
+"Library."
+msgstr ""
+"メディアライブラリにアップロードされた PDF ファイルからサムネイル画像を自動生"
+"成します。"
+
+msgid "Automatically generate thumbnail when PDF is uploaded"
+msgstr "PDF アップロード時にサムネイルを自動生成"
+
+msgid "Available"
+msgstr "利用可能"
+
+msgid "Available placeholders:"
+msgstr "利用可能なプレースホルダー:"
+
+msgid "Background Color"
+msgstr "背景色"
+
+msgid "Background color for transparent areas in PDFs."
+msgstr "PDF 内の透明部分の背景色。"
+
+msgid "Behavior Settings"
+msgstr "動作設定"
+
+msgid "Black"
+msgstr "黒"
+
 msgid "Broken on this server (tested)"
 msgstr "このサーバーでは動作しません (実測)"
 
-#: includes/Engine/ImagickEngine.php
-msgid "A CMYK test page came back blank. Ask your hosting provider to update ImageMagick to version 7, or to change the ps:cmyk delegate from bmpsep8 to pamcmyk32. RGB PDFs are not affected."
-msgstr "CMYK のテストページが真っ白で返りました。ImageMagick をバージョン 7 に更新するか、ps:cmyk デリゲートを bmpsep8 から pamcmyk32 に変更するよう、ホスティング事業者に依頼してください。RGB の PDF には影響しません。"
+msgid "Bulk Generate"
+msgstr "一括生成"
+
+msgid "Bulk Generate Thumbnails"
+msgstr "サムネイル一括生成"
+
+msgid "Buy me a coffee"
+msgstr "Buy me a coffee"
+
+msgid "CMYK"
+msgstr "CMYK"
+
+msgid "CMYK PDF Rendering"
+msgstr "CMYK PDF の描画"
+
+msgid "CMYK PDFs may generate a blank white thumbnail on this server."
+msgstr ""
+"このサーバーでは、CMYK の PDF から真っ白なサムネイルが生成される場合がありま"
+"す。"
+
+msgid ""
+"CMYK PDFs may render more vivid than the original. Install a CMYK ICC "
+"profile on the server, or point the rapls_pdf_image_creator_icc_paths filter "
+"at one, to restore accurate colors."
+msgstr ""
+"CMYK の PDF では、色が実際より鮮やかに再現される場合があります。サーバーに "
+"CMYK の ICC プロファイルを設置するか、rapls_pdf_image_creator_icc_paths フィ"
+"ルターでパスを指定してください。"
+
+msgid ""
+"Check the permissions on wp-content/uploads, and that the disk is not full."
+msgstr ""
+"wp-content/uploads のパーミッションと、ディスクに空き容量があるかを確認してく"
+"ださい。"
+
+msgid "Check this server again"
+msgstr "このサーバーを再検査"
+
+msgid "Color Management"
+msgstr "カラー管理"
+
+msgid ""
+"Color conversion has been improved. Thumbnails generated before this update "
+"keep their old colors."
+msgstr ""
+"カラー変換の処理を改善しました。この更新より前に生成されたサムネイルは、以前"
+"の色のままになっています。"
+
+msgid "Colour conversion is switched off."
+msgstr "カラー変換は無効になっています。"
+
+msgid "Complete!"
+msgstr "完了 !"
+
+msgid "Configure how PDF thumbnails are inserted into content."
+msgstr "PDF サムネイルをコンテンツに挿入する方法を設定します。"
+
+#, php-format
+msgid "Converting %1$s to %2$s"
+msgstr "%1$s → %2$s で変換"
+
+msgid "Custom HTML"
+msgstr "カスタム HTML"
+
+msgid "Custom HTML Template"
+msgstr "カスタム HTML テンプレート"
+
+msgid "Default Insert Size"
+msgstr "デフォルト挿入サイズ"
+
+msgid "Default Insert Type"
+msgstr "デフォルト挿入タイプ"
+
+msgid "Disabled"
+msgstr "無効"
+
+msgid "Disabled by filter — using simple conversion"
+msgstr "フィルターで無効化 — 簡易変換で動作中"
+
+msgid "Dismiss"
+msgstr "非表示"
+
+msgid "Display Settings"
+msgstr "表示設定"
+
+msgid "Display Thumbnail Icon"
+msgstr "サムネイルアイコンを表示"
+
+msgid "Display generated thumbnail instead of default PDF mime-type icon"
+msgstr ""
+"デフォルトの PDF MIME タイプアイコンの代わりに生成されたサムネイルを表示"
+
+msgid "Enabled"
+msgstr "有効"
+
+msgid "Enables using get_post_thumbnail_id() with PDF attachments."
+msgstr "PDF 添付ファイルで get_post_thumbnail_id() を使用可能にします。"
+
+msgid "Example for Google Doc Embedder:"
+msgstr "Google Doc Embedder の例:"
+
+msgid "Failed to create output directory."
+msgstr "出力先ディレクトリを作成できませんでした。"
+
+msgid "Failed to generate PDF thumbnail."
+msgstr "PDF サムネイルの生成に失敗しました。"
+
+msgid "Failed to generate thumbnail."
+msgstr "サムネイルの生成に失敗しました。"
+
+msgid "Failed:"
+msgstr "失敗:"
+
+msgid "Featured Image"
+msgstr "アイキャッチ画像"
+
+msgid "Generate Thumbnail"
+msgstr "サムネイル生成"
+
+msgid "Generate on upload"
+msgstr "アップロード時に生成"
+
+msgid "Generate thumbnails for existing PDF files in your Media Library."
+msgstr "メディアライブラリ内の既存 PDF ファイルのサムネイルを生成します。"
+
+msgid "Generated:"
+msgstr "生成済み:"
+
+#, php-format
+msgid "Generating thumbnail %1$d of %2$d..."
+msgstr "サムネイル生成中%1$d / %2$d..."
+
+msgid "Ghostscript"
+msgstr "Ghostscript"
+
+msgid "Hide Generated Images"
+msgstr "生成された画像を非表示"
+
+msgid "Hide generated thumbnail images in the Media Library"
+msgstr "メディアライブラリで生成されたサムネイル画像を非表示にする"
+
+msgid ""
+"If checked, generated image files will be handled as ordinary image files "
+"after plugin removal."
+msgstr ""
+"チェックすると、プラグイン削除後も生成された画像ファイルは通常の画像ファイル"
+"として扱われます。"
+
+msgid ""
+"If you find this plugin useful, please consider supporting its development."
+msgstr ""
+"このプラグインが役に立った場合は、開発をサポートしていただけると幸いです。"
+
+msgid "Image Settings"
+msgstr "画像設定"
+
+msgid "Image quality for JPEG/WebP output. (10-100)"
+msgstr "JPEG/WebP 出力の画像品質 (10-100)。"
+
+msgid "Image size to use when inserting PDF thumbnails."
+msgstr "PDF サムネイルを挿入する際に使用する画像サイズ。"
+
+msgid ""
+"ImageMagick 6 renders CMYK PDFs through Ghostscript's bmpsep8 device, which "
+"produces a separation BMP that ImageMagick cannot read back. ImageMagick 7 "
+"does not have this problem."
+msgstr ""
+"ImageMagick 6は CMYK の PDF を Ghostscript の bmpsep8 デバイスで描画します"
+"が、これが出力する分版 BMP を ImageMagick 自身が読み戻せません。ImageMagick 7"
+"ではこの問題は起きません。"
+
+msgid ""
+"ImageMagick 6 renders some CMYK PDFs as a blank image. A test page rendered "
+"correctly here, so the common case works. Complex print-ready files (PDF/X) "
+"can still take a different path — check one of your own if you rely on them."
+msgstr ""
+"ImageMagick 6では CMYK の PDF が真っ白な画像になることがあります。このサー"
+"バーではテストページが正しく描画されたので、通常のケースは問題ありません。た"
+"だし印刷入稿用の複雑な PDF (PDF/X) は別の経路を通ることがあるため、実際に使う"
+"ファイルで確認してください。"
+
+msgid "ImageMagick 6 — CMYK PDFs may produce a blank image (not tested)"
+msgstr ""
+"ImageMagick 6 — CMYK の PDF で画像が真っ白になる場合があります (未検査)"
+
+msgid "ImageMagick could not be asked which formats it supports."
+msgstr "ImageMagick に対応形式を問い合わせられませんでした。"
+
+msgid "ImageMagick could not render the page."
+msgstr "ImageMagick がページを描画できませんでした。"
+
+msgid "ImageMagick is installed and PDF rendering is permitted."
+msgstr "ImageMagick がインストールされており、PDF の描画も許可されています。"
+
+msgid ""
+"ImageMagick is installed, but it reports no PDF support. Usually the PDF "
+"delegate is absent from the build; a security policy elsewhere on the server "
+"can also cause this."
+msgstr ""
+"ImageMagick はインストールされていますが、PDF に対応していないと報告していま"
+"す。多くはビルドに PDF デリゲートが含まれていない場合です。サーバー上の別のセ"
+"キュリティポリシーが原因のこともあります。"
+
+msgid ""
+"ImageMagick is installed, but its security policy forbids reading PDF files. "
+"This is a server setting, not a missing component."
+msgstr ""
+"ImageMagick はインストールされていますが、セキュリティポリシーが PDF ファイル"
+"の読み込みを禁止しています。これはサーバーの設定であり、何かが足りないわけで"
+"はありません。"
+
+#, php-format
+msgid "Imagick error: %s"
+msgstr "Imagick エラー: %s"
+
+msgid "Imagick extension not installed"
+msgstr "Imagick 拡張が未インストール"
+
+#, php-format
+msgid "In %1$s, change the %2$s delegate from %3$s to %4$s."
+msgstr "%1$s の %2$s デリゲートを %3$s から %4$s に変更する。"
+
+msgid "Inactive — using simple conversion"
+msgstr "無効 — 簡易変換で動作中"
+
+msgid "Include PDFs that already have thumbnails (regenerate)"
+msgstr "すでにサムネイルがある PDF も含める (再生成)"
+
+msgid "Insert Settings"
+msgstr "挿入設定"
+
+msgid "Installed"
+msgstr "インストール済み"
+
+msgid "Invalid PDF ID."
+msgstr "無効な PDF ID です。"
+
+msgid "Invalid attachment ID."
+msgstr "無効な添付ファイル ID です。"
+
+msgid "JPEG"
+msgstr "JPEG"
+
+msgid "Keep Images on Uninstall"
+msgstr "アンインストール時に画像を保持"
+
+msgid "Keep generated images after the plugin is uninstalled"
+msgstr "プラグインをアンインストールした後も生成された画像を保持する"
+
+#, php-format
+msgid "Last seen on %1$s, %2$s ago."
+msgstr "最後に発生したのは %1$s、%2$s 前です。"
+
+msgid "Leave a review"
+msgstr "レビューを書く"
+
+msgid "Link To"
+msgstr "リンク先"
+
+msgid "Log"
+msgstr "ログ"
+
+msgid ""
+"Lower the resolution on the Settings tab and generate again. Large-format "
+"pages at a high DPI can run to hundreds of millions of pixels."
+msgstr ""
+"「設定」タブで解像度を下げて、もう一度生成してください。大判のページを高い "
+"DPI で描画すると、数億ピクセルに達することがあります。"
+
+msgid "Max Height"
+msgstr "最大高さ"
+
+msgid "Max Width"
+msgstr "最大幅"
+
+msgid "Maximum dimensions"
+msgstr "最大サイズ"
+
+msgid "Maximum height of generated thumbnail. (100-4096)"
+msgstr "生成されるサムネイルの最大高さ (100-4096)。"
+
+msgid "Maximum width of generated thumbnail. (100-4096)"
+msgstr "生成されるサムネイルの最大幅 (100-4096)。"
+
+msgid "Media"
+msgstr "メディア"
+
+msgid "Needed a workaround on this server (measured)"
+msgstr "このサーバーでは回避策が必要でした (実測)"
+
+msgid ""
+"Neither a CMYK nor an sRGB profile was found on this server. Colour "
+"conversion needs both."
+msgstr ""
+"このサーバーには CMYK プロファイルも sRGB プロファイルもありません。カラー変"
+"換には両方が必要です。"
+
+#, php-format
+msgid ""
+"No %s profile found on this server. Colour conversion needs both a CMYK and "
+"an sRGB profile; the other one is present."
+msgstr ""
+"このサーバーに %s プロファイルが見つかりません。カラー変換には CMYK と sRGB "
+"の両方が必要で、もう一方は見つかっています。"
+
+msgid "No PDF conversion engine is registered."
+msgstr "PDF 変換エンジンが登録されていません。"
+
+msgid "No conversion engine"
+msgstr "変換エンジンがありません"
+
+msgid "No such attachment."
+msgstr "該当する添付ファイルがありません。"
+
+msgid "No thumbnail"
+msgstr "サムネイルなし"
+
+msgid "None (no link)"
+msgstr "なし (リンクなし)"
+
+msgid "Not a PDF file."
+msgstr "PDF ファイルではありません。"
+
+msgid "Not installed"
+msgstr "未インストール"
+
+msgid "Not working on this server (tested)"
+msgstr "このサーバーでは動作しません (実測)"
+
+msgid ""
+"Nothing was drawn. ImageMagick raised no error, so this is almost always the "
+"PDF renderer underneath it — Ghostscript — being too old for the file. "
+"Ghostscript 9.27 fails on PDFs that Ghostscript 10 handles, reporting "
+"\"Error reading a content stream\" and writing an empty page. Ask your "
+"hosting provider which version is installed and whether it can be updated."
+msgstr ""
+"何も描画されませんでした。ImageMagick はエラーを出していないので、その下で動"
+"く PDF レンダラ — Ghostscript — がこのファイルには古すぎる、という場合がほと"
+"んどです。Ghostscript 9.27は、Ghostscript 10なら扱える PDF で失敗し、「Error "
+"reading a content stream」と報告して空のページを書き出します。どのバージョン"
+"が入っているか、更新できるかを、ホスティング事業者に問い合わせてください。"
+
+msgid "Open the plugin status page"
+msgstr "プラグインのステータス画面を開く"
+
+msgid "Options"
+msgstr "オプション"
+
+msgid "Output Format"
+msgstr "出力形式"
+
+msgid "Output format"
+msgstr "出力形式"
+
+msgid "PDF File"
+msgstr "PDF ファイル"
+
+msgid "PDF Thumbnail"
+msgstr "PDF サムネイル"
+
+msgid "PDF attachment ID"
+msgstr "PDF 添付ファイル ID"
+
+msgid "PDF attachments in the database:"
+msgstr "データベース内の PDF 添付ファイル:"
+
+msgid "PDF blocked by ImageMagick policy"
+msgstr "ImageMagick のポリシーで PDF が禁止されています"
+
+msgid "PDF file is not readable."
+msgstr "PDF ファイルを読み込めません。"
+
+msgid "PDF file not found."
+msgstr "PDF ファイルが見つかりません。"
+
+msgid "PDF rendering"
+msgstr "PDF の描画"
+
+msgid "PDF rendering detail"
+msgstr "PDF の描画 (詳細)"
+
+msgid "PDF support missing"
+msgstr "PDF に対応していません"
+
+msgid "PDF thumbnail generated successfully."
+msgstr "PDF サムネイルが正常に生成されました。"
+
+msgid "PDF thumbnail generation"
+msgstr "PDF サムネイルの生成"
+
+msgid "PDF thumbnails can be generated"
+msgstr "PDF サムネイルを生成できます"
+
+msgid "PDF thumbnails cannot be generated"
+msgstr "PDF サムネイルを生成できません"
+
+msgid "PDF title"
+msgstr "PDF タイトル"
+
+msgid "PDFs found:"
+msgstr "見つかった PDF:"
+
+msgid "PNG"
+msgstr "PNG"
+
+msgid "Page Number"
+msgstr "ページ番号"
+
+msgid "Page Selection"
+msgstr "ページ選択"
+
+msgid "Page to use for thumbnail (0 = first page)."
+msgstr "サムネイルに使用するページ (0 = 最初のページ)。"
+
+msgid "Permission denied."
+msgstr "権限がありません。"
+
+msgid "Plugin status"
+msgstr "プラグインのステータス"
+
+msgid "Plugin version"
+msgstr "プラグインのバージョン"
+
+#, php-format
+msgid "Policy file: %s"
+msgstr "ポリシーファイル: %s"
+
+msgid "Processing..."
+msgstr "処理中..."
+
+msgid "Progress"
+msgstr "進行状況"
+
+msgid "Quality"
+msgstr "品質"
+
+msgid "RGB PDFs are not affected."
+msgstr "RGB の PDF には影響しません。"
+
+msgid ""
+"Raise this to get a larger thumbnail: the maximum dimensions above only "
+"scale the rendered page down, never up. Higher values use more memory during "
+"generation."
+msgstr ""
+"サムネイルを大きくするには、この値を上げてください。上の最大幅・最大高さは、"
+"描画されたページを縮小するだけで、拡大はしません。値を大きくすると、生成時の"
+"メモリ使用量が増えます。"
+
+msgid "Rapls PDF Image Creator"
+msgstr "Rapls PDF Image Creator"
+
+msgid ""
+"Rapls PDF Image Creator can render PDF files, so thumbnails are generated "
+"when a PDF is uploaded."
+msgstr ""
+"Rapls PDF Image Creator は PDF ファイルを描画できます。PDF をアップロードする"
+"と、サムネイルが生成されます。"
+
+msgid "Rapls PDF Image Creator requires PHP 7.4 or higher."
+msgstr "Rapls PDF Image Creator を使用するには PHP 7.4以上が必要です。"
+
+msgid "Rapls PDF Image Creator:"
+msgstr "Rapls PDF Image Creator:"
+
+msgid "Ready"
+msgstr "準備完了"
+
+msgid "Refresh Statistics"
+msgstr "統計を更新"
+
+msgid "Regenerate Thumbnail"
+msgstr "サムネイル再生成"
+
+msgid "Regenerate thumbnails"
+msgstr "サムネイルを再生成"
+
+msgid "Rendering Resolution"
+msgstr "描画解像度"
+
+msgid "Requirement"
+msgstr "要件"
+
+msgid "Resolution the PDF page is rendered at. (72-600)"
+msgstr "PDF のページを描画する解像度 (72-600)。"
+
+msgid ""
+"Results below are measured, then remembered for twelve hours. Use this after "
+"your host changes something."
+msgstr ""
+"以下の結果は実測値で、12時間記憶されます。ホスティング事業者側で設定が変わっ"
+"たときに使ってください。"
+
+msgid "Scan Results"
+msgstr "スキャン結果"
+
+msgid "Scan again, including these"
+msgstr "これらを含めて再スキャン"
+
+msgid "Scan for PDFs"
+msgstr "PDF をスキャン"
+
+msgid "Security check failed."
+msgstr "セキュリティチェックに失敗しました。"
+
+msgid "See Site Health for the full report"
+msgstr "詳しい状況はサイトヘルスで確認できます"
+
+msgid "Server Status"
+msgstr "サーバーステータス"
+
+msgid "Server requirements and settings for PDF thumbnail generation."
+msgstr "PDF サムネイル生成に関するサーバー要件と設定。"
+
+msgid "Set generated thumbnail as PDF featured image"
+msgstr "生成したサムネイルを PDF のアイキャッチ画像として設定"
+
+msgid "Settings"
+msgstr "設定"
+
+msgid ""
+"Shows the generated thumbnail image as the PDF icon in the Media Library."
+msgstr ""
+"メディアライブラリで PDF のアイコンとして生成されたサムネイル画像を表示しま"
+"す。"
+
+msgid "Start Generation"
+msgstr "生成開始"
+
+msgid "Start bulk generation? This may take a while."
+msgstr "一括生成を開始しますか ? 時間がかかる場合があります。"
+
+msgid "Statistics"
+msgstr "統計"
+
+msgid "Status"
+msgstr "ステータス"
+
+msgid "Stop"
+msgstr "停止"
+
+msgid "Support This Plugin"
+msgstr "このプラグインをサポート"
+
+msgid "That is the one ImageMagick cannot read back."
+msgstr "これは ImageMagick 自身が読み戻せないデバイスです。"
+
+msgid "The Imagick PHP extension is not loaded, so no PDF can be rendered."
+msgstr "Imagick PHP 拡張が読み込まれていないため、PDF を描画できません。"
+
+msgid "The PDF file is missing from the uploads folder."
+msgstr "アップロードフォルダーに PDF ファイルがありません。"
+
+msgid ""
+"The attachment exists in the Media Library but its file does not. Re-upload "
+"the PDF."
+msgstr ""
+"添付ファイルはメディアライブラリに登録されていますが、実体のファイルがありま"
+"せん。PDF をアップロードし直してください。"
+
+#, php-format
+msgid ""
+"The database has %1$d PDF attachment(s) (%2$s) but the query returned none. "
+"Something is filtering it — usually another plugin on pre_get_posts. Try "
+"deactivating other plugins and scanning again."
+msgstr ""
+"データベースには PDF の添付ファイルが%1$d件 (%2$s) ありますが、クエリーは1件"
+"も返しませんでした。何かが絞り込んでいます — たいていは pre_get_posts に処理"
+"を追加した別のプラグインです。他のプラグインを停止して、もう一度スキャンして"
+"ください。"
+
+msgid ""
+"The exact message is below. If it mentions gs, the PDF delegate failed on "
+"this particular file rather than on the server as a whole."
+msgstr ""
+"実際のメッセージは以下のとおりです。gs という記述があれば、サーバー全体ではな"
+"く、この特定のファイルで PDF デリゲートが失敗しています。"
+
+msgid "The image could not be written to the uploads folder."
+msgstr "アップロードフォルダーに画像を書き出せませんでした。"
+
+msgid "The image was rendered but could not be added to the Media Library."
+msgstr "画像は描画できましたが、メディアライブラリに追加できませんでした。"
+
+msgid "The page rendered as a blank white image."
+msgstr "ページが真っ白な画像として描画されました。"
+
+msgid "The page was too large for ImageMagick to open."
+msgstr "ページが大きすぎて ImageMagick が開けませんでした。"
+
+msgid "The server was checked again just now."
+msgstr "サーバーを再検査しました。"
+
+#, php-format
+msgid ""
+"The test could not be run, so this is a guess based on the version number "
+"rather than a measurement. What stopped it: %s"
+msgstr ""
+"テストを実行できなかったため、これは実測ではなくバージョン番号からの推測で"
+"す。実行できなかった理由: %s"
+
+msgid ""
+"There are no PDF files in the Media Library. Uploading a PDF over FTP or SSH "
+"does not add it — it has to go through Media > Add New."
+msgstr ""
+"メディアライブラリに PDF ファイルがありません。FTP や SSH でアップロードした"
+"だけでは登録されません —「メディア」>「新規追加」から追加する必要があります。"
+
+#, php-format
+msgid "This build renders CMYK PDFs through the %s device."
+msgstr "このビルドは CMYK の PDF を %s デバイスで描画します。"
+
+msgid "This clears itself the next time a thumbnail is generated successfully."
+msgstr "次にサムネイルの生成が成功した時点で、この表示は消えます。"
+
+msgid ""
+"This plugin requires ImageMagick (Imagick PHP extension) with PDF support to "
+"generate thumbnails."
+msgstr ""
+"このプラグインはサムネイル生成に ImageMagick (Imagick PHP 拡張) と PDF サポー"
+"トが必要です。"
+
+msgid "Thumbnail Image"
+msgstr "サムネイル画像"
+
+msgid "Thumbnail generated"
+msgstr "サムネイル生成済み"
+
+msgid "Thumbnail generated successfully."
+msgstr "サムネイルが正常に生成されました。"
+
+msgid "Thumbnail generated."
+msgstr "サムネイルを生成しました。"
+
+msgid "Title (text link only)"
+msgstr "タイトル (テキストリンクのみ)"
+
+msgid "Total PDFs:"
+msgstr "PDF 総数:"
+
+msgid "Transparent (PNG only)"
+msgstr "透明 (PNG のみ)"
+
+msgid ""
+"Two different pages of a test file rendered identically, so the page number "
+"setting will have no effect here. The first page still works."
+msgstr ""
+"テストファイルの異なる2ページが同じ画像として描画されたため、このサーバーでは"
+"ページ番号の設定が効きません。最初のページの生成は動作します。"
+
+msgid "URL to the PDF file"
+msgstr "PDF ファイルの URL"
+
+msgid "URL to the attachment page"
+msgstr "添付ファイルページの URL"
+
+msgid "URL to the thumbnail image"
+msgstr "サムネイル画像の URL"
+
+msgid "Unable to check"
+msgstr "確認できません"
+
+msgid "Unable to check requirements."
+msgstr "要件を確認できません。"
+
+msgid "Unknown"
+msgstr "不明"
+
+msgid "Upgrade ImageMagick to version 7."
+msgstr "ImageMagick をバージョン7に更新する。"
+
+msgid "WebP"
+msgstr "WebP"
+
+msgid "What to do:"
+msgstr "対処方法:"
+
+msgid ""
+"When unchecked and a PDF is deleted, the generated image will NOT be deleted "
+"together."
+msgstr ""
+"チェックを外すと、PDF を削除しても生成された画像は一緒に削除されません。"
+
+msgid "White"
+msgstr "白"
+
+msgid "With thumbnail:"
+msgstr "サムネイルあり:"
+
+msgid "Without thumbnail:"
+msgstr "サムネイルなし:"
+
+msgid "Working on this server (tested)"
+msgstr "このサーバーでは動作します (実測)"
+
+msgid "You do not have permission to do this."
+msgstr "この操作を行う権限がありません。"
+
+msgid "Your reviews help other users discover this plugin. Thank you!"
+msgstr ""
+"レビューは、このプラグインを他のユーザーに見つけてもらう助けになります。ご協"
+"力ありがとうございます !"
+
+msgid "sRGB"
+msgstr "sRGB"
+
+#~ msgid "No CMYK profile found on this server."
+#~ msgstr "このサーバーに CMYK プロファイルが見つかりません。"
+
+#~ msgid "No sRGB profile found on this server."
+#~ msgstr "このサーバーに sRGB プロファイルが見つかりません。"
+
+#~ msgid "ImageMagick 6 — CMYK PDFs may produce a blank image"
+#~ msgstr "ImageMagick 6 — CMYK の PDF で画像が真っ白になる場合があります"
