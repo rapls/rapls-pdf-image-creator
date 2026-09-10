@@ -16,6 +16,7 @@ $suites = [
     'test-availability.php',
     'test-failure-codes.php',
     'test-no-trialware.php',
+    'test-review-prompt.php',
 ];
 $failed = [];
 

@@ -62,6 +62,8 @@ if (!$rapls_pic_keep_images) {
 // Delete plugin options
 delete_option('rapls_pic_settings');
 delete_option('rapls_pic_version');
+delete_option('rapls_pic_review_prompt');
+delete_option('rapls_pic_activated_at');
 delete_option('rapls_pic_color_notice');
 delete_option('rapls_pic_color_diagnostics');
 delete_option('rapls_pic_engine_unavailable');

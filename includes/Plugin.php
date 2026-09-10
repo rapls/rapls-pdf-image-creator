@@ -68,6 +68,7 @@ final class Plugin
      * Site Health integration
      */
     private ?SiteHealth $siteHealth = null;
+    private ?ReviewPrompt $reviewPrompt = null;
 
     /**
      * Get plugin instance
@@ -113,6 +114,9 @@ final class Plugin
 
             $this->siteHealth = new SiteHealth($this->settings, $this->generator);
             $this->siteHealth->init();
+
+            $this->reviewPrompt = new ReviewPrompt();
+            $this->reviewPrompt->init();
         }
 
         // Register shortcodes
@@ -146,6 +150,14 @@ final class Plugin
         // Host profiles may have changed with the platform; do not trust the
         // paths cached by the previous version.
         (new \Rapls\PDFImageCreator\Engine\ColorProfile())->flushCache();
+
+        // Sites that were installed before the review request existed have no
+        // activation date. Start their clock now rather than never: a week
+        // from this upgrade is a fair moment to ask, and back-dating to an
+        // activation nobody recorded would ask them today.
+        if (!get_option(ReviewPrompt::ACTIVATED_OPTION)) {
+            add_option(ReviewPrompt::ACTIVATED_OPTION, gmdate('Y-m-d H:i:s'), '', false);
+        }
 
         update_option(self::VERSION_OPTION, RAPLS_PIC_VERSION, false);
     }

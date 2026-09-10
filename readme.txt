@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.1
-Stable tag: 1.4.1
+Stable tag: 1.4.2
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -293,6 +293,9 @@ No other profile is bundled. CMYK profiles are read from the host when one is
 present and are never redistributed.
 
 == Changelog ==
+= 1.4.2 =
+* Added: a request for a review, shown once. It waits a week after activation, and it only appears if the plugin has actually produced a thumbnail on this site -- someone who has been looking at a PDF icon for a week because their server has no PDF support has nothing to review and every reason to resent being asked. It appears on this plugin's own settings screen and nowhere else. Whichever button you use, including the notice's own close button, the answer is recorded and it does not come back. A filter, rapls_pdf_image_creator_show_review_prompt, turns it off for good
+
 = 1.4.1 =
 * Added: a page that comes back blank is now rendered a second time with Ghostscript's transparency handling switched off, and kept if that produces a picture. Ghostscript 9.27 and earlier fail on an image inside a transparency group -- the sort of file PowerPoint and Illustrator produce -- and return a blank page without raising an error. Measured on Xserver: the same file went from 11,018 bytes of white to 624,109 bytes of picture, on every Ghostscript device tried. There is no way to hand ImageMagick an extra Ghostscript switch on that host, because its ImageMagick calls Ghostscript as a linked library and ignores delegates.xml entirely; what works is the GS_OPTIONS environment variable, which Ghostscript reads while starting up. It is a retry and never the first attempt, because switching transparency off changes how a file that uses transparency correctly is drawn. The Status tab reports it when it happens, because the real fix is for the host to update Ghostscript. A filter, rapls_pdf_image_creator_ghostscript_options, changes the options or turns the retry off
 * Fixed: regenerating a thumbnail gave the new file the name the old one had, so browsers went on showing the old image. Deleting the previous thumbnail freed its filename and the next one took it -- same URL, same cached picture. This hit exactly the wrong people: you regenerate a thumbnail because the one you have is wrong, and the screen kept showing the wrong one. Measured on a live site, where a blank thumbnail that had been correctly regenerated still looked blank until the file was renamed by hand. A replacement now gets a filename of its own; a first generation keeps the plain name
@@ -459,6 +462,9 @@ present and are never redistributed.
 * Japanese translation included
 
 == Upgrade Notice ==
+
+= 1.4.2 =
+Asks for a review once, a week after activation, and only if the plugin has actually made a thumbnail here. One notice, on this plugin's own screen, and it does not come back.
 
 = 1.4.1 =
 A PDF that came back blank is now retried with a workaround for a known Ghostscript fault, and a regenerated thumbnail gets a filename of its own so browsers stop showing the old one.
