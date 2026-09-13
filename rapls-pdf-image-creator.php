@@ -74,22 +74,6 @@ spl_autoload_register(function (string $class): void {
     }
 });
 
-// Prevent WordPress JIT loader from trying to include non-existent .l10n.php
-// in the global languages directory (wp-content/languages/plugins/).
-// This filter fires BEFORE the include() call, so the warning never occurs.
-add_filter('override_load_textdomain', function ($override, $domain, $mofile) {
-    if ('rapls-pdf-image-creator' !== $domain) {
-        return $override;
-    }
-
-    // Block loading from global directory — we load from plugin directory instead
-    if (0 === strpos($mofile, WP_LANG_DIR)) {
-        return true;
-    }
-
-    return $override;
-}, 10, 3);
-
 // Clear stale translation file cache on deactivation.
 // WordPress caches glob() results for up to 1 hour (wp_cache 'translation_files').
 // After plugin deactivation/deletion, stale cache entries cause
@@ -101,18 +85,11 @@ register_deactivation_hook(RAPLS_PIC_PLUGIN_FILE, function (): void {
 
 // Load plugin
 add_action('plugins_loaded', function (): void {
-    // Load translations from plugin directory (not blocked by our filter
-    // because the path is under RAPLS_PIC_PLUGIN_DIR, not WP_LANG_DIR)
-    $locale = determine_locale();
-    if ($locale && 'en_US' !== $locale) {
-        load_textdomain(
-            'rapls-pdf-image-creator',
-            RAPLS_PIC_PLUGIN_DIR . 'languages/rapls-pdf-image-creator-' . $locale . '.mo',
-            $locale
-        );
-    }
-
-    // Initialize plugin
+    // No translation loading here. The catalogue is not shipped with the
+    // plugin: WordPress.org builds it from translate.wordpress.org and serves
+    // it into WP_LANG_DIR/plugins, where core's just-in-time loader finds it
+    // without being asked. Loading it here as well would only shadow a newer
+    // pack with an older bundled file.
     $plugin = \Rapls\PDFImageCreator\Plugin::getInstance();
     $plugin->init();
 });
