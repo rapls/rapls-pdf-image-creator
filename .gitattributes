@@ -12,3 +12,5 @@ docs/ export-ignore
 tests/ export-ignore
 tools/ export-ignore
 languages/ export-ignore
+# The GitHub page. WordPress reads readme.txt; README.md is not for the download.
+/README.md export-ignore
