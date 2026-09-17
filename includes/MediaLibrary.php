@@ -241,6 +241,14 @@ final class MediaLibrary
     /**
      * Filter attachment image source for PDFs
      *
+     * A PDF with a generated thumbnail answers with the thumbnail, even when
+     * core found an image of its own. Core's is the `-pdf.jpg` preview it drew
+     * at upload through its own Imagick call, without this plugin's blank-page
+     * retry — so for exactly the PDFs that retry exists for, core's preview is
+     * white. The Edit Media screen asks here (edit_form_image_editor(), size
+     * 900x450) and used to show that white preview while the Media Library
+     * grid, which goes through filterAttachmentForJs(), showed the thumbnail.
+     *
      * @param array|false $image Image data or false
      * @param int $attachmentId Attachment ID
      * @param string|int[] $size Requested size
@@ -249,11 +257,6 @@ final class MediaLibrary
      */
     public function filterAttachmentImageSrc($image, int $attachmentId, $size, bool $icon)
     {
-        // Only process if no image found
-        if ($image !== false) {
-            return $image;
-        }
-
         // Check if it's a PDF
         $mimeType = get_post_mime_type($attachmentId);
         if ($mimeType !== 'application/pdf') {
@@ -266,8 +269,11 @@ final class MediaLibrary
             return $image;
         }
 
-        // Return thumbnail image source
-        return wp_get_attachment_image_src($thumbnailId, $size, $icon);
+        // Return thumbnail image source, or core's answer if the thumbnail
+        // has none (its file is gone).
+        $thumbnail = wp_get_attachment_image_src($thumbnailId, $size, $icon);
+
+        return false !== $thumbnail ? $thumbnail : $image;
     }
 
     /**

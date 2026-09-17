@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.1
-Stable tag: 1.4.2
+Stable tag: 1.4.3
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -293,6 +293,10 @@ No other profile is bundled. CMYK profiles are read from the host when one is
 present and are never redistributed.
 
 == Changelog ==
+= 1.4.3 =
+* Fixed: the Edit Media screen showed a blank white preview for a PDF whose thumbnail was fine everywhere else. WordPress draws its own preview of every PDF at upload, and it draws it without this plugin's retry for Ghostscript's blank-page fault -- so for exactly the files that retry exists for, WordPress's own preview is white. The Edit Media screen asks for an image in a way that found that preview, and the plugin only stepped in when WordPress found nothing. A PDF with a generated thumbnail now shows that thumbnail wherever WordPress asks for its image. Existing thumbnails do not need regenerating
+* Changed: translations are no longer bundled. They come from translate.wordpress.org, which WordPress installs by itself. The plugin also no longer prevents WordPress from loading them: until now it blocked that catalogue in favour of its own copy
+
 = 1.4.2 =
 * Added: a request for a review, shown once. It waits a week after activation, and it only appears if the plugin has actually produced a thumbnail on this site -- someone who has been looking at a PDF icon for a week because their server has no PDF support has nothing to review and every reason to resent being asked. It appears on this plugin's own settings screen and nowhere else. Whichever button you use, including the notice's own close button, the answer is recorded and it does not come back. A filter, rapls_pdf_image_creator_show_review_prompt, turns it off for good
 
@@ -462,6 +466,9 @@ present and are never redistributed.
 * Japanese translation included
 
 == Upgrade Notice ==
+
+= 1.4.3 =
+The Edit Media screen now shows a PDF's generated thumbnail instead of WordPress's own preview, which is blank for the PDFs the Ghostscript workaround exists for.
 
 = 1.4.2 =
 Asks for a review once, a week after activation, and only if the plugin has actually made a thumbnail here. One notice, on this plugin's own screen, and it does not come back.
