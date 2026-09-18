@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.1
-Stable tag: 1.4.3
+Stable tag: 1.4.4
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -293,6 +293,9 @@ No other profile is bundled. CMYK profiles are read from the host when one is
 present and are never redistributed.
 
 == Changelog ==
+= 1.4.4 =
+* Fixed: with automatic generation switched off, WordPress's own PDF preview was not deleted. The plugin looked for it in the uploads folder itself instead of the PDF's year/month folder, so the preview stayed on disk while it disappeared from the Media Library, each new upload of the same name left another one, and a file of the same name directly in the uploads folder could be deleted instead. Previews left behind by earlier versions are not removed
+
 = 1.4.3 =
 * Fixed: the Edit Media screen showed a blank white preview for a PDF whose thumbnail was fine everywhere else. WordPress draws its own preview of every PDF at upload, and it draws it without this plugin's retry for Ghostscript's blank-page fault -- so for exactly the files that retry exists for, WordPress's own preview is white. The Edit Media screen asks for an image in a way that found that preview, and the plugin only stepped in when WordPress found nothing. A PDF with a generated thumbnail now shows that thumbnail wherever WordPress asks for its image. Existing thumbnails do not need regenerating
 * Changed: translations are no longer bundled. They come from translate.wordpress.org, which WordPress installs by itself. The plugin also no longer prevents WordPress from loading them: until now it blocked that catalogue in favour of its own copy
@@ -466,6 +469,9 @@ present and are never redistributed.
 * Japanese translation included
 
 == Upgrade Notice ==
+
+= 1.4.4 =
+With automatic generation off, WordPress's own PDF preview is now deleted from the right folder, instead of left on disk.
 
 = 1.4.3 =
 The Edit Media screen now shows a PDF's generated thumbnail instead of WordPress's own preview, which is blank for the PDFs the Ghostscript workaround exists for.

@@ -145,13 +145,12 @@ final class MediaLibrary
 
         // Remove the core-generated preview file from disk and from the metadata.
         if (!empty($metadata['sizes']) && is_array($metadata['sizes'])) {
-            $uploadDir = wp_get_upload_dir();
-            $baseDir = isset($metadata['file']) ? trailingslashit(dirname($metadata['file'])) : '';
+            $dir = $this->previewDir($metadata, $attachmentId);
             foreach ($metadata['sizes'] as $size) {
-                if (empty($size['file'])) {
+                if (empty($size['file']) || $dir === '') {
                     continue;
                 }
-                $path = trailingslashit($uploadDir['basedir']) . $baseDir . $size['file'];
+                $path = $dir . basename((string) $size['file']);
                 if (file_exists($path)) {
                     @unlink($path);
                 }
@@ -160,6 +159,35 @@ final class MediaLibrary
         }
 
         return $metadata;
+    }
+
+    /**
+     * The folder core wrote a PDF's previews into, with a trailing slash.
+     *
+     * Previews sit next to the PDF. Core's PDF metadata has no `file` key, so
+     * reading the folder from it gave the uploads root instead of the year/
+     * month folder: the preview stayed on disk while it left the metadata,
+     * each regeneration added another (`-pdf-1.jpg`, `-pdf-2.jpg`), and a
+     * file of the same name in the uploads root was the one deleted. The
+     * attached file is set before metadata is generated, so it is the source;
+     * `file` is only a fallback. '' when neither is known -- then nothing is
+     * deleted, rather than guessing.
+     *
+     * @param array<string, mixed> $metadata
+     */
+    private function previewDir(array $metadata, int $attachmentId): string
+    {
+        $attached = get_attached_file($attachmentId, true);
+        if (is_string($attached) && $attached !== '') {
+            return trailingslashit(dirname($attached));
+        }
+
+        if (!empty($metadata['file']) && is_string($metadata['file'])) {
+            $uploadDir = wp_get_upload_dir();
+            return trailingslashit($uploadDir['basedir']) . trailingslashit(dirname($metadata['file']));
+        }
+
+        return '';
     }
 
     /**
