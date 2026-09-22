@@ -416,7 +416,6 @@ final class MediaLibrary
 
         // Build sizes array from thumbnail sizes
         $sizes = [];
-        $imageSizes = wp_get_registered_image_subsizes();
 
         // Add full size
         $sizes['full'] = [

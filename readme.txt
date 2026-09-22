@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.1
-Stable tag: 1.4.4
+Stable tag: 1.4.5
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -293,6 +293,9 @@ No other profile is bundled. CMYK profiles are read from the host when one is
 present and are never redistributed.
 
 == Changelog ==
+= 1.4.5 =
+* Fixed: on WordPress 5.0 to 5.2, opening a PDF with a thumbnail in the Media Library stopped with a fatal error. The plugin called wp_get_registered_image_subsizes(), which WordPress added in 5.3, and never used what it returned. The call is gone, so the plugin runs on every version its requirements name, WordPress 5.0 and later
+
 = 1.4.4 =
 * Fixed: with automatic generation switched off, WordPress's own PDF preview was not deleted. The plugin looked for it in the uploads folder itself instead of the PDF's year/month folder, so the preview stayed on disk while it disappeared from the Media Library, each new upload of the same name left another one, and a file of the same name directly in the uploads folder could be deleted instead. Previews left behind by earlier versions are not removed
 
@@ -469,6 +472,9 @@ present and are never redistributed.
 * Japanese translation included
 
 == Upgrade Notice ==
+
+= 1.4.5 =
+Fixes a fatal error in the Media Library on WordPress 5.0 to 5.2.
 
 = 1.4.4 =
 With automatic generation off, WordPress's own PDF preview is now deleted from the right folder, instead of left on disk.
