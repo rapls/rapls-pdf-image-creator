@@ -1029,6 +1029,15 @@ final class ImagickEngine implements EngineInterface
             if (!$this->looksEmpty($imagick)) {
                 return $imagick;
             }
+
+            // Already measured on this server: the suffix works, so a flat
+            // page is a flat page. Retrying read every page of the document
+            // at full resolution on every generation of a PDF whose chosen
+            // page is blank -- a 300-page file for one thumbnail -- and did it
+            // where no size check in front of this engine could see.
+            if ('no' === $suffixBroken) {
+                return $imagick;
+            }
         }
 
         // Either the suffix is known to be unreliable here, or it just handed
@@ -1207,7 +1216,9 @@ final class ImagickEngine implements EngineInterface
      */
     private function readAnyRoute(string $pdfPath, int $page, int $resolution): ?\Imagick
     {
-        if ('yes' !== get_transient(self::PAGE_SUFFIX_TRANSIENT)) {
+        $suffixBroken = get_transient(self::PAGE_SUFFIX_TRANSIENT);
+
+        if ('yes' !== $suffixBroken) {
             try {
                 $one = new \Imagick();
                 $one->setResolution($resolution, $resolution);
@@ -1220,6 +1231,13 @@ final class ImagickEngine implements EngineInterface
                 $one->clear();
             } catch (\Throwable $e) {
                 // Fall through to the whole-document route.
+            }
+
+            // As in readPageDirect(): where the suffix is known to work, the
+            // whole document would only draw the same flat page, every page
+            // of it.
+            if ('no' === $suffixBroken) {
+                return null;
             }
         }
 

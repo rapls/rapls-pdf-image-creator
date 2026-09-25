@@ -249,6 +249,15 @@ Imagick::$emptyFor = ['suffix' => true, 'whole' => true];
 check('a genuinely blank page is retried once', in_array('readImage(whole)', $log, true), true);
 check('  ...and recorded as not the suffix', $GLOBALS['transients']['rapls_pic_page_suffix'] ?? null, 'no');
 
+// Once the suffix is known to work, a blank page is not retried at all: the
+// retry reads every page of the document, and used to do it on every
+// generation of a PDF whose chosen page is blank.
+[$r, $log] = run(['format' => 'jpeg'], Imagick::COLORSPACE_CMYK, true, function () {
+    set_transient('rapls_pic_page_suffix', 'no', 604800);
+});
+check('a blank page on a server whose suffix works is read once', in_array('readImage(whole)', $log, true), false);
+check('  ...with the page suffix', in_array('readImage[n]', $log, true), true);
+
 // Once known broken, the suffix is not tried at all.
 Imagick::$emptyFor = ['suffix' => true, 'whole' => false];
 [$r, $log] = run(['format' => 'jpeg'], Imagick::COLORSPACE_CMYK, true, function () {

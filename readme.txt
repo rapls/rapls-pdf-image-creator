@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.1
-Stable tag: 1.4.5
+Stable tag: 1.4.6
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -80,6 +80,10 @@ When you upload `my-document.pdf`, the plugin creates:
 * ImageMagick with Imagick PHP extension and PDF support
 
 Most shared hosting providers have ImageMagick available. Check the Status tab in plugin settings to verify your server meets the requirements.
+
+= Will it work on my server? =
+
+PDF thumbnails depend on ImageMagick being able to read PDFs, and not every host allows that. Rapls PDF Image Creator checks by actually rendering a small test PDF, not by reading a configuration value, and tells you on the Status tab whether PDF rendering works on your server and, if not, what to ask your host for. Site Health flags it too when it doesn't.
 
 == Installation ==
 
@@ -183,9 +187,23 @@ add_filter( 'rapls_pdf_image_creator_thumbnail_page', function( $page, $pdf_id )
 }, 10, 2 );
 `
 
+Without code, you can set the page for the whole site in Settings > Rapls PDF Image Creator > Page Number (0 is the first page).
+
 = How do I customize the insert output? =
 
 Go to Settings > Rapls PDF Image Creator > Insert Settings. Choose from Image only, Title link, or Custom HTML with placeholders like `{thumbnail}`, `{pdf_url}`, `{pdf_title}`.
+
+= Does it need Ghostscript? =
+
+The plugin itself never runs Ghostscript. ImageMagick does, though: it passes PDFs to Ghostscript to read them, so ImageMagick's PDF support only works if Ghostscript is installed on the server. You don't have to check this by hand. The Status tab (Settings > Rapls PDF Image Creator > Status) tells you whether PDFs can be rendered on your server.
+
+= My thumbnails are black. =
+
+Two causes of black thumbnails have been fixed: PDF/X-1:2001 files (1.0.9), and transparent areas (1.1.0), which are now flattened onto the background colour you choose before the image is saved. If you choose a transparent background with JPEG output, white is used instead, because JPEG cannot store transparency. Thumbnails made before an update are not changed automatically, so regenerate an old black thumbnail before assuming the problem is still there.
+
+= Can I change the resolution? =
+
+Yes. Settings > Rapls PDF Image Creator > Rendering Resolution sets the DPI the page is rendered at, from 72 to 600 (150 by default). Raising it gives a larger, sharper thumbnail: Max Width and Max Height only scale the rendered page down, never up. Higher values use more memory while the thumbnail is being made.
 
 == Other Notes ==
 
@@ -293,6 +311,10 @@ No other profile is bundled. CMYK profiles are read from the host when one is
 present and are never redistributed.
 
 == Changelog ==
+= 1.4.6 =
+* Fixed: on a server where reading a single page works normally, a PDF whose chosen page is blank had the whole document read again at full resolution every time its thumbnail was made -- every page of it, to hand back the same blank page. A long document could take a request's memory and time for nothing. That second read now happens only until the server has been measured, as it was meant to
+* Changed: the FAQ now answers whether the plugin will work on your server, whether it needs Ghostscript, why thumbnails can come out black, and how to change the resolution
+
 = 1.4.5 =
 * Fixed: on WordPress 5.0 to 5.2, opening a PDF with a thumbnail in the Media Library stopped with a fatal error. The plugin called wp_get_registered_image_subsizes(), which WordPress added in 5.3, and never used what it returned. The call is gone, so the plugin runs on every version its requirements name, WordPress 5.0 and later
 
@@ -472,6 +494,9 @@ present and are never redistributed.
 * Japanese translation included
 
 == Upgrade Notice ==
+
+= 1.4.6 =
+A PDF whose chosen page is blank is no longer read in full, every page, each time its thumbnail is made.
 
 = 1.4.5 =
 Fixes a fatal error in the Media Library on WordPress 5.0 to 5.2.
