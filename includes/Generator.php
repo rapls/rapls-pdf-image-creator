@@ -485,10 +485,30 @@ final class Generator
     }
 
     /**
+     * Whether generate() made this image from this PDF
+     *
+     * createAttachment() tags every thumbnail with both, and has since the
+     * first release.
+     */
+    public function isOwnThumbnail(int $thumbnailId, int $pdfId): bool
+    {
+        return '' !== (string) get_post_meta($thumbnailId, '_rapls_pic_is_thumbnail', true)
+            && (int) get_post_meta($thumbnailId, '_rapls_pic_source_pdf', true) === $pdfId;
+    }
+
+    /**
      * Delete thumbnail for a PDF
      *
+     * Only an image generated from this PDF is deleted. getThumbnailId() also
+     * answers with `_thumbnail_id`, which another plugin -- or a site moved
+     * over from one -- can point at any image in the library, one embedded
+     * in posts among them; and a translation plugin can copy this plugin's
+     * own meta from another PDF, so it names that PDF's thumbnail. Both were
+     * deleted for good, file and all, by a forced regeneration or by
+     * deleting the PDF. They are now only unlinked from this PDF.
+     *
      * @param int $pdfId PDF attachment ID
-     * @return bool Success
+     * @return bool Whether an image was deleted
      */
     public function deleteThumbnail(int $pdfId): bool
     {
@@ -498,14 +518,18 @@ final class Generator
             return false;
         }
 
-        // Delete the attachment (this also deletes the file)
-        $result = wp_delete_attachment($thumbnailId, true);
+        $result = false;
+
+        if ($this->isOwnThumbnail($thumbnailId, $pdfId)) {
+            // Delete the attachment (this also deletes the file)
+            $result = wp_delete_attachment($thumbnailId, true);
+        }
 
         // Clean up meta
         delete_post_meta($pdfId, self::THUMBNAIL_META_KEY);
         delete_post_meta($pdfId, '_thumbnail_id');
 
-        return $result !== false;
+        return $result !== false && $result !== null;
     }
 
     /**

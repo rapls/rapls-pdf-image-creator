@@ -256,7 +256,9 @@ final class MediaLibrary
         } else {
             // Just remove the meta link, but keep the image file
             $thumbnailId = $this->generator->getThumbnailId($attachmentId);
-            if ($thumbnailId) {
+            // Only this PDF's own: an image made from another PDF (a
+            // translation's copied meta) is still that PDF's thumbnail.
+            if ($thumbnailId && $this->generator->isOwnThumbnail($thumbnailId, $attachmentId)) {
                 // Remove the "is thumbnail" marker so it becomes a regular image
                 delete_post_meta($thumbnailId, '_rapls_pic_is_thumbnail');
                 delete_post_meta($thumbnailId, '_rapls_pic_source_pdf');

@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.1
-Stable tag: 1.4.6
+Stable tag: 1.4.7
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -311,6 +311,10 @@ No other profile is bundled. CMYK profiles are read from the host when one is
 present and are never redistributed.
 
 == Changelog ==
+= 1.4.7 =
+* Fixed: regenerating a PDF's thumbnail, or deleting the PDF, could permanently delete an image that was not its thumbnail. A PDF's featured image can point at any image -- one set by another plugin, or used in posts -- and a translation plugin can copy one PDF's thumbnail link to its translation. Only an image this plugin made from that PDF is deleted now; any other is just unlinked from the PDF
+* Fixed: deleting a PDF with "Hide generated images" off no longer removes the thumbnail marker from an image that belongs to another PDF
+
 = 1.4.6 =
 * Fixed: on a server where reading a single page works normally, a PDF whose chosen page is blank had the whole document read again at full resolution every time its thumbnail was made -- every page of it, to hand back the same blank page. A long document could take a request's memory and time for nothing. That second read now happens only until the server has been measured, as it was meant to
 * Changed: the FAQ now answers whether the plugin will work on your server, whether it needs Ghostscript, why thumbnails can come out black, and how to change the resolution
@@ -494,6 +498,9 @@ present and are never redistributed.
 * Japanese translation included
 
 == Upgrade Notice ==
+
+= 1.4.7 =
+Regenerating a thumbnail, or deleting a PDF, no longer deletes an image that is not that PDF's own thumbnail, such as a featured image set by another plugin.
 
 = 1.4.6 =
 A PDF whose chosen page is blank is no longer read in full, every page, each time its thumbnail is made.
