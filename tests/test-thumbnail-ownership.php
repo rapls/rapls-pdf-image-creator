@@ -141,6 +141,16 @@ namespace {
     check('no database object: kept', [$generator->deleteThumbnail(80), $GLOBALS['deleted']], [false, []]);
     $GLOBALS['wpdb'] = $saved;
 
+    // Uninstalling keeps what something else uses too, as deleteThumbnail()
+    // does: the images another post names, and nothing at all when that
+    // cannot be asked. Read from the file -- it runs only as an uninstall.
+    $uninstall = (string) file_get_contents(RAPLS_PIC_PLUGIN_DIR . 'uninstall.php');
+    check('uninstall keeps images another post uses', [
+        false !== strpos($uninstall, 'AND used.post_id <> CAST(source.meta_value AS UNSIGNED)'),
+        false !== strpos($uninstall, 'in_array((int) $rapls_pic_thumbnail_id, $rapls_pic_used, true)'),
+        false !== strpos($uninstall, '!$rapls_pic_used_failed'),
+    ], [true, true, true]);
+
     echo "\n$pass passed, $fail failed\n";
     exit($fail ? 1 : 0);
 }

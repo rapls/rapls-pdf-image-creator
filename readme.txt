@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.1
-Stable tag: 1.4.9
+Stable tag: 1.4.10
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -311,6 +311,9 @@ No other profile is bundled. CMYK profiles are read from the host when one is
 present and are never redistributed.
 
 == Changelog ==
+= 1.4.10 =
+* Fixed: uninstalling the plugin (with "Keep generated images" off) no longer deletes a generated thumbnail that something else still uses -- a post's featured image, or a translated copy of the PDF. Those are kept as ordinary images, as regenerating and deleting a PDF already did since 1.4.8. When this cannot be checked, no image is deleted
+
 = 1.4.9 =
 * Fixed: when the database could not be reached at all, the check that a thumbnail is not used by anything else answered "not used", and the thumbnail could be deleted. It now keeps the image, as it already did when the database did not answer
 
@@ -504,6 +507,9 @@ present and are never redistributed.
 * Japanese translation included
 
 == Upgrade Notice ==
+
+= 1.4.10 =
+Uninstalling no longer deletes a generated thumbnail that a post or a translated PDF still uses.
 
 = 1.4.9 =
 A thumbnail is kept, not deleted, when the plugin cannot check whether something else still uses it.

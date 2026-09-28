@@ -32,8 +32,29 @@ if (!$rapls_pic_keep_images) {
         "SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_rapls_pic_is_thumbnail' AND meta_value = '1'"
     );
 
-    if (!empty($rapls_pic_thumbnail_ids)) {
+    // Kept: those something other than the PDF they were made from still
+    // uses -- a post's featured image, a translated copy of the PDF sharing
+    // it. Deleting a thumbnail and regenerating keep those since 1.4.8, and
+    // uninstalling deleted them all the same. They stay as ordinary images;
+    // their markers go with everyone else's below. One query for all of
+    // them, and when it fails nothing is deleted: an image kept can still be
+    // removed by hand, one deleted cannot be brought back.
+    // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Uninstall cleanup requires direct query
+    $rapls_pic_used = $wpdb->get_col(
+        "SELECT DISTINCT used.meta_value FROM {$wpdb->postmeta} used
+         INNER JOIN {$wpdb->postmeta} source ON source.post_id = CAST(used.meta_value AS UNSIGNED) AND source.meta_key = '_rapls_pic_source_pdf'
+         WHERE used.meta_key IN ('_thumbnail_id', '_rapls_pic_thumbnail_id')
+           AND used.post_id <> CAST(source.meta_value AS UNSIGNED)"
+    );
+    $rapls_pic_used_failed = !is_array($rapls_pic_used) || '' !== (string) $wpdb->last_error;
+    $rapls_pic_used = is_array($rapls_pic_used) ? array_map('intval', $rapls_pic_used) : [];
+
+    if (!empty($rapls_pic_thumbnail_ids) && !$rapls_pic_used_failed) {
         foreach ($rapls_pic_thumbnail_ids as $rapls_pic_thumbnail_id) {
+            if (in_array((int) $rapls_pic_thumbnail_id, $rapls_pic_used, true)) {
+                continue;
+            }
+
             // Delete the attachment (this also deletes the file)
             wp_delete_attachment((int) $rapls_pic_thumbnail_id, true);
         }
