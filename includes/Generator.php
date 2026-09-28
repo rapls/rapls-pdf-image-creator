@@ -497,6 +497,33 @@ final class Generator
     }
 
     /**
+     * Whether anything but this PDF names this image as its thumbnail
+     *
+     * This plugin's own meta on another attachment, or `_thumbnail_id` on any
+     * post. When the database does not answer, the answer is yes: an image
+     * kept is recoverable, an image deleted is not.
+     */
+    private function usedElsewhere(int $thumbnailId, int $pdfId): bool
+    {
+        global $wpdb;
+
+        if (!is_object($wpdb) || !isset($wpdb->postmeta)) {
+            return false;
+        }
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.SlowDBQuery.slow_db_query_meta_key, WordPress.DB.SlowDBQuery.slow_db_query_meta_value
+        $found = $wpdb->get_var($wpdb->prepare(
+            "SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key IN (%s, %s) AND meta_value = %s AND post_id <> %d LIMIT 1",
+            self::THUMBNAIL_META_KEY,
+            '_thumbnail_id',
+            (string) $thumbnailId,
+            $pdfId
+        ));
+
+        return null !== $found || '' !== (string) $wpdb->last_error;
+    }
+
+    /**
      * Delete thumbnail for a PDF
      *
      * Only an image generated from this PDF is deleted. getThumbnailId() also
@@ -520,7 +547,11 @@ final class Generator
 
         $result = false;
 
-        if ($this->isOwnThumbnail($thumbnailId, $pdfId)) {
+        // Made from this PDF is not enough when something else shows it too:
+        // a translation's copy of this PDF that shares its thumbnail, or a
+        // post that took it as its featured image. Deleting it left them
+        // pointing at an image that was gone; only this PDF lets go of it.
+        if ($this->isOwnThumbnail($thumbnailId, $pdfId) && !$this->usedElsewhere($thumbnailId, $pdfId)) {
             // Delete the attachment (this also deletes the file)
             $result = wp_delete_attachment($thumbnailId, true);
         }

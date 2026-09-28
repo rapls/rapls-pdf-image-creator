@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.1
-Stable tag: 1.4.7
+Stable tag: 1.4.8
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -311,6 +311,9 @@ No other profile is bundled. CMYK profiles are read from the host when one is
 present and are never redistributed.
 
 == Changelog ==
+= 1.4.8 =
+* Fixed: regenerating a PDF's thumbnail, or deleting the PDF, no longer deletes the thumbnail when something else still shows it -- a translation's copy of the PDF that shares it, or a post that uses it as its featured image. The PDF only lets go of it. When the database cannot say, the image is kept
+
 = 1.4.7 =
 * Fixed: regenerating a PDF's thumbnail, or deleting the PDF, could permanently delete an image that was not its thumbnail. A PDF's featured image can point at any image -- one set by another plugin, or used in posts -- and a translation plugin can copy one PDF's thumbnail link to its translation. Only an image this plugin made from that PDF is deleted now; any other is just unlinked from the PDF
 * Fixed: deleting a PDF with "Hide generated images" off no longer removes the thumbnail marker from an image that belongs to another PDF
@@ -498,6 +501,9 @@ present and are never redistributed.
 * Japanese translation included
 
 == Upgrade Notice ==
+
+= 1.4.8 =
+Regenerating a thumbnail, or deleting a PDF, no longer deletes a thumbnail that a translated copy of the PDF or a post still uses.
 
 = 1.4.7 =
 Regenerating a thumbnail, or deleting a PDF, no longer deletes an image that is not that PDF's own thumbnail, such as a featured image set by another plugin.

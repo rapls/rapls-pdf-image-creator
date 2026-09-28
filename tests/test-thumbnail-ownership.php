@@ -87,6 +87,50 @@ namespace {
     $library->onAttachmentDeleted(30);
     check('  ...deleting the PDF itself untags its own', $GLOBALS['meta'][32]['_rapls_pic_is_thumbnail'] ?? '', '');
 
+    // A thumbnail this PDF made, shared with a translation's copy (same meta)
+    // or taken by a post as its featured image: not deleted, only let go of.
+    $GLOBALS['wpdb'] = new class {
+        public $postmeta = 'wp_postmeta';
+        public $last_error = '';
+        public $fail = false;
+        public function prepare($sql, ...$args) { return [$sql, $args]; }
+        public function get_var($q) {
+            $this->last_error = $this->fail ? 'simulated failure' : '';
+            if ($this->fail) { return null; }
+            [$metaA, $metaB, $value, $except] = $q[1];
+            foreach ($GLOBALS['meta'] as $post => $keys) {
+                if ((int) $post === (int) $except) { continue; }
+                foreach ([$metaA, $metaB] as $key) {
+                    if (isset($keys[$key]) && (string) $keys[$key] === $value) { return (string) $post; }
+                }
+            }
+            return null;
+        }
+    };
+    $GLOBALS['deleted'] = [];
+    $own(42, 40);
+    $GLOBALS['meta'][40]['_rapls_pic_thumbnail_id'] = 42;
+    $GLOBALS['meta'][41]['_rapls_pic_thumbnail_id'] = 42;   // the translation shares it
+    check('own thumbnail shared with a translation: kept', [$generator->deleteThumbnail(40), $GLOBALS['deleted'], isset($GLOBALS['posts'][42])], [false, [], true]);
+    check('  ...the translation still points at it', $GLOBALS['meta'][41]['_rapls_pic_thumbnail_id'] ?? '', 42);
+    check('  ...this PDF lets go of it', $GLOBALS['meta'][40]['_rapls_pic_thumbnail_id'] ?? '', '');
+
+    $own(52, 50);
+    $GLOBALS['meta'][50]['_rapls_pic_thumbnail_id'] = 52;
+    $GLOBALS['meta'][99]['_thumbnail_id'] = '52';            // a post's featured image
+    check('own thumbnail used as a post\'s featured image: kept', [$generator->deleteThumbnail(50), $GLOBALS['deleted']], [false, []]);
+
+    $own(62, 60);
+    $GLOBALS['meta'][60]['_rapls_pic_thumbnail_id'] = 62;
+    $GLOBALS['wpdb']->fail = true;
+    check('database does not answer: kept', [$generator->deleteThumbnail(60), $GLOBALS['deleted']], [false, []]);
+    $GLOBALS['wpdb']->fail = false;
+
+    $own(72, 70);
+    $GLOBALS['meta'][70]['_rapls_pic_thumbnail_id'] = 72;
+    check('own thumbnail nobody else uses: still deleted', [$generator->deleteThumbnail(70), $GLOBALS['deleted']], [true, [72]]);
+    unset($GLOBALS['wpdb']);
+
     echo "\n$pass passed, $fail failed\n";
     exit($fail ? 1 : 0);
 }
