@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.1
-Stable tag: 1.4.10
+Stable tag: 1.4.11
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -177,6 +177,8 @@ JPEG, PNG, and WebP. Configure your preferred format in the Image Settings tab.
 
 By default, yes. To keep generated images as regular attachments, enable "Keep Images on Uninstall" in Display Settings before uninstalling.
 
+Even with that setting off, a generated image that another post uses as its featured image, or that a translated copy of the PDF shares, is kept as an ordinary image. An image you placed inside a post's content is not detected: if you have done that, enable "Keep Images on Uninstall" first.
+
 = Can I use a different page for the thumbnail? =
 
 Yes. Use the `rapls_pdf_image_creator_thumbnail_page` filter:
@@ -311,8 +313,11 @@ No other profile is bundled. CMYK profiles are read from the host when one is
 present and are never redistributed.
 
 == Changelog ==
+= 1.4.11 =
+* Changed: the FAQ says which generated images uninstalling keeps -- those used as a featured image or shared with a translated copy of the PDF -- and that an image placed inside a post's content is not detected, so "Keep Images on Uninstall" should be turned on first in that case
+
 = 1.4.10 =
-* Fixed: uninstalling the plugin (with "Keep generated images" off) no longer deletes a generated thumbnail that something else still uses -- a post's featured image, or a translated copy of the PDF. Those are kept as ordinary images, as regenerating and deleting a PDF already did since 1.4.8. When this cannot be checked, no image is deleted
+* Fixed: uninstalling the plugin (with "Keep Images on Uninstall" off) no longer deletes a generated thumbnail that another post uses as its featured image, or that a translated copy of the PDF shares. Those are kept as ordinary images, as regenerating and deleting a PDF already did since 1.4.8. When this cannot be checked, no image is deleted. An image placed inside a post's content is not detected; turn on "Keep Images on Uninstall" to keep those
 
 = 1.4.9 =
 * Fixed: when the database could not be reached at all, the check that a thumbnail is not used by anything else answered "not used", and the thumbnail could be deleted. It now keeps the image, as it already did when the database did not answer
@@ -507,6 +512,9 @@ present and are never redistributed.
 * Japanese translation included
 
 == Upgrade Notice ==
+
+= 1.4.11 =
+The FAQ now says which generated images uninstalling keeps.
 
 = 1.4.10 =
 Uninstalling no longer deletes a generated thumbnail that a post or a translated PDF still uses.
