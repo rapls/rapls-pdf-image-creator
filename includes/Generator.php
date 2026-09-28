@@ -507,8 +507,10 @@ final class Generator
     {
         global $wpdb;
 
-        if (!is_object($wpdb) || !isset($wpdb->postmeta)) {
-            return false;
+        // No database to ask is the same answer as a database that did not
+        // answer: the image is kept.
+        if (!is_object($wpdb) || !isset($wpdb->postmeta) || !method_exists($wpdb, 'get_var')) {
+            return true;
         }
 
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.SlowDBQuery.slow_db_query_meta_key, WordPress.DB.SlowDBQuery.slow_db_query_meta_value

@@ -44,6 +44,26 @@ namespace {
             json_encode($got, JSON_UNESCAPED_SLASHES), json_encode($want, JSON_UNESCAPED_SLASHES));
     }
 
+    // The reverse lookup deleteThumbnail() makes, answered from $GLOBALS['meta'].
+    $GLOBALS['wpdb'] = new class {
+        public $postmeta = 'wp_postmeta';
+        public $last_error = '';
+        public $fail = false;
+        public function prepare($sql, ...$args) { return [$sql, $args]; }
+        public function get_var($q) {
+            $this->last_error = $this->fail ? 'simulated failure' : '';
+            if ($this->fail) { return null; }
+            [$metaA, $metaB, $value, $except] = $q[1];
+            foreach ($GLOBALS['meta'] as $post => $keys) {
+                if ((int) $post === (int) $except) { continue; }
+                foreach ([$metaA, $metaB] as $key) {
+                    if (isset($keys[$key]) && (string) $keys[$key] === $value) { return (string) $post; }
+                }
+            }
+            return null;
+        }
+    };
+
     $generator = (new ReflectionClass(\Rapls\PDFImageCreator\Generator::class))->newInstanceWithoutConstructor();
     $own = static function (int $image, int $pdf): void {
         $GLOBALS['posts'][$image] = (object) ['ID' => $image];
@@ -89,24 +109,6 @@ namespace {
 
     // A thumbnail this PDF made, shared with a translation's copy (same meta)
     // or taken by a post as its featured image: not deleted, only let go of.
-    $GLOBALS['wpdb'] = new class {
-        public $postmeta = 'wp_postmeta';
-        public $last_error = '';
-        public $fail = false;
-        public function prepare($sql, ...$args) { return [$sql, $args]; }
-        public function get_var($q) {
-            $this->last_error = $this->fail ? 'simulated failure' : '';
-            if ($this->fail) { return null; }
-            [$metaA, $metaB, $value, $except] = $q[1];
-            foreach ($GLOBALS['meta'] as $post => $keys) {
-                if ((int) $post === (int) $except) { continue; }
-                foreach ([$metaA, $metaB] as $key) {
-                    if (isset($keys[$key]) && (string) $keys[$key] === $value) { return (string) $post; }
-                }
-            }
-            return null;
-        }
-    };
     $GLOBALS['deleted'] = [];
     $own(42, 40);
     $GLOBALS['meta'][40]['_rapls_pic_thumbnail_id'] = 42;
@@ -129,7 +131,15 @@ namespace {
     $own(72, 70);
     $GLOBALS['meta'][70]['_rapls_pic_thumbnail_id'] = 72;
     check('own thumbnail nobody else uses: still deleted', [$generator->deleteThumbnail(70), $GLOBALS['deleted']], [true, [72]]);
+
+    // No database object at all: kept, as when the database does not answer.
+    $saved = $GLOBALS['wpdb'];
     unset($GLOBALS['wpdb']);
+    $GLOBALS['deleted'] = [];
+    $own(82, 80);
+    $GLOBALS['meta'][80]['_rapls_pic_thumbnail_id'] = 82;
+    check('no database object: kept', [$generator->deleteThumbnail(80), $GLOBALS['deleted']], [false, []]);
+    $GLOBALS['wpdb'] = $saved;
 
     echo "\n$pass passed, $fail failed\n";
     exit($fail ? 1 : 0);
