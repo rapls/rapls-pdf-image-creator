@@ -20,6 +20,7 @@ $suites = [
     'test-media-library.php',
     'test-thumbnail-ownership.php',
     'test-regenerate.php',
+    'test-uninstall.php',
 ];
 $failed = [];
 

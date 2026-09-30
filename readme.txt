@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.1
-Stable tag: 1.4.19
+Stable tag: 1.4.20
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -313,6 +313,9 @@ No other profile is bundled. CMYK profiles are read from the host when one is
 present and are never redistributed.
 
 == Changelog ==
+= 1.4.20 =
+* Fixed: deleting the plugin from a multisite network now cleans up every site, each by its own "Keep Images on Uninstall" setting. Before, only the site it was deleted from was cleaned up, and the other sites kept the plugin's settings, its markers on PDFs and images, and -- with that setting off -- the generated images
+
 = 1.4.19 =
 * Fixed: whether an old or unused thumbnail was deleted is now judged by whether it is still there afterwards, not by what the deletion returned. Another plugin answering pre_delete_attachment with the attachment itself stops the deletion while looking like success, and the PDF then lost its link to an image that stayed in the Media Library. An attachment already deleted by something else is now counted as gone
 
@@ -551,6 +554,9 @@ present and are never redistributed.
 * Japanese translation included
 
 == Upgrade Notice ==
+
+= 1.4.20 =
+Includes the 1.4.12 security fix. Deleting the plugin from a multisite network now cleans up every site.
 
 = 1.4.19 =
 Includes the 1.4.12 security fix and the 1.4.13-1.4.18 regeneration fixes.
