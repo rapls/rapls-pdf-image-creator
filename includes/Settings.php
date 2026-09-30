@@ -83,19 +83,27 @@ final class Settings
      * Save settings
      *
      * @param array<string, mixed> $settings Settings to save
-     * @return bool Success
+     * @return bool Whether the stored settings now hold these values
      */
     public function save(array $settings): bool
     {
-        $current = $this->get();
-        $merged = array_merge($current, $settings);
-        $result = update_option(self::OPTION_NAME, $merged);
+        // Merged onto what is stored now, not onto this instance's copy: a
+        // copy read earlier in the request wrote back values someone else had
+        // changed since. And judged by reading back, not by update_option():
+        // false there also means "already so", which is not a failure, and
+        // the copy was then left stale (R59-03).
+        $merged = array_merge($this->get(true), $settings);
+        update_option(self::OPTION_NAME, $merged);
+        $stored = $this->get(true);
 
-        if ($result) {
-            $this->settings = $merged;
+        foreach ($settings as $key => $value) {
+            // Loose: an option can come back with '1' for 1.
+            if (!array_key_exists($key, $stored) || $stored[$key] != $value) {
+                return false;
+            }
         }
 
-        return $result;
+        return true;
     }
 
     /**

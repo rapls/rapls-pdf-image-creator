@@ -432,7 +432,7 @@ final class Generator
         update_post_meta($pdfId, self::THUMBNAIL_META_KEY, $thumbnailId);
 
         if ((int) get_post_meta($pdfId, self::THUMBNAIL_META_KEY, true) !== $thumbnailId) {
-            wp_delete_attachment($thumbnailId, true);
+            $this->discardNewThumbnail($thumbnailId, $pdfId);
 
             return $this->fail(
                 $pdfId,
@@ -459,7 +459,7 @@ final class Generator
                 // Put back: the new image is nobody's. Not put back: the PDF
                 // still names it, and it stays with the old one beside it.
                 if ((int) get_post_meta($pdfId, self::THUMBNAIL_META_KEY, true) !== $thumbnailId) {
-                    wp_delete_attachment($thumbnailId, true);
+                    $this->discardNewThumbnail($thumbnailId, $pdfId);
                 }
 
                 return $this->fail(
@@ -565,9 +565,36 @@ final class Generator
          * @param ConversionResult|null $result  Engine result, or null when the
          *                                       failure happened before the engine ran.
          */
-        do_action('rapls_pdf_image_creator_generation_failed', $message, $pdfId, $code, $result);
+        // A listener that throws does not change what failed: thrown through,
+        // "the PDF file is missing" became a PHP error, and the add-on's
+        // queue recorded an exception -- retried, where the real reason is
+        // never retried (R59-02). As for after_generate (R58-04).
+        try {
+            do_action('rapls_pdf_image_creator_generation_failed', $message, $pdfId, $code, $result);
+        } catch (\Throwable $e) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+            error_log(sprintf('Rapls PDF Image Creator: a rapls_pdf_image_creator_generation_failed listener failed for PDF #%d: %s', $pdfId, $e->getMessage()));
+        }
 
         return null;
+    }
+
+    /**
+     * Remove a thumbnail just made that the PDF did not take
+     *
+     * Deleted with its file. Another plugin can refuse the deletion
+     * (pre_delete_attachment); the image then stays, linked from nothing,
+     * and that is said, as for an old thumbnail that could not be deleted
+     * (R58-03, R59-01). Its file is never deleted apart from it.
+     */
+    private function discardNewThumbnail(int $thumbnailId, int $pdfId): void
+    {
+        $deleted = wp_delete_attachment($thumbnailId, true);
+
+        if (false === $deleted || null === $deleted) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+            error_log(sprintf('Rapls PDF Image Creator: the new thumbnail #%d of PDF #%d could not be recorded, and could not be deleted either; it is still in the Media Library.', $thumbnailId, $pdfId));
+        }
     }
 
     /**

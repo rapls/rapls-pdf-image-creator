@@ -35,7 +35,12 @@ namespace {
     function apply_filters($tag, $value, ...$args) { return isset($GLOBALS['filters'][$tag]) ? ($GLOBALS['filters'][$tag])($value) : $value; }
     function do_action($tag, ...$args) { if (isset($GLOBALS['actions'][$tag])) { ($GLOBALS['actions'][$tag])(...$args); } }
     function get_option($key, $default = false) { return $GLOBALS['options'][$key] ?? $default; }
-    function update_option($key, $value, $autoload = null) { $GLOBALS['options'][$key] = $value; return true; }
+    function update_option($key, $value, $autoload = null) {
+        // As core: false when nothing changes, and when the write fails.
+        if (($GLOBALS['options'][$key] ?? null) === $value || !empty($GLOBALS['option_write_fails'])) { return false; }
+        $GLOBALS['options'][$key] = $value;
+        return true;
+    }
     function delete_option($key) { unset($GLOBALS['options'][$key]); return true; }
     function get_post($id) { return $GLOBALS['posts'][(int) $id] ?? null; }
     function get_post_mime_type($id) { return $GLOBALS['mimes'][(int) $id] ?? false; }
@@ -383,6 +388,41 @@ namespace {
     $made = $generator->generate(270, true);
     unset($GLOBALS['filters']['rapls_pdf_image_creator_thumbnail_format']);
     check('filtered to PNG: engine, extension and MIME agree', [$engine->format, pathinfo((string) $GLOBALS['files'][$made], PATHINFO_EXTENSION), $GLOBALS['posts'][$made]->post_mime_type], ['png', 'png', 'image/png']);
+
+    echo "\n--- R59-01 / R59-02: failures that cannot be cleaned up or observed ---\n";
+
+    $log = sys_get_temp_dir() . '/rapls-pic-regen-log-' . bin2hex(random_bytes(4));
+    $logWas = ini_set('error_log', $log);
+    $pdf(290, 291);
+    $GLOBALS['nothing_deletes'] = true;
+    $GLOBALS['fail_meta'] = ['_rapls_pic_thumbnail_id:' . $GLOBALS['next_id']];
+    $before = $GLOBALS['next_id'];
+    $made = $generator->generate(290, true);
+    $GLOBALS['fail_meta'] = '';
+    $GLOBALS['nothing_deletes'] = false;
+    check('R59-01: new image not recorded nor deletable: said in the log', [$made, false !== strpos((string) @file_get_contents($log), "new thumbnail #$before of PDF #290")], [null, true]);
+
+    $pdf(300, 301, false);   // file missing
+    $GLOBALS['actions']['rapls_pdf_image_creator_generation_failed'] = static function () { throw new \RuntimeException('listener boom'); };
+    $threw = false;
+    try { $made = $generator->generate(300, true); } catch (\Throwable $e) { $threw = true; }
+    unset($GLOBALS['actions']['rapls_pdf_image_creator_generation_failed']);
+    check('R59-02: a failing listener does not replace the failure', [$threw, $made, $GLOBALS['options'][\Rapls\PDFImageCreator\Generator::LAST_FAILURE_OPTION]['code'] ?? null, false !== strpos((string) @file_get_contents($log), 'generation_failed listener failed for PDF #300')], [false, null, 'source_missing', true]);
+    ini_set('error_log', (string) $logWas);
+    @unlink($log);
+
+    echo "\n--- R59-03: Settings::save() is judged by what is stored ---\n";
+
+    $fresh = new \Rapls\PDFImageCreator\Settings();
+    $GLOBALS['options'][\Rapls\PDFImageCreator\Settings::OPTION_NAME] = ['max_width' => 1000];
+    $fresh->get(true);
+    $GLOBALS['options'][\Rapls\PDFImageCreator\Settings::OPTION_NAME] = ['max_width' => 1200, 'quality' => 70];   // changed elsewhere
+    check('already so: true, and the copy is no longer stale', [$fresh->save(['max_width' => 1200]), $fresh->getMaxWidth()], [true, 1200]);
+    $fresh->save(['max_height' => 900]);
+    check('  ...a later save keeps what someone else changed', $GLOBALS['options'][\Rapls\PDFImageCreator\Settings::OPTION_NAME]['quality'] ?? null, 70);
+    $GLOBALS['option_write_fails'] = true;
+    check('  ...a write that did not happen is false', $fresh->save(['max_width' => 800]), false);
+    $GLOBALS['option_write_fails'] = false;
 
     echo "\n--- R55-01: the AJAX routes ask about this PDF ---\n";
 

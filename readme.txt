@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.1
-Stable tag: 1.4.15
+Stable tag: 1.4.16
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -313,6 +313,11 @@ No other profile is bundled. CMYK profiles are read from the host when one is
 present and are never redistributed.
 
 == Changelog ==
+= 1.4.16 =
+* Fixed: an error thrown by code listening to rapls_pdf_image_creator_generation_failed no longer replaces the failure it was told about. The failure is still recorded and returned as it was, and the error is written to the PHP error log
+* Fixed: when a new thumbnail could not be recorded for its PDF and another plugin refused to let it be deleted, nothing said so. This is now written to the PHP error log
+* Fixed: the Settings class's save() now reports success when the stored settings hold the values given, including when they already did, and saves onto the settings as they are stored now rather than a copy read earlier
+
 = 1.4.15 =
 * Fixed: when a new thumbnail had to be removed again and another plugin refused the deletion, its image file was deleted anyway and the attachment was left pointing at nothing. The file now stays with the attachment
 * Fixed: a new thumbnail is now checked to point at the image file that was drawn. When a filter made it point at another file, it was reported as made; it is now pointed back and removed, and if it cannot be pointed back nothing is deleted, since that other file may belong to something else
@@ -535,6 +540,9 @@ present and are never redistributed.
 * Japanese translation included
 
 == Upgrade Notice ==
+
+= 1.4.16 =
+Includes the 1.4.12 security fix. Errors in code listening to this plugin's hooks no longer change what a regeneration reports.
 
 = 1.4.15 =
 Includes the 1.4.12 security fix. A failed or interrupted regeneration no longer leaves an attachment without its file, or an empty image file behind.
