@@ -377,9 +377,12 @@ namespace {
     check('engine throws: passed on, and no empty file left', [$caught, glob($uploads . '/doc-250-pdf-thumbnail*')], ['engine boom', $leftBefore]);
     $pdf(260, 261);
     $GLOBALS['actions']['rapls_pdf_image_creator_after_generate'] = static function () { throw new \RuntimeException('after hook boom'); };
-    $made = $generator->generate(260, true);
+    $threw = null;
+    try { $generator->generate(260, true); } catch (\RuntimeException $e) { $threw = $e->getMessage(); }
     unset($GLOBALS['actions']['rapls_pdf_image_creator_after_generate']);
-    check('after_generate throws: the thumbnail made is still returned', [is_int($made), $GLOBALS['meta'][260]['_rapls_pic_thumbnail_id'] ?? null], [true, $made]);
+    $told = $generator->outcomeFor(260);
+    // R60-03: passed on, as WordPress does; the outcome is already recorded (R58-04, R60-02).
+    check('after_generate throws: passed on, and the outcome says made', [$threw, $told['ok'] ?? null, $told['thumbnail_id'] ?? null, (int) ($GLOBALS['meta'][260]['_rapls_pic_thumbnail_id'] ?? 0) === ($told['thumbnail_id'] ?? -1)], ['after hook boom', true, $told['thumbnail_id'] ?? 'none', true]);
 
     echo "\n--- R58-05: the format filter decides the name and the type too ---\n";
 
@@ -405,9 +408,26 @@ namespace {
     $pdf(300, 301, false);   // file missing
     $GLOBALS['actions']['rapls_pdf_image_creator_generation_failed'] = static function () { throw new \RuntimeException('listener boom'); };
     $threw = false;
-    try { $made = $generator->generate(300, true); } catch (\Throwable $e) { $threw = true; }
+    try { $generator->generate(300, true); } catch (\Throwable $e) { $threw = true; }
     unset($GLOBALS['actions']['rapls_pdf_image_creator_generation_failed']);
-    check('R59-02: a failing listener does not replace the failure', [$threw, $made, $GLOBALS['options'][\Rapls\PDFImageCreator\Generator::LAST_FAILURE_OPTION]['code'] ?? null, false !== strpos((string) @file_get_contents($log), 'generation_failed listener failed for PDF #300')], [false, null, 'source_missing', true]);
+    check('R59-02/R60-02: a failing listener does not replace the failure', [$threw, $generator->outcomeFor(300)['code'] ?? null, $GLOBALS['options'][\Rapls\PDFImageCreator\Generator::LAST_FAILURE_OPTION]['code'] ?? null], [true, 'source_missing', 'source_missing']);
+
+    // R60-01: an attachment that did not come out as drawn, and cannot be deleted, is said.
+    $pdf(310, 311);
+    $GLOBALS['nothing_deletes'] = true;
+    $GLOBALS['fail_meta'] = '_rapls_pic_source_pdf';
+    $before = $GLOBALS['next_id'];
+    $made = $generator->generate(310, true);
+    $GLOBALS['fail_meta'] = '';
+    $GLOBALS['nothing_deletes'] = false;
+    check('R60-01: invalid new attachment not deletable: kept with its file, said', [$made, isset($GLOBALS['posts'][$before]), is_file((string) ($GLOBALS['files'][$before] ?? '')), false !== strpos((string) @file_get_contents($log), "new thumbnail #$before of PDF #310 did not come out as drawn")], [null, true, true, true]);
+    $pdf(320, 321);
+    $generator->generate(320, true);
+    $engine->throws = true;
+    try { $generator->generate(320, true); } catch (\RuntimeException $e) {}
+    $engine->throws = false;
+    check('outcomeFor: an attempt that threw before an outcome leaves none, not the last one', $generator->outcomeFor(320), null);
+    check('outcomeFor: a new attempt forgets the last one; unknown PDF is null', [$generator->outcomeFor(310)['ok'] ?? null, $generator->outcomeFor(999999)], [false, null]);
     ini_set('error_log', (string) $logWas);
     @unlink($log);
 

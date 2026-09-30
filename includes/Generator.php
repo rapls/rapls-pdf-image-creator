@@ -37,6 +37,13 @@ final class Generator
     private array $engines = [];
 
     /**
+     * What each generate() in this request came to, by PDF (outcomeFor())
+     *
+     * @var array<int, array{ok: bool, thumbnail_id: int|null, code: string, message: string}>
+     */
+    private array $outcomes = [];
+
+    /**
      * Constructor
      *
      * @param Settings $settings Settings manager
@@ -250,9 +257,16 @@ final class Generator
             return $this->fail($pdfId, FailureCode::NOT_A_PDF, __('Not a PDF file.', 'rapls-pdf-image-creator'));
         }
 
+        // A new attempt: what the last one for this PDF came to is no longer
+        // the answer.
+        unset($this->outcomes[$pdfId]);
+
         // Check if thumbnail already exists
         if (!$force && $this->hasThumbnail($pdfId)) {
-            return $this->getThumbnailId($pdfId);
+            $existing = $this->getThumbnailId($pdfId);
+            $this->outcomes[$pdfId] = ['ok' => true, 'thumbnail_id' => $existing, 'code' => '', 'message' => ''];
+
+            return $existing;
         }
 
         // The thumbnail being replaced, let go of only once the new one is in
@@ -496,15 +510,14 @@ final class Generator
             delete_option(self::LAST_FAILURE_OPTION);
         }
 
-        // An observer that throws does not undo what is done: the thumbnail
-        // is made and recorded. Thrown through, the caller saw a failure and
-        // the add-on's queue drew it again (R58-04).
-        try {
-            do_action('rapls_pdf_image_creator_after_generate', $thumbnailId, $pdfId, $result);
-        } catch (\Throwable $e) {
-            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
-            error_log(sprintf('Rapls PDF Image Creator: a rapls_pdf_image_creator_after_generate listener failed for PDF #%d: %s', $pdfId, $e->getMessage()));
-        }
+        // Recorded before anyone is told, so what was done does not depend on
+        // who listens: a listener that throws stops the notification, not
+        // the outcome (R58-04, R60-02). The exception is not caught here --
+        // WordPress's hooks do not tidy up after one, and a request carrying
+        // on past it would carry that state too (R60-03).
+        $this->outcomes[$pdfId] = ['ok' => true, 'thumbnail_id' => $thumbnailId, 'code' => '', 'message' => ''];
+
+        do_action('rapls_pdf_image_creator_after_generate', $thumbnailId, $pdfId, $result);
 
         return $thumbnailId;
     }
@@ -565,18 +578,30 @@ final class Generator
          * @param ConversionResult|null $result  Engine result, or null when the
          *                                       failure happened before the engine ran.
          */
-        // A listener that throws does not change what failed: thrown through,
-        // "the PDF file is missing" became a PHP error, and the add-on's
-        // queue recorded an exception -- retried, where the real reason is
-        // never retried (R59-02). As for after_generate (R58-04).
-        try {
-            do_action('rapls_pdf_image_creator_generation_failed', $message, $pdfId, $code, $result);
-        } catch (\Throwable $e) {
-            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
-            error_log(sprintf('Rapls PDF Image Creator: a rapls_pdf_image_creator_generation_failed listener failed for PDF #%d: %s', $pdfId, $e->getMessage()));
-        }
+        // Recorded before the action, as for a success: a listener that
+        // throws -- or runs first and throws, before one that was listening
+        // for the reason -- does not change what failed (R59-02, R60-02).
+        $this->outcomes[$pdfId] = ['ok' => false, 'thumbnail_id' => null, 'code' => $code, 'message' => $message];
+
+        do_action('rapls_pdf_image_creator_generation_failed', $message, $pdfId, $code, $result);
 
         return null;
+    }
+
+    /**
+     * What the last generate() for this PDF came to, in this request
+     *
+     * For code that needs the reason as data rather than from an action,
+     * whose listeners can run in any order and throw: `ok`, `thumbnail_id`,
+     * `code` (see FailureCode) and `message`. Null before any attempt, or
+     * when the attempt ended in an exception before it came to anything.
+     *
+     * @since 1.4.17
+     * @return array{ok: bool, thumbnail_id: int|null, code: string, message: string}|null
+     */
+    public function outcomeFor(int $pdfId): ?array
+    {
+        return $this->outcomes[$pdfId] ?? null;
     }
 
     /**
@@ -587,13 +612,13 @@ final class Generator
      * and that is said, as for an old thumbnail that could not be deleted
      * (R58-03, R59-01). Its file is never deleted apart from it.
      */
-    private function discardNewThumbnail(int $thumbnailId, int $pdfId): void
+    private function discardNewThumbnail(int $thumbnailId, int $pdfId, string $why = 'could not be recorded'): void
     {
         $deleted = wp_delete_attachment($thumbnailId, true);
 
         if (false === $deleted || null === $deleted) {
             // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
-            error_log(sprintf('Rapls PDF Image Creator: the new thumbnail #%d of PDF #%d could not be recorded, and could not be deleted either; it is still in the Media Library.', $thumbnailId, $pdfId));
+            error_log(sprintf('Rapls PDF Image Creator: the new thumbnail #%d of PDF #%d %s, and could not be deleted either; it is still in the Media Library.', $thumbnailId, $pdfId, $why));
         }
     }
 
@@ -801,8 +826,8 @@ final class Generator
 
             // Deleted with its file. Not deleted -- pre_delete_attachment can
             // refuse -- the file stays too: an attachment whose file has gone
-            // is worse than an extra image (R58-01).
-            wp_delete_attachment($attachmentId, true);
+            // is worse than an extra image (R58-01); and that is said (R60-01).
+            $this->discardNewThumbnail($attachmentId, $pdfId, 'did not come out as drawn');
 
             return null;
         }
