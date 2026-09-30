@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.1
-Stable tag: 1.4.12
+Stable tag: 1.4.13
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -313,6 +313,11 @@ No other profile is bundled. CMYK profiles are read from the host when one is
 present and are never redistributed.
 
 == Changelog ==
+= 1.4.13 =
+* Fixed: a regenerated thumbnail is now kept only once the marks that tell the plugin it made the image, and the image's metadata, have been saved. When they were not, the image was reported as made but could never be removed by a later regeneration
+* Fixed: with "Set as featured image" on, a regeneration whose featured image could not be saved now fails and keeps the previous thumbnail. Before, it reported success and the PDF was left with no featured image
+* Fixed: when an old thumbnail could not be deleted, the PDF now keeps its link to it, so the image is not left behind with nothing pointing at it
+
 = 1.4.12 =
 * Security: the Media Library's "Regenerate Thumbnail" request now checks that the user may edit that PDF, as the link itself already did. Before, any user who could upload files could regenerate -- and so replace the thumbnail of -- a PDF they could not edit. The Bulk Generate requests now require the same permission as the settings page they are on
 * Fixed: regenerating a thumbnail no longer deletes the old one first. The new thumbnail is made and recorded, and only then is the old one removed, so a PDF whose new thumbnail cannot be made keeps the one it had
@@ -518,6 +523,9 @@ present and are never redistributed.
 * Japanese translation included
 
 == Upgrade Notice ==
+
+= 1.4.13 =
+Includes the 1.4.12 security fix. A regeneration that cannot save the new thumbnail completely now fails and keeps the previous one.
 
 = 1.4.12 =
 Security fix: regenerating a PDF's thumbnail now requires permission to edit that PDF. A failed regeneration also keeps the old thumbnail.

@@ -202,6 +202,7 @@ return array (
     'The image could not be written to the uploads folder.' => 'アップロードフォルダーに画像を書き出せませんでした。',
     'The image was rendered but could not be added to the Media Library.' => '画像は描画できましたが、メディアライブラリに追加できませんでした。',
     'The image was rendered but could not be recorded as this PDF\'s thumbnail.' => '画像は作成しましたが、この PDF のサムネイルとして記録できませんでした。',
+    'The image was rendered but could not be set as this PDF\'s featured image, so the previous thumbnail was kept.' => '画像は作成しましたが、この PDF のアイキャッチ画像に設定できなかったため、前のサムネイルをそのまま残しました。',
     'The page rendered as a blank white image.' => 'ページが真っ白な画像として描画されました。',
     'The page was too large for ImageMagick to open.' => 'ページが大きすぎて ImageMagick が開けませんでした。',
     'The server was checked again just now.' => 'サーバーを再検査しました。',

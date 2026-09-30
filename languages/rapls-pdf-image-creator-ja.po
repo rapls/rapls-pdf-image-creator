@@ -910,6 +910,9 @@ msgstr "ステータス: %s"
 msgid "Error: %s"
 msgstr "エラー: %s"
 
+msgid "The image was rendered but could not be set as this PDF's featured image, so the previous thumbnail was kept."
+msgstr "画像は作成しましたが、この PDF のアイキャッチ画像に設定できなかったため、前のサムネイルをそのまま残しました。"
+
 #~ msgid "No CMYK profile found on this server."
 #~ msgstr "このサーバーに CMYK プロファイルが見つかりません。"
 

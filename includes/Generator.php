@@ -390,9 +390,33 @@ final class Generator
             );
         }
 
-        // Set as featured image if enabled
+        // Set as featured image if enabled -- and read back, as above. Not
+        // stored, the old image was let go of below all the same, and the PDF
+        // was left with no featured image while this reported success
+        // (R56-02). So the PDF goes back to the old thumbnail, and the new
+        // image goes only once nothing names it.
         if ($this->settings->shouldSetFeatured()) {
             update_post_meta($pdfId, '_thumbnail_id', $thumbnailId);
+
+            if ((int) get_post_meta($pdfId, '_thumbnail_id', true) !== $thumbnailId) {
+                if (null !== $previousId) {
+                    update_post_meta($pdfId, self::THUMBNAIL_META_KEY, $previousId);
+                } else {
+                    delete_post_meta($pdfId, self::THUMBNAIL_META_KEY);
+                }
+
+                // Put back: the new image is nobody's. Not put back: the PDF
+                // still names it, and it stays with the old one beside it.
+                if ((int) get_post_meta($pdfId, self::THUMBNAIL_META_KEY, true) !== $thumbnailId) {
+                    wp_delete_attachment($thumbnailId, true);
+                }
+
+                return $this->fail(
+                    $pdfId,
+                    FailureCode::WRITE_FAILED,
+                    __('The image was rendered but could not be set as this PDF\'s featured image, so the previous thumbnail was kept.', 'rapls-pdf-image-creator')
+                );
+            }
         }
 
         // Only now that the new one is the PDF's. An image this PDF did not
@@ -590,6 +614,14 @@ final class Generator
         if ($this->isOwnThumbnail($thumbnailId, $pdfId) && !$this->usedElsewhere($thumbnailId, $pdfId)) {
             // Delete the attachment (this also deletes the file)
             $result = wp_delete_attachment($thumbnailId, true);
+
+            // Not deleted: the PDF keeps its link, so the image is not left
+            // behind with nothing naming it, and the next attempt finds it
+            // again (R56-03). Kept on purpose -- used elsewhere -- it is only
+            // let go of, below.
+            if (false === $result || null === $result) {
+                return false;
+            }
         }
 
         // Clean up meta
@@ -639,6 +671,20 @@ final class Generator
         // Mark as PDF thumbnail (for filtering in media library)
         update_post_meta($attachmentId, '_rapls_pic_is_thumbnail', '1');
         update_post_meta($attachmentId, '_rapls_pic_source_pdf', $pdfId);
+
+        // Read back, not taken on the return values -- false also means "the
+        // same value". Without the two marks, isOwnThumbnail() says no, the
+        // next regeneration cannot let go of this image, and it is left
+        // behind for good; without its metadata, the image has no sizes
+        // (R56-01). Only that metadata was saved is asked, not what it holds:
+        // a filter may add to it.
+        $stored = wp_get_attachment_metadata($attachmentId);
+
+        if (!$this->isOwnThumbnail($attachmentId, $pdfId) || (!empty($metadata) && (!is_array($stored) || [] === $stored))) {
+            wp_delete_attachment($attachmentId, true);
+
+            return null;
+        }
 
         return $attachmentId;
     }

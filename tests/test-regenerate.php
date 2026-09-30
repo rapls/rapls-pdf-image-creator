@@ -41,7 +41,7 @@ namespace {
     function get_post_mime_type($id) { return $GLOBALS['mimes'][(int) $id] ?? false; }
     function get_post_meta($id, $key, $single = false) { return $GLOBALS['meta'][(int) $id][$key] ?? ''; }
     function update_post_meta($id, $key, $value) {
-        if ($key === $GLOBALS['fail_meta']) { return false; }
+        if ($key === $GLOBALS['fail_meta'] || (is_array($GLOBALS['fail_meta']) && in_array($key . ':' . $value, $GLOBALS['fail_meta'], true))) { return false; }
         $GLOBALS['meta'][(int) $id][$key] = $value;
         return true;
     }
@@ -59,9 +59,15 @@ namespace {
         $GLOBALS['files'][$id] = $file;
         return $id;
     }
-    function wp_generate_attachment_metadata($id, $file) { return []; }
-    function wp_update_attachment_metadata($id, $meta) { return true; }
+    function wp_generate_attachment_metadata($id, $file) { return ['file' => basename($file), 'sizes' => []]; }
+    function wp_update_attachment_metadata($id, $meta) {
+        if (!empty($GLOBALS['fail_attachment_meta'])) { return false; }
+        $GLOBALS['attachment_meta'][(int) $id] = $meta;
+        return true;
+    }
+    function wp_get_attachment_metadata($id) { return $GLOBALS['attachment_meta'][(int) $id] ?? false; }
     function wp_delete_attachment($id, $force = false) {
+        if ((int) $id === ($GLOBALS['undeletable'] ?? 0)) { return false; }
         $GLOBALS['deleted'][] = (int) $id;
         $post = $GLOBALS['posts'][(int) $id] ?? null;
         unset($GLOBALS['posts'][(int) $id]);
@@ -213,6 +219,53 @@ namespace {
     $new = $generator->generate(70, true);
     check('set_featured on: the featured image moves to the new one', [$GLOBALS['meta'][70]['_thumbnail_id'] ?? null, $GLOBALS['deleted']], [$new, [71]]);
     $useSettings(['set_featured' => false]);
+
+    echo "\n--- R56-01: the new image is kept only with its marks and metadata ---\n";
+
+    foreach (['_rapls_pic_is_thumbnail', '_rapls_pic_source_pdf'] as $i => $mark) {
+        $pdf(100 + $i * 10, 101 + $i * 10);
+        $GLOBALS['deleted'] = [];
+        $before = $GLOBALS['next_id'];
+        $GLOBALS['fail_meta'] = $mark;
+        $made = $generator->generate(100 + $i * 10, true);
+        $GLOBALS['fail_meta'] = '';
+        check("$mark not saved: fails, new image removed, old kept", [$made, $GLOBALS['deleted'], $GLOBALS['meta'][100 + $i * 10]['_rapls_pic_thumbnail_id'] ?? null], [null, [$before], 101 + $i * 10]);
+    }
+    $pdf(120, 121);
+    $GLOBALS['deleted'] = [];
+    $before = $GLOBALS['next_id'];
+    $GLOBALS['fail_attachment_meta'] = true;
+    $made = $generator->generate(120, true);
+    $GLOBALS['fail_attachment_meta'] = false;
+    check('attachment metadata not saved: fails, new removed, old kept', [$made, $GLOBALS['deleted'], $GLOBALS['meta'][120]['_rapls_pic_thumbnail_id'] ?? null], [null, [$before], 121]);
+
+    echo "\n--- R56-02: a featured image that was not saved is not success ---\n";
+
+    $useSettings(['set_featured' => true]);
+    $pdf(130, 131);
+    $GLOBALS['meta'][130]['_thumbnail_id'] = 131;
+    $GLOBALS['deleted'] = [];
+    $before = $GLOBALS['next_id'];
+    $GLOBALS['fail_meta'] = ['_thumbnail_id:' . $before];
+    $made = $generator->generate(130, true);
+    $GLOBALS['fail_meta'] = '';
+    check('_thumbnail_id not saved: fails, the PDF keeps the old one', [$made, $GLOBALS['meta'][130]['_rapls_pic_thumbnail_id'] ?? null, $GLOBALS['meta'][130]['_thumbnail_id'] ?? null, $GLOBALS['deleted']], [null, 131, 131, [$before]]);
+    $pdf(140, 141);
+    $GLOBALS['meta'][140]['_thumbnail_id'] = 141;
+    $GLOBALS['deleted'] = [];
+    $before = $GLOBALS['next_id'];
+    $GLOBALS['fail_meta'] = ['_thumbnail_id:' . $before, '_rapls_pic_thumbnail_id:141'];
+    $made = $generator->generate(140, true);
+    $GLOBALS['fail_meta'] = '';
+    check('  ...and when putting it back fails too, nothing is deleted', [$made, $GLOBALS['meta'][140]['_rapls_pic_thumbnail_id'] ?? null, $GLOBALS['deleted'], isset($GLOBALS['posts'][141])], [null, $before, [], true]);
+    $useSettings(['set_featured' => false]);
+
+    echo "\n--- R56-03: an image that could not be deleted keeps its link ---\n";
+
+    $pdf(150, 151);
+    $GLOBALS['undeletable'] = 151;
+    check('deleteThumbnail: delete fails, the PDF keeps its link', [$generator->deleteThumbnail(150), $GLOBALS['meta'][150]['_rapls_pic_thumbnail_id'] ?? null], [false, 151]);
+    $GLOBALS['undeletable'] = 0;
 
     echo "\n--- R55-01: the AJAX routes ask about this PDF ---\n";
 
