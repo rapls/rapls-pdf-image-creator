@@ -203,6 +203,18 @@ final class Admin
                 'confirmBulk' => __('Start bulk generation? This may take a while.', 'rapls-pdf-image-creator'),
                 /* translators: %1$d: current number, %2$d: total number */
                 'generating' => __('Generating thumbnail %1$d of %2$d...', 'rapls-pdf-image-creator'),
+                // What the scripts used to say in English whatever the admin language (R55-07).
+                'scan' => __('Scan for PDFs', 'rapls-pdf-image-creator'),
+                'stopped' => __('Stopped', 'rapls-pdf-image-creator'),
+                /* translators: %s: PDF file name */
+                'processingFile' => __('Processing: %s', 'rapls-pdf-image-creator'),
+                'failed' => __('Failed', 'rapls-pdf-image-creator'),
+                'requestFailed' => __('Request failed', 'rapls-pdf-image-creator'),
+                'errorShort' => __('Error', 'rapls-pdf-image-creator'),
+                /* translators: %s: HTTP status text from the server */
+                'httpStatus' => __('Status: %s', 'rapls-pdf-image-creator'),
+                /* translators: %s: error text from the server */
+                'httpError' => __('Error: %s', 'rapls-pdf-image-creator'),
             ],
         ]);
     }

@@ -743,6 +743,18 @@ final class MediaLibrary
             wp_send_json_error(['message' => __('Invalid attachment ID.', 'rapls-pdf-image-creator')]);
         }
 
+        // This PDF, not only uploading in general: the link that calls this
+        // is shown only where edit_post holds (handleRegenerateAction() asks
+        // the same), and without it any author could regenerate -- and so
+        // delete the thumbnail of -- anyone's PDF (R55-01).
+        if (!current_user_can('edit_post', $attachmentId)) {
+            wp_send_json_error(['message' => __('Permission denied.', 'rapls-pdf-image-creator')], 403);
+        }
+
+        if ('application/pdf' !== get_post_mime_type($attachmentId)) {
+            wp_send_json_error(['message' => __('Not a PDF file.', 'rapls-pdf-image-creator')]);
+        }
+
         $force = !empty($_POST['force']);
         $result = $this->generator->generate($attachmentId, $force);
 

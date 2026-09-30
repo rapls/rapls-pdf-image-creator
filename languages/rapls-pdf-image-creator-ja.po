@@ -880,6 +880,36 @@ msgstr "無効"
 msgid "Server requirements and settings for PDF thumbnail generation."
 msgstr "PDF サムネイル生成に関するサーバー要件と設定。"
 
+msgid "The image was rendered but could not be recorded as this PDF's thumbnail."
+msgstr "画像は作成しましたが、この PDF のサムネイルとして記録できませんでした。"
+
+msgid "Stopped"
+msgstr "停止しました"
+
+#. translators: %s: PDF file name
+#, php-format
+msgid "Processing: %s"
+msgstr "処理中: %s"
+
+msgid "Failed"
+msgstr "失敗しました"
+
+msgid "Request failed"
+msgstr "リクエストに失敗しました"
+
+msgid "Error"
+msgstr "エラー"
+
+#. translators: %s: HTTP status text from the server
+#, php-format
+msgid "Status: %s"
+msgstr "ステータス: %s"
+
+#. translators: %s: error text from the server
+#, php-format
+msgid "Error: %s"
+msgstr "エラー: %s"
+
 #~ msgid "No CMYK profile found on this server."
 #~ msgstr "このサーバーに CMYK プロファイルが見つかりません。"
 

@@ -255,12 +255,12 @@ final class Generator
             return $this->getThumbnailId($pdfId);
         }
 
-        // Delete existing thumbnail if forcing
-        $replacing = false;
-        if ($force) {
-            $replacing = $this->hasThumbnail($pdfId);
-            $this->deleteThumbnail($pdfId);
-        }
+        // The thumbnail being replaced, let go of only once the new one is in
+        // place. It used to be deleted here, before the PDF was even looked
+        // at, and any failure after that -- a missing file, no engine, a
+        // render error -- left the PDF with no thumbnail at all (R55-03).
+        $previousId = $force ? $this->getThumbnailId($pdfId) : null;
+        $replacing = null !== $previousId;
 
         // Get PDF file path
         $pdfPath = get_attached_file($pdfId);
@@ -376,12 +376,31 @@ final class Generator
             );
         }
 
-        // Store thumbnail ID in PDF meta
+        // Store thumbnail ID in PDF meta, and read it back: not stored, the
+        // new image is nobody's, and the old one is still the PDF's.
         update_post_meta($pdfId, self::THUMBNAIL_META_KEY, $thumbnailId);
+
+        if ((int) get_post_meta($pdfId, self::THUMBNAIL_META_KEY, true) !== $thumbnailId) {
+            wp_delete_attachment($thumbnailId, true);
+
+            return $this->fail(
+                $pdfId,
+                FailureCode::WRITE_FAILED,
+                __('The image was rendered but could not be recorded as this PDF\'s thumbnail.', 'rapls-pdf-image-creator')
+            );
+        }
 
         // Set as featured image if enabled
         if ($this->settings->shouldSetFeatured()) {
             update_post_meta($pdfId, '_thumbnail_id', $thumbnailId);
+        }
+
+        // Only now that the new one is the PDF's. An image this PDF did not
+        // make -- a featured image chosen by hand, which getThumbnailId()
+        // falls back to -- is neither deleted nor unlinked: the new thumbnail
+        // is found first, and the choice was not this plugin's (R55-02).
+        if (null !== $previousId && $previousId !== $thumbnailId && $this->isOwnThumbnail($previousId, $pdfId)) {
+            $this->releaseThumbnail($pdfId, $previousId);
         }
 
         /**
@@ -547,6 +566,21 @@ final class Generator
             return false;
         }
 
+        return $this->releaseThumbnail($pdfId, $thumbnailId);
+    }
+
+    /**
+     * Let this PDF go of one image, and delete it if nothing else needs it
+     *
+     * Each key is removed only while it still names this image. The PDF's
+     * `_thumbnail_id` could name another image altogether -- a featured image
+     * chosen by hand, with "Set as featured image" off -- and was removed
+     * whatever it named (R55-02).
+     *
+     * @return bool Whether the image was deleted
+     */
+    private function releaseThumbnail(int $pdfId, int $thumbnailId): bool
+    {
         $result = false;
 
         // Made from this PDF is not enough when something else shows it too:
@@ -559,8 +593,11 @@ final class Generator
         }
 
         // Clean up meta
-        delete_post_meta($pdfId, self::THUMBNAIL_META_KEY);
-        delete_post_meta($pdfId, '_thumbnail_id');
+        foreach ([self::THUMBNAIL_META_KEY, '_thumbnail_id'] as $key) {
+            if ((int) get_post_meta($pdfId, $key, true) === $thumbnailId) {
+                delete_post_meta($pdfId, $key);
+            }
+        }
 
         return $result !== false && $result !== null;
     }

@@ -19,6 +19,7 @@ $suites = [
     'test-review-prompt.php',
     'test-media-library.php',
     'test-thumbnail-ownership.php',
+    'test-regenerate.php',
 ];
 $failed = [];
 

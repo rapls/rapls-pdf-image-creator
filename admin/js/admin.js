@@ -86,7 +86,7 @@
                     include_existing: includeExisting ? 1 : 0
                 },
                 success: function(response) {
-                    $('#rapls-pic-bulk-scan').prop('disabled', false).text($('#rapls-pic-bulk-scan').data('original-text') || 'Scan for PDFs');
+                    $('#rapls-pic-bulk-scan').prop('disabled', false).text($('#rapls-pic-bulk-scan').data('original-text') || raplsPicAdmin.i18n.scan);
 
                     if (response.success) {
                         self.pdfs = response.data.pdfs;
@@ -142,8 +142,8 @@
                     }
                 },
                 error: function(xhr, status, error) {
-                    $('#rapls-pic-bulk-scan').prop('disabled', false).text($('#rapls-pic-bulk-scan').data('original-text') || 'Scan for PDFs');
-                    alert(raplsPicAdmin.i18n.error + '\n\nStatus: ' + status + '\nError: ' + error);
+                    $('#rapls-pic-bulk-scan').prop('disabled', false).text($('#rapls-pic-bulk-scan').data('original-text') || raplsPicAdmin.i18n.scan);
+                    alert(raplsPicAdmin.i18n.error + '\n\n' + raplsPicAdmin.i18n.httpStatus.replace('%s', status) + '\n' + raplsPicAdmin.i18n.httpError.replace('%s', error));
                 }
             });
         },
@@ -176,7 +176,7 @@
         stop: function() {
             this.isRunning = false;
             $('#rapls-pic-bulk-stop').prop('disabled', true);
-            this.updateStatus('Stopped');
+            this.updateStatus(raplsPicAdmin.i18n.stopped);
             this.finish();
         },
 
@@ -197,7 +197,7 @@
             this.updateStatus(statusText);
 
             // Log current file
-            this.log('Processing: ' + pdf.filename, 'info');
+            this.log(raplsPicAdmin.i18n.processingFile.replace('%s', pdf.filename), 'info');
 
             $.ajax({
                 url: raplsPicAdmin.ajaxUrl,
@@ -214,7 +214,7 @@
                         self.log('✓ ' + pdf.filename, 'success');
                     } else {
                         self.failed++;
-                        self.log('✗ ' + pdf.filename + ': ' + (response.data.message || 'Failed'), 'error');
+                        self.log('✗ ' + pdf.filename + ': ' + (response.data.message || raplsPicAdmin.i18n.failed), 'error');
                     }
                     self.updateStats();
                     self.currentIndex++;
@@ -222,7 +222,7 @@
                 },
                 error: function() {
                     self.failed++;
-                    self.log('✗ ' + pdf.filename + ': Request failed', 'error');
+                    self.log('✗ ' + pdf.filename + ': ' + raplsPicAdmin.i18n.requestFailed, 'error');
                     self.updateStats();
                     self.currentIndex++;
                     self.processNext();
@@ -374,7 +374,7 @@
                     }
                 },
                 error: function() {
-                    $link.removeClass('processing').text('✗ Error');
+                    $link.removeClass('processing').text('✗ ' + raplsPicAdmin.i18n.errorShort);
                 }
             });
         }

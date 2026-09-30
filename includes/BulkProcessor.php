@@ -58,8 +58,11 @@ final class BulkProcessor
                 return;
             }
 
-            if (!current_user_can('upload_files')) {
-                wp_send_json_error(['message' => __('Permission denied.', 'rapls-pdf-image-creator')]);
+            // As the Settings page Bulk Generate lives on. upload_files let
+            // any author list every PDF and regenerate PDFs that are not
+            // theirs, by posting straight here (R55-01).
+            if (!current_user_can('manage_options')) {
+                wp_send_json_error(['message' => __('Permission denied.', 'rapls-pdf-image-creator')], 403);
                 return;
             }
 
@@ -141,8 +144,11 @@ final class BulkProcessor
                 return;
             }
 
-            if (!current_user_can('upload_files')) {
-                wp_send_json_error(['message' => __('Permission denied.', 'rapls-pdf-image-creator')]);
+            // As the Settings page Bulk Generate lives on. upload_files let
+            // any author list every PDF and regenerate PDFs that are not
+            // theirs, by posting straight here (R55-01).
+            if (!current_user_can('manage_options')) {
+                wp_send_json_error(['message' => __('Permission denied.', 'rapls-pdf-image-creator')], 403);
                 return;
             }
 
@@ -151,6 +157,12 @@ final class BulkProcessor
 
             if (!$pdfId) {
                 wp_send_json_error(['message' => __('Invalid PDF ID.', 'rapls-pdf-image-creator')]);
+                return;
+            }
+
+            // And this PDF, as the Media Library's own link asks.
+            if (!current_user_can('edit_post', $pdfId)) {
+                wp_send_json_error(['message' => __('Permission denied.', 'rapls-pdf-image-creator')], 403);
                 return;
             }
 
@@ -198,8 +210,11 @@ final class BulkProcessor
                 return;
             }
 
-            if (!current_user_can('upload_files')) {
-                wp_send_json_error(['message' => __('Permission denied.', 'rapls-pdf-image-creator')]);
+            // As the Settings page Bulk Generate lives on. upload_files let
+            // any author list every PDF and regenerate PDFs that are not
+            // theirs, by posting straight here (R55-01).
+            if (!current_user_can('manage_options')) {
+                wp_send_json_error(['message' => __('Permission denied.', 'rapls-pdf-image-creator')], 403);
                 return;
             }
 

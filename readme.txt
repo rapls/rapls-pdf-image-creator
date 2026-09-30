@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.1
-Stable tag: 1.4.11
+Stable tag: 1.4.12
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -313,6 +313,12 @@ No other profile is bundled. CMYK profiles are read from the host when one is
 present and are never redistributed.
 
 == Changelog ==
+= 1.4.12 =
+* Security: the Media Library's "Regenerate Thumbnail" request now checks that the user may edit that PDF, as the link itself already did. Before, any user who could upload files could regenerate -- and so replace the thumbnail of -- a PDF they could not edit. The Bulk Generate requests now require the same permission as the settings page they are on
+* Fixed: regenerating a thumbnail no longer deletes the old one first. The new thumbnail is made and recorded, and only then is the old one removed, so a PDF whose new thumbnail cannot be made keeps the one it had
+* Fixed: regenerating or deleting a thumbnail no longer removes a featured image the PDF was given by hand. Only a link that names the generated thumbnail is removed
+* Fixed: a few messages on the Bulk Generate tab and the Media Library were shown in English whatever the admin language
+
 = 1.4.11 =
 * Changed: the FAQ says which generated images uninstalling keeps -- those used as a featured image or shared with a translated copy of the PDF -- and that an image placed inside a post's content is not detected, so "Keep Images on Uninstall" should be turned on first in that case
 
@@ -512,6 +518,9 @@ present and are never redistributed.
 * Japanese translation included
 
 == Upgrade Notice ==
+
+= 1.4.12 =
+Security fix: regenerating a PDF's thumbnail now requires permission to edit that PDF. A failed regeneration also keeps the old thumbnail.
 
 = 1.4.11 =
 The FAQ now says which generated images uninstalling keeps.
