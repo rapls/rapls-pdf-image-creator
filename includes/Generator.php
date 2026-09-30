@@ -262,6 +262,13 @@ final class Generator
         $previousId = $force ? $this->getThumbnailId($pdfId) : null;
         $replacing = null !== $previousId;
 
+        // What this plugin's own key held, as it was. $previousId is what
+        // getThumbnailId() shows, which falls back to `_thumbnail_id`: put
+        // back into this key after a failure, a featured image chosen by hand
+        // became "the thumbnail this plugin made", and the add-on's list of
+        // PDFs without one no longer showed the PDF (R57-01).
+        $previousOwn = (string) get_post_meta($pdfId, self::THUMBNAIL_META_KEY, true);
+
         // Get PDF file path
         $pdfPath = get_attached_file($pdfId);
         if (!$pdfPath || !file_exists($pdfPath)) {
@@ -314,10 +321,29 @@ final class Generator
 
         $outputPath = $pdfDir . '/' . $outputFilename;
 
-        // Ensure unique filename
+        // Ensure unique filename -- by taking it, not by looking. Two requests
+        // regenerating the same PDF in the same second both saw the name
+        // free, drew into the same file and registered it twice; deleting
+        // either attachment then took the other's image (O56-01). fopen('x')
+        // creates the file only if nobody has, so each request gets a name of
+        // its own. A folder that cannot be written to stops the loop, and the
+        // engine says why.
         $counter = 1;
         $stem = pathinfo($outputFilename, PATHINFO_FILENAME);
-        while (file_exists($outputPath)) {
+        $reserved = false;
+        while (true) {
+            $handle = @fopen($outputPath, 'x');
+
+            if (false !== $handle) {
+                fclose($handle);
+                $reserved = true;
+                break;
+            }
+
+            if (!file_exists($outputPath)) {
+                break;
+            }
+
             $outputFilename = $stem . '-' . $counter . '.' . $extension;
             $outputPath = $pdfDir . '/' . $outputFilename;
             $counter++;
@@ -354,6 +380,12 @@ final class Generator
         $result = $engine->convert($pdfPath, $outputPath, $options);
 
         if (!$result->isSuccess()) {
+            // The name taken above is this request's, and so is whatever the
+            // engine left under it.
+            if ($reserved) {
+                wp_delete_file($outputPath);
+            }
+
             return $this->fail(
                 $pdfId,
                 $result->getCode() ?: FailureCode::RENDER_ERROR,
@@ -399,8 +431,8 @@ final class Generator
             update_post_meta($pdfId, '_thumbnail_id', $thumbnailId);
 
             if ((int) get_post_meta($pdfId, '_thumbnail_id', true) !== $thumbnailId) {
-                if (null !== $previousId) {
-                    update_post_meta($pdfId, self::THUMBNAIL_META_KEY, $previousId);
+                if ('' !== $previousOwn) {
+                    update_post_meta($pdfId, self::THUMBNAIL_META_KEY, $previousOwn);
                 } else {
                     delete_post_meta($pdfId, self::THUMBNAIL_META_KEY);
                 }
@@ -677,10 +709,13 @@ final class Generator
         // next regeneration cannot let go of this image, and it is left
         // behind for good; without its metadata, the image has no sizes
         // (R56-01). Only that metadata was saved is asked, not what it holds:
-        // a filter may add to it.
+        // a filter may add to it. Asked even when none could be generated:
+        // an image always has some (its size, its file), and without it the
+        // Media Library shows the PDF without this thumbnail
+        // (filterAttachmentForJs()) while this said it was made (R57-02).
         $stored = wp_get_attachment_metadata($attachmentId);
 
-        if (!$this->isOwnThumbnail($attachmentId, $pdfId) || (!empty($metadata) && (!is_array($stored) || [] === $stored))) {
+        if (!$this->isOwnThumbnail($attachmentId, $pdfId) || !is_array($stored) || [] === $stored) {
             wp_delete_attachment($attachmentId, true);
 
             return null;

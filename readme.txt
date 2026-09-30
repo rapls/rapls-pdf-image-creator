@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.1
-Stable tag: 1.4.13
+Stable tag: 1.4.14
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -313,6 +313,11 @@ No other profile is bundled. CMYK profiles are read from the host when one is
 present and are never redistributed.
 
 == Changelog ==
+= 1.4.14 =
+* Fixed: when a regeneration could not save the new featured image, the PDF's own thumbnail record is now put back exactly as it was. A featured image chosen by hand was written into it instead, and was then taken for a thumbnail this plugin had made
+* Fixed: a regenerated thumbnail whose image metadata could not be made is no longer reported as made; the previous thumbnail is kept. The Media Library did not show such a thumbnail for the PDF
+* Fixed: two regenerations of the same PDF in the same second could write the same image file and register it twice, so deleting one removed the other's image. Each now takes its file name before drawing into it
+
 = 1.4.13 =
 * Fixed: a regenerated thumbnail is now kept only once the marks that tell the plugin it made the image, and the image's metadata, have been saved. When they were not, the image was reported as made but could never be removed by a later regeneration
 * Fixed: with "Set as featured image" on, a regeneration whose featured image could not be saved now fails and keeps the previous thumbnail. Before, it reported success and the PDF was left with no featured image
@@ -523,6 +528,9 @@ present and are never redistributed.
 * Japanese translation included
 
 == Upgrade Notice ==
+
+= 1.4.14 =
+Includes the 1.4.12 security fix and the 1.4.13 regeneration fixes. A failed regeneration now leaves the PDF's records exactly as they were.
 
 = 1.4.13 =
 Includes the 1.4.12 security fix. A regeneration that cannot save the new thumbnail completely now fails and keeps the previous one.

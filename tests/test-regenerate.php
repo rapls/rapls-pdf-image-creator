@@ -59,7 +59,7 @@ namespace {
         $GLOBALS['files'][$id] = $file;
         return $id;
     }
-    function wp_generate_attachment_metadata($id, $file) { return ['file' => basename($file), 'sizes' => []]; }
+    function wp_generate_attachment_metadata($id, $file) { return !empty($GLOBALS['no_metadata']) ? false : ['file' => basename($file), 'sizes' => []]; }
     function wp_update_attachment_metadata($id, $meta) {
         if (!empty($GLOBALS['fail_attachment_meta'])) { return false; }
         $GLOBALS['attachment_meta'][(int) $id] = $meta;
@@ -131,7 +131,9 @@ namespace {
         public function isAvailable(): bool { return true; }
         public function getAvailabilityStatus(): array { return ['code' => 'ok', 'label' => '', 'summary' => '', 'action' => '', 'detail' => '']; }
         public function getRequirements(): array { return []; }
+        public $sawReserved = null;
         public function convert(string $pdfPath, string $outputPath, array $options = []): \Rapls\PDFImageCreator\Engine\ConversionResult {
+            $this->sawReserved = is_file($outputPath) && 0 === filesize($outputPath);
             if (!$this->renders) { return \Rapls\PDFImageCreator\Engine\ConversionResult::failure('render failed'); }
             file_put_contents($outputPath, 'jpeg');
             return \Rapls\PDFImageCreator\Engine\ConversionResult::success($outputPath);
@@ -249,7 +251,7 @@ namespace {
     $GLOBALS['fail_meta'] = ['_thumbnail_id:' . $before];
     $made = $generator->generate(130, true);
     $GLOBALS['fail_meta'] = '';
-    check('_thumbnail_id not saved: fails, the PDF keeps the old one', [$made, $GLOBALS['meta'][130]['_rapls_pic_thumbnail_id'] ?? null, $GLOBALS['meta'][130]['_thumbnail_id'] ?? null, $GLOBALS['deleted']], [null, 131, 131, [$before]]);
+    check('_thumbnail_id not saved: fails, the PDF keeps the old one', [$made, (int) ($GLOBALS['meta'][130]['_rapls_pic_thumbnail_id'] ?? 0), $GLOBALS['meta'][130]['_thumbnail_id'] ?? null, $GLOBALS['deleted']], [null, 131, 131, [$before]]);
     $pdf(140, 141);
     $GLOBALS['meta'][140]['_thumbnail_id'] = 141;
     $GLOBALS['deleted'] = [];
@@ -266,6 +268,50 @@ namespace {
     $GLOBALS['undeletable'] = 151;
     check('deleteThumbnail: delete fails, the PDF keeps its link', [$generator->deleteThumbnail(150), $GLOBALS['meta'][150]['_rapls_pic_thumbnail_id'] ?? null], [false, 151]);
     $GLOBALS['undeletable'] = 0;
+
+    echo "\n--- R57-01: a failed featured image puts each key back as it was ---\n";
+
+    $useSettings(['set_featured' => true]);
+    $featuredFails = static function (int $pdfId) use ($generator): array {
+        $GLOBALS['deleted'] = [];
+        $before = $GLOBALS['next_id'];
+        $GLOBALS['fail_meta'] = ['_thumbnail_id:' . $before];
+        $made = $generator->generate($pdfId, true);
+        $GLOBALS['fail_meta'] = '';
+        return [$made, (int) ($GLOBALS['meta'][$pdfId]['_rapls_pic_thumbnail_id'] ?? 0), (int) ($GLOBALS['meta'][$pdfId]['_thumbnail_id'] ?? 0), $GLOBALS['deleted'] === [$before]];
+    };
+    $pdf(160);
+    $GLOBALS['meta'][160]['_thumbnail_id'] = 88;
+    check('A: no own thumbnail, featured 88: own key stays empty', $featuredFails(160), [null, 0, 88, true]);
+    $pdf(170, 171);
+    $GLOBALS['meta'][170]['_thumbnail_id'] = 88;
+    check('B: own 171, featured 88: both as they were', $featuredFails(170), [null, 171, 88, true]);
+    $pdf(180, 181);
+    $GLOBALS['meta'][180]['_thumbnail_id'] = 181;
+    check('C: own 181, featured 181: both as they were', $featuredFails(180), [null, 181, 181, true]);
+    $useSettings(['set_featured' => false]);
+
+    echo "\n--- R57-02: no metadata is not success ---\n";
+
+    $pdf(190, 191);
+    $GLOBALS['deleted'] = [];
+    $before = $GLOBALS['next_id'];
+    $GLOBALS['no_metadata'] = true;
+    $made = $generator->generate(190, true);
+    $GLOBALS['no_metadata'] = false;
+    check('metadata could not be generated: fails, new removed, old kept', [$made, $GLOBALS['deleted'], $GLOBALS['meta'][190]['_rapls_pic_thumbnail_id'] ?? null], [null, [$before], 191]);
+
+    echo "\n--- O56-01: the output name is taken, not only looked at ---\n";
+
+    $pdf(200);
+    $generator->generate(200, true);
+    check('the engine draws into a file this request already created', $engine->sawReserved, true);
+    $pdf(210, 211);
+    $engine->renders = false;
+    $leftBefore = glob($uploads . '/doc-210-pdf-thumbnail*');
+    $generator->generate(210, true);
+    $engine->renders = true;
+    check('  ...and a failed render leaves no empty file behind', glob($uploads . '/doc-210-pdf-thumbnail*'), $leftBefore);
 
     echo "\n--- R55-01: the AJAX routes ask about this PDF ---\n";
 
