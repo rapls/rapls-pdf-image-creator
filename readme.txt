@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.1
-Stable tag: 1.4.17
+Stable tag: 1.4.18
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -313,6 +313,9 @@ No other profile is bundled. CMYK profiles are read from the host when one is
 present and are never redistributed.
 
 == Changelog ==
+= 1.4.18 =
+* Fixed: Generator::outcomeFor() now forgets the previous attempt's result as soon as a new generate() begins. An error thrown during the first checks of a new attempt left the previous result in place, where it could be taken for the new one
+
 = 1.4.17 =
 * Changed: an error thrown by code listening to rapls_pdf_image_creator_after_generate or rapls_pdf_image_creator_generation_failed is no longer caught, as it was in 1.4.15 and 1.4.16; it reaches the caller, as errors in WordPress hooks normally do. WordPress does not tidy up a hook after an error inside it, so carrying on quietly left that hook in an unfinished state for the rest of the request
 * Added: Generator::outcomeFor( $pdf_id ) says what the last attempt for a PDF came to in the current request -- made or not, the thumbnail ID, and the failure code and message. It is recorded before the actions run, so it does not depend on which listeners run first or whether one throws
@@ -545,6 +548,9 @@ present and are never redistributed.
 * Japanese translation included
 
 == Upgrade Notice ==
+
+= 1.4.18 =
+Includes the 1.4.12 security fix and the 1.4.13-1.4.17 regeneration fixes.
 
 = 1.4.17 =
 Includes the 1.4.12 security fix. Errors in code listening to this plugin's hooks are no longer hidden; the result of each regeneration can be read with Generator::outcomeFor().

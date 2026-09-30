@@ -42,7 +42,10 @@ namespace {
         return true;
     }
     function delete_option($key) { unset($GLOBALS['options'][$key]); return true; }
-    function get_post($id) { return $GLOBALS['posts'][(int) $id] ?? null; }
+    function get_post($id) {
+        if ((int) $id === ($GLOBALS['get_post_throws'] ?? 0)) { throw new \RuntimeException('get_post threw'); }
+        return $GLOBALS['posts'][(int) $id] ?? null;
+    }
     function get_post_mime_type($id) { return $GLOBALS['mimes'][(int) $id] ?? false; }
     function get_post_meta($id, $key, $single = false) { return $GLOBALS['meta'][(int) $id][$key] ?? ''; }
     function update_post_meta($id, $key, $value) {
@@ -427,6 +430,15 @@ namespace {
     try { $generator->generate(320, true); } catch (\RuntimeException $e) {}
     $engine->throws = false;
     check('outcomeFor: an attempt that threw before an outcome leaves none, not the last one', $generator->outcomeFor(320), null);
+    // R62-02: forgotten from generate()'s first line, before anything that can throw.
+    foreach ([true, false] as $lastWorked) {
+        $pdf(330, 331, $lastWorked);
+        $generator->generate(330, true);
+        $GLOBALS['get_post_throws'] = 330;
+        try { $generator->generate(330, true); } catch (\RuntimeException $e) {}
+        $GLOBALS['get_post_throws'] = 0;
+        check('R62-02: the first check throws: no outcome, not the last ' . ($lastWorked ? 'success' : 'failure'), $generator->outcomeFor(330), null);
+    }
     check('outcomeFor: a new attempt forgets the last one; unknown PDF is null', [$generator->outcomeFor(310)['ok'] ?? null, $generator->outcomeFor(999999)], [false, null]);
     ini_set('error_log', (string) $logWas);
     @unlink($log);

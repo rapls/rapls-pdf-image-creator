@@ -245,6 +245,12 @@ final class Generator
      */
     public function generate(int $pdfId, bool $force = false): ?int
     {
+        // A new attempt: what the last one for this PDF came to is no longer
+        // the answer -- from the first line, so nothing that throws on the
+        // way leaves the last attempt's outcome standing for this one
+        // (R61-02, R62-02).
+        unset($this->outcomes[$pdfId]);
+
         // Check if PDF exists
         $pdf = get_post($pdfId);
         if (!$pdf || $pdf->post_type !== 'attachment') {
@@ -256,10 +262,6 @@ final class Generator
         if ($mimeType !== 'application/pdf') {
             return $this->fail($pdfId, FailureCode::NOT_A_PDF, __('Not a PDF file.', 'rapls-pdf-image-creator'));
         }
-
-        // A new attempt: what the last one for this PDF came to is no longer
-        // the answer.
-        unset($this->outcomes[$pdfId]);
 
         // Check if thumbnail already exists
         if (!$force && $this->hasThumbnail($pdfId)) {
