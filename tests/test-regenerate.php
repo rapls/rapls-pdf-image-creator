@@ -32,8 +32,8 @@ namespace {
     $GLOBALS['caps'] = [];
 
     function __($s, $d = null) { return $s; }
-    function apply_filters($tag, $value, ...$args) { return $value; }
-    function do_action($tag, ...$args) {}
+    function apply_filters($tag, $value, ...$args) { return isset($GLOBALS['filters'][$tag]) ? ($GLOBALS['filters'][$tag])($value) : $value; }
+    function do_action($tag, ...$args) { if (isset($GLOBALS['actions'][$tag])) { ($GLOBALS['actions'][$tag])(...$args); } }
     function get_option($key, $default = false) { return $GLOBALS['options'][$key] ?? $default; }
     function update_option($key, $value, $autoload = null) { $GLOBALS['options'][$key] = $value; return true; }
     function delete_option($key) { unset($GLOBALS['options'][$key]); return true; }
@@ -51,13 +51,19 @@ namespace {
     function wp_delete_file($path) { @unlink($path); }
     function wp_get_attachment_image_url($id, $size = 'thumbnail') { return 'https://example.test/' . (int) $id . '.jpg'; }
     function sanitize_file_name($name) { return preg_replace('/[^A-Za-z0-9._-]/', '-', (string) $name); }
-    function wp_check_filetype($name) { return ['ext' => 'jpg', 'type' => 'image/jpeg']; }
+    function wp_check_filetype($name) { $ext = strtolower(pathinfo((string) $name, PATHINFO_EXTENSION)); return ['ext' => $ext, 'type' => ['jpg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp'][$ext] ?? false]; }
     function is_wp_error($thing) { return false; }
     function wp_insert_attachment($data, $file, $parent) {
         $id = $GLOBALS['next_id']++;
-        $GLOBALS['posts'][$id] = (object) ['ID' => $id, 'post_type' => 'attachment'];
-        $GLOBALS['files'][$id] = $file;
+        $GLOBALS['posts'][$id] = (object) ['ID' => $id, 'post_type' => 'attachment', 'post_mime_type' => $data['post_mime_type']];
+        // An update_attached_file filter that names another file (R58-02).
+        $GLOBALS['files'][$id] = $GLOBALS['attach_elsewhere'] ?? $file;
         return $id;
+    }
+    function update_attached_file($id, $file) {
+        if (!empty($GLOBALS['attach_stuck'])) { return true; }
+        $GLOBALS['files'][(int) $id] = $file;
+        return true;
     }
     function wp_generate_attachment_metadata($id, $file) { return !empty($GLOBALS['no_metadata']) ? false : ['file' => basename($file), 'sizes' => []]; }
     function wp_update_attachment_metadata($id, $meta) {
@@ -67,7 +73,7 @@ namespace {
     }
     function wp_get_attachment_metadata($id) { return $GLOBALS['attachment_meta'][(int) $id] ?? false; }
     function wp_delete_attachment($id, $force = false) {
-        if ((int) $id === ($GLOBALS['undeletable'] ?? 0)) { return false; }
+        if ((int) $id === ($GLOBALS['undeletable'] ?? 0) || !empty($GLOBALS['nothing_deletes'])) { return false; }
         $GLOBALS['deleted'][] = (int) $id;
         $post = $GLOBALS['posts'][(int) $id] ?? null;
         unset($GLOBALS['posts'][(int) $id]);
@@ -132,8 +138,12 @@ namespace {
         public function getAvailabilityStatus(): array { return ['code' => 'ok', 'label' => '', 'summary' => '', 'action' => '', 'detail' => '']; }
         public function getRequirements(): array { return []; }
         public $sawReserved = null;
+        public $throws = false;
+        public $format = null;
         public function convert(string $pdfPath, string $outputPath, array $options = []): \Rapls\PDFImageCreator\Engine\ConversionResult {
             $this->sawReserved = is_file($outputPath) && 0 === filesize($outputPath);
+            $this->format = $options['format'] ?? null;
+            if ($this->throws) { throw new \RuntimeException('engine boom'); }
             if (!$this->renders) { return \Rapls\PDFImageCreator\Engine\ConversionResult::failure('render failed'); }
             file_put_contents($outputPath, 'jpeg');
             return \Rapls\PDFImageCreator\Engine\ConversionResult::success($outputPath);
@@ -312,6 +322,67 @@ namespace {
     $generator->generate(210, true);
     $engine->renders = true;
     check('  ...and a failed render leaves no empty file behind', glob($uploads . '/doc-210-pdf-thumbnail*'), $leftBefore);
+
+    echo "\n--- R58-01: a new attachment that cannot be deleted keeps its file ---\n";
+
+    $pdf(220, 221);
+    $GLOBALS['nothing_deletes'] = true;
+    $GLOBALS['fail_meta'] = '_rapls_pic_source_pdf';
+    $before = $GLOBALS['next_id'];
+    $made = $generator->generate(220, true);
+    $GLOBALS['fail_meta'] = '';
+    $GLOBALS['nothing_deletes'] = false;
+    check('delete refused: fails, and the attachment still has its file', [$made, isset($GLOBALS['posts'][$before]), is_file((string) ($GLOBALS['files'][$before] ?? ''))], [null, true, true]);
+
+    echo "\n--- R58-02: the attachment must name the file drawn ---\n";
+
+    $pdf(230, 231);
+    $other = $uploads . '/someone-elses.jpg';
+    file_put_contents($other, 'not ours');
+    $GLOBALS['attach_elsewhere'] = $other;
+    $before = $GLOBALS['next_id'];
+    $made = $generator->generate(230, true);
+    unset($GLOBALS['attach_elsewhere']);
+    check('named another file: pointed back, removed, old kept', [$made, isset($GLOBALS['posts'][$before]), is_file($other), $GLOBALS['meta'][230]['_rapls_pic_thumbnail_id'] ?? null], [null, false, true, 231]);
+    $pdf(240, 241);
+    $GLOBALS['attach_elsewhere'] = $other;
+    $GLOBALS['attach_stuck'] = true;
+    $before = $GLOBALS['next_id'];
+    $made = $generator->generate(240, true);
+    unset($GLOBALS['attach_elsewhere']);
+    $GLOBALS['attach_stuck'] = false;
+    check('  ...cannot be pointed back: nothing deleted, not even the other file', [$made, isset($GLOBALS['posts'][$before]), is_file($other)], [null, true, true]);
+
+    echo "\n--- R58-03: an old thumbnail that cannot be deleted does not fail the new one ---\n";
+
+    $pdf(280, 281);
+    $GLOBALS['undeletable'] = 281;
+    $made = $generator->generate(280, true);
+    $GLOBALS['undeletable'] = 0;
+    check('old delete refused: new one kept and returned, old one still there', [is_int($made), (int) ($GLOBALS['meta'][280]['_rapls_pic_thumbnail_id'] ?? 0) === $made, isset($GLOBALS['posts'][281])], [true, true, true]);
+
+    echo "\n--- R58-04: exceptions do not leave files, nor turn success into failure ---\n";
+
+    $pdf(250, 251);
+    $engine->throws = true;
+    $leftBefore = glob($uploads . '/doc-250-pdf-thumbnail*');
+    $caught = null;
+    try { $generator->generate(250, true); } catch (\RuntimeException $e) { $caught = $e->getMessage(); }
+    $engine->throws = false;
+    check('engine throws: passed on, and no empty file left', [$caught, glob($uploads . '/doc-250-pdf-thumbnail*')], ['engine boom', $leftBefore]);
+    $pdf(260, 261);
+    $GLOBALS['actions']['rapls_pdf_image_creator_after_generate'] = static function () { throw new \RuntimeException('after hook boom'); };
+    $made = $generator->generate(260, true);
+    unset($GLOBALS['actions']['rapls_pdf_image_creator_after_generate']);
+    check('after_generate throws: the thumbnail made is still returned', [is_int($made), $GLOBALS['meta'][260]['_rapls_pic_thumbnail_id'] ?? null], [true, $made]);
+
+    echo "\n--- R58-05: the format filter decides the name and the type too ---\n";
+
+    $pdf(270);
+    $GLOBALS['filters']['rapls_pdf_image_creator_thumbnail_format'] = static function () { return 'PNG'; };
+    $made = $generator->generate(270, true);
+    unset($GLOBALS['filters']['rapls_pdf_image_creator_thumbnail_format']);
+    check('filtered to PNG: engine, extension and MIME agree', [$engine->format, pathinfo((string) $GLOBALS['files'][$made], PATHINFO_EXTENSION), $GLOBALS['posts'][$made]->post_mime_type], ['png', 'png', 'image/png']);
 
     echo "\n--- R55-01: the AJAX routes ask about this PDF ---\n";
 

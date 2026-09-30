@@ -300,7 +300,13 @@ final class Generator
         $uploadDir = wp_upload_dir();
         $pdfDir = dirname($pdfPath);
         $pdfBasename = pathinfo($pdfPath, PATHINFO_FILENAME);
-        $extension = $this->settings->getFileExtension();
+        // The format, filtered once and before the name is chosen: the name's
+        // extension decides the attachment's MIME type, and a filter that
+        // turned JPEG into PNG after the name was chosen got PNG bytes in a
+        // .jpg file registered as image/jpeg (R58-05).
+        $format = strtolower((string) apply_filters('rapls_pdf_image_creator_thumbnail_format', $this->settings->getFormat(), $pdfId));
+        $format = in_array($format, ['png', 'webp'], true) ? $format : 'jpeg';
+        $extension = 'jpeg' === $format ? 'jpg' : $format;
 
         $outputFilename = $pdfBasename . '-pdf-thumbnail.' . $extension;
 
@@ -349,6 +355,11 @@ final class Generator
             $counter++;
         }
 
+        // From here until the image is in the Media Library, the file under
+        // that name is this request's. A listener or an engine that threw
+        // left the empty file behind, and the next attempt took "-1" beside
+        // it (R58-04).
+        try {
         /**
          * Action before generating thumbnail
          *
@@ -372,12 +383,19 @@ final class Generator
             'max_height' => apply_filters('rapls_pdf_image_creator_thumbnail_max_height', $this->settings->getMaxHeight(), $pdfId),
             'resolution' => apply_filters('rapls_pdf_image_creator_thumbnail_resolution', $this->settings->getResolution(), $pdfId),
             'quality' => apply_filters('rapls_pdf_image_creator_thumbnail_quality', $this->settings->getQuality(), $pdfId),
-            'format' => apply_filters('rapls_pdf_image_creator_thumbnail_format', $this->settings->getFormat(), $pdfId),
+            'format' => $format,
             'bgcolor' => apply_filters('rapls_pdf_image_creator_thumbnail_bgcolor', $this->settings->getBgColor(), $pdfId),
         ];
 
         // Convert PDF to image
         $result = $engine->convert($pdfPath, $outputPath, $options);
+        } catch (\Throwable $e) {
+            if ($reserved) {
+                wp_delete_file($outputPath);
+            }
+
+            throw $e;
+        }
 
         if (!$result->isSuccess()) {
             // The name taken above is this request's, and so is whatever the
@@ -398,9 +416,10 @@ final class Generator
         $thumbnailId = $this->createThumbnailAttachment($pdfId, $outputPath, $outputFilename);
 
         if (!$thumbnailId) {
-            // Clean up file
-            wp_delete_file($outputPath);
-
+            // createThumbnailAttachment() has already cleaned up what it made
+            // -- the file with the attachment, or the file alone when there
+            // was none. Deleted here as well, the file went even when the
+            // attachment could not be, and it pointed at nothing (R58-01).
             return $this->fail(
                 $pdfId,
                 FailureCode::WRITE_FAILED,
@@ -455,8 +474,13 @@ final class Generator
         // make -- a featured image chosen by hand, which getThumbnailId()
         // falls back to -- is neither deleted nor unlinked: the new thumbnail
         // is found first, and the choice was not this plugin's (R55-02).
-        if (null !== $previousId && $previousId !== $thumbnailId && $this->isOwnThumbnail($previousId, $pdfId)) {
-            $this->releaseThumbnail($pdfId, $previousId);
+        if (null !== $previousId && $previousId !== $thumbnailId && $this->isOwnThumbnail($previousId, $pdfId)
+            && !$this->releaseThumbnail($pdfId, $previousId) && null !== get_post($previousId) && !$this->usedElsewhere($previousId, $pdfId)) {
+            // The new one is in place, so this is not a failure; but the old
+            // image is now linked from nothing and stays. Said, so it can be
+            // found (R58-03).
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+            error_log(sprintf('Rapls PDF Image Creator: the previous thumbnail #%d of PDF #%d could not be deleted after it was replaced; it is still in the Media Library.', $previousId, $pdfId));
         }
 
         /**
@@ -472,7 +496,15 @@ final class Generator
             delete_option(self::LAST_FAILURE_OPTION);
         }
 
-        do_action('rapls_pdf_image_creator_after_generate', $thumbnailId, $pdfId, $result);
+        // An observer that throws does not undo what is done: the thumbnail
+        // is made and recorded. Thrown through, the caller saw a failure and
+        // the add-on's queue drew it again (R58-04).
+        try {
+            do_action('rapls_pdf_image_creator_after_generate', $thumbnailId, $pdfId, $result);
+        } catch (\Throwable $e) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+            error_log(sprintf('Rapls PDF Image Creator: a rapls_pdf_image_creator_after_generate listener failed for PDF #%d: %s', $pdfId, $e->getMessage()));
+        }
 
         return $thumbnailId;
     }
@@ -692,6 +724,9 @@ final class Generator
         $attachmentId = wp_insert_attachment($attachment, $filePath, $pdfId);
 
         if (is_wp_error($attachmentId) || !$attachmentId) {
+            // No attachment, so the file is nobody's.
+            wp_delete_file($filePath);
+
             return null;
         }
 
@@ -715,7 +750,31 @@ final class Generator
         // (filterAttachmentForJs()) while this said it was made (R57-02).
         $stored = wp_get_attachment_metadata($attachmentId);
 
-        if (!$this->isOwnThumbnail($attachmentId, $pdfId) || !is_array($stored) || [] === $stored) {
+        // And the file the attachment names is the file drawn: a filter on
+        // update_attached_file, or a failed write, can leave it naming
+        // another, and wp_insert_attachment() still returns the ID (R58-02).
+        $named = (string) get_attached_file($attachmentId, true);
+        $namesFile = '' !== $named && (realpath($named) ?: $named) === (realpath($filePath) ?: $filePath);
+
+        if (!$namesFile || !$this->isOwnThumbnail($attachmentId, $pdfId) || !is_array($stored) || [] === $stored) {
+            // Deleting an attachment deletes the file it names. Naming another
+            // file, it is first pointed back at this one; if it will not be,
+            // nothing is deleted -- that file may be someone else's.
+            if (!$namesFile) {
+                update_attached_file($attachmentId, $filePath);
+                $named = (string) get_attached_file($attachmentId, true);
+
+                if ('' === $named || (realpath($named) ?: $named) !== (realpath($filePath) ?: $filePath)) {
+                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+                    error_log(sprintf('Rapls PDF Image Creator: attachment #%d was saved naming a different file than the thumbnail drawn for PDF #%d, and could not be corrected; it was left as it is.', $attachmentId, $pdfId));
+
+                    return null;
+                }
+            }
+
+            // Deleted with its file. Not deleted -- pre_delete_attachment can
+            // refuse -- the file stays too: an attachment whose file has gone
+            // is worse than an extra image (R58-01).
             wp_delete_attachment($attachmentId, true);
 
             return null;

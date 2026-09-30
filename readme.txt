@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.1
-Stable tag: 1.4.14
+Stable tag: 1.4.15
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -313,6 +313,13 @@ No other profile is bundled. CMYK profiles are read from the host when one is
 present and are never redistributed.
 
 == Changelog ==
+= 1.4.15 =
+* Fixed: when a new thumbnail had to be removed again and another plugin refused the deletion, its image file was deleted anyway and the attachment was left pointing at nothing. The file now stays with the attachment
+* Fixed: a new thumbnail is now checked to point at the image file that was drawn. When a filter made it point at another file, it was reported as made; it is now pointed back and removed, and if it cannot be pointed back nothing is deleted, since that other file may belong to something else
+* Fixed: the rapls_pdf_image_creator_thumbnail_format filter now also decides the file extension and MIME type. Before, it changed only the image data, so a PNG could be saved as .jpg and registered as a JPEG
+* Fixed: an error thrown by another plugin while a thumbnail was being drawn no longer leaves an empty image file behind, and an error thrown after a thumbnail was made no longer makes it look as if it had failed
+* Changed: when an old thumbnail cannot be deleted after it has been replaced, this is now written to the PHP error log
+
 = 1.4.14 =
 * Fixed: when a regeneration could not save the new featured image, the PDF's own thumbnail record is now put back exactly as it was. A featured image chosen by hand was written into it instead, and was then taken for a thumbnail this plugin had made
 * Fixed: a regenerated thumbnail whose image metadata could not be made is no longer reported as made; the previous thumbnail is kept. The Media Library did not show such a thumbnail for the PDF
@@ -528,6 +535,9 @@ present and are never redistributed.
 * Japanese translation included
 
 == Upgrade Notice ==
+
+= 1.4.15 =
+Includes the 1.4.12 security fix. A failed or interrupted regeneration no longer leaves an attachment without its file, or an empty image file behind.
 
 = 1.4.14 =
 Includes the 1.4.12 security fix and the 1.4.13 regeneration fixes. A failed regeneration now leaves the PDF's records exactly as they were.
