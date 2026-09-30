@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.1
-Stable tag: 1.4.18
+Stable tag: 1.4.19
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -313,6 +313,9 @@ No other profile is bundled. CMYK profiles are read from the host when one is
 present and are never redistributed.
 
 == Changelog ==
+= 1.4.19 =
+* Fixed: whether an old or unused thumbnail was deleted is now judged by whether it is still there afterwards, not by what the deletion returned. Another plugin answering pre_delete_attachment with the attachment itself stops the deletion while looking like success, and the PDF then lost its link to an image that stayed in the Media Library. An attachment already deleted by something else is now counted as gone
+
 = 1.4.18 =
 * Fixed: Generator::outcomeFor() now forgets the previous attempt's result as soon as a new generate() begins. An error thrown during the first checks of a new attempt left the previous result in place, where it could be taken for the new one
 
@@ -548,6 +551,9 @@ present and are never redistributed.
 * Japanese translation included
 
 == Upgrade Notice ==
+
+= 1.4.19 =
+Includes the 1.4.12 security fix and the 1.4.13-1.4.18 regeneration fixes.
 
 = 1.4.18 =
 Includes the 1.4.12 security fix and the 1.4.13-1.4.17 regeneration fixes.

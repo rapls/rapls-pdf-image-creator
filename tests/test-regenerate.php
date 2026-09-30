@@ -82,6 +82,10 @@ namespace {
     function wp_get_attachment_metadata($id) { return $GLOBALS['attachment_meta'][(int) $id] ?? false; }
     function wp_delete_attachment($id, $force = false) {
         if ((int) $id === ($GLOBALS['undeletable'] ?? 0) || !empty($GLOBALS['nothing_deletes'])) { return false; }
+        // pre_delete_attachment answering with the post (R63-01): truthy, nothing deleted.
+        if ((int) $id === ($GLOBALS['pretends'] ?? 0)) { return $GLOBALS['posts'][(int) $id] ?? null; }
+        // Deleted by someone else first: core answers null, and it is gone.
+        if ((int) $id === ($GLOBALS['vanishes'] ?? 0)) { unset($GLOBALS['posts'][(int) $id]); return null; }
         $GLOBALS['deleted'][] = (int) $id;
         $post = $GLOBALS['posts'][(int) $id] ?? null;
         unset($GLOBALS['posts'][(int) $id]);
@@ -455,6 +459,31 @@ namespace {
     $GLOBALS['option_write_fails'] = true;
     check('  ...a write that did not happen is false', $fresh->save(['max_width' => 800]), false);
     $GLOBALS['option_write_fails'] = false;
+
+    echo "\n--- R63-01: deleted means gone, whatever the return value ---\n";
+
+    $pdf(340, 341);
+    $GLOBALS['pretends'] = 341;
+    check('A: pre_delete answers with the post: not deleted, the PDF keeps its link', [$generator->deleteThumbnail(340), isset($GLOBALS['posts'][341]), (int) ($GLOBALS['meta'][340]['_rapls_pic_thumbnail_id'] ?? 0)], [false, true, 341]);
+    $GLOBALS['pretends'] = 0;
+
+    $log = sys_get_temp_dir() . '/rapls-pic-regen-log-' . bin2hex(random_bytes(4));
+    $logWas = ini_set('error_log', $log);
+    $pdf(350, 351);
+    $GLOBALS['pretends'] = $GLOBALS['next_id'];
+    $GLOBALS['fail_meta'] = '_rapls_pic_source_pdf';
+    $before = $GLOBALS['next_id'];
+    $made = $generator->generate(350, true);
+    $GLOBALS['fail_meta'] = '';
+    $GLOBALS['pretends'] = 0;
+    check('B: new image "deleted" by a truthy pre_delete: still there, and said', [$made, isset($GLOBALS['posts'][$before]), is_file((string) ($GLOBALS['files'][$before] ?? '')), false !== strpos((string) @file_get_contents($log), "new thumbnail #$before of PDF #350")], [null, true, true, true]);
+    ini_set('error_log', (string) $logWas);
+    @unlink($log);
+
+    $pdf(360, 361);
+    $GLOBALS['vanishes'] = 361;
+    check('C: already gone (null): counted as deleted, the PDF lets go', [$generator->deleteThumbnail(360), $GLOBALS['meta'][360]['_rapls_pic_thumbnail_id'] ?? null], [true, null]);
+    $GLOBALS['vanishes'] = 0;
 
     echo "\n--- R55-01: the AJAX routes ask about this PDF ---\n";
 

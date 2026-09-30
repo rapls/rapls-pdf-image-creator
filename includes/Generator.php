@@ -616,9 +616,7 @@ final class Generator
      */
     private function discardNewThumbnail(int $thumbnailId, int $pdfId, string $why = 'could not be recorded'): void
     {
-        $deleted = wp_delete_attachment($thumbnailId, true);
-
-        if (false === $deleted || null === $deleted) {
+        if (!$this->deleteAttachment($thumbnailId)) {
             // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
             error_log(sprintf('Rapls PDF Image Creator: the new thumbnail #%d of PDF #%d %s, and could not be deleted either; it is still in the Media Library.', $thumbnailId, $pdfId, $why));
         }
@@ -723,7 +721,7 @@ final class Generator
      */
     private function releaseThumbnail(int $pdfId, int $thumbnailId): bool
     {
-        $result = false;
+        $deleted = false;
 
         // Made from this PDF is not enough when something else shows it too:
         // a translation's copy of this PDF that shares its thumbnail, or a
@@ -731,13 +729,13 @@ final class Generator
         // pointing at an image that was gone; only this PDF lets go of it.
         if ($this->isOwnThumbnail($thumbnailId, $pdfId) && !$this->usedElsewhere($thumbnailId, $pdfId)) {
             // Delete the attachment (this also deletes the file)
-            $result = wp_delete_attachment($thumbnailId, true);
+            $deleted = $this->deleteAttachment($thumbnailId);
 
             // Not deleted: the PDF keeps its link, so the image is not left
             // behind with nothing naming it, and the next attempt finds it
             // again (R56-03). Kept on purpose -- used elsewhere -- it is only
             // let go of, below.
-            if (false === $result || null === $result) {
+            if (!$deleted) {
                 return false;
             }
         }
@@ -749,7 +747,22 @@ final class Generator
             }
         }
 
-        return $result !== false && $result !== null;
+        return $deleted;
+    }
+
+    /**
+     * Delete an attachment, and say whether it is gone
+     *
+     * Asked of WordPress afterwards, not read from the return value:
+     * pre_delete_attachment may return the post itself -- a WP_Post, truthy
+     * -- and nothing is deleted; and an attachment that another request
+     * deleted first comes back as null although it is gone (R63-01).
+     */
+    private function deleteAttachment(int $attachmentId): bool
+    {
+        wp_delete_attachment($attachmentId, true);
+
+        return null === get_post($attachmentId);
     }
 
     /**
