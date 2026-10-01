@@ -113,13 +113,14 @@ namespace {
 
     // R66-02: an image picker gets PDFs only with a thumbnail.
     if (!class_exists('WP_Query')) {
-        eval('final class WP_Query { private $vars; public function __construct(array $v = []) { $this->vars = $v; } public function get($k) { return $this->vars[$k] ?? ""; } }');
+        eval('final class WP_Query { private $vars; private $main; public function __construct(array $v = [], bool $main = false) { $this->vars = $v; $this->main = $main; } public function get($k) { return $this->vars[$k] ?? ""; } public function set($k, $v) { $this->vars[$k] = $v; } public function is_main_query() { return $this->main; } }');
     }
     $GLOBALS['wpdb'] = (object) ['posts' => 'wp_posts', 'postmeta' => 'wp_postmeta'];
     $args = $library->allowPdfsInImageSelection(['post_mime_type' => 'image']);
     check('R66-02: an image query takes PDFs and is marked', [$args['post_mime_type'], $args['rapls_pic_image_pick'] ?? null], [['image', 'application/pdf'], true]);
     $where = $library->limitPdfsToThumbnailed(' AND 1=1', new WP_Query($args));
     check('  ...and its WHERE lets a PDF in only with a thumbnail key', [false !== strpos($where, "post_mime_type <> 'application/pdf' OR EXISTS"), false !== strpos($where, "'_rapls_pic_thumbnail_id', '_thumbnail_id'")], [true, true]);
+    check('  ...and the image the key names must exist (R67-01)', [false !== strpos($where, 'INNER JOIN wp_posts rapls_pic_image ON rapls_pic_image.ID = CAST(rapls_pic_thumb.meta_value AS UNSIGNED)'), false !== strpos($where, "rapls_pic_image.post_type = 'attachment'")], [true, true]);
     check('  ...other queries are left alone', $library->limitPdfsToThumbnailed(' AND 1=1', new WP_Query(['post_mime_type' => 'image'])), ' AND 1=1');
     check('  ...a non-image query is not marked', isset($library->allowPdfsInImageSelection(['post_mime_type' => 'application/pdf'])['rapls_pic_image_pick']), false);
 
@@ -133,6 +134,21 @@ namespace {
     $child = new WP_Post(200, 10, 'image/jpeg');
     $response = $library->filterAttachmentForJs(['url' => 'https://example.test/cover.jpg', 'mime' => 'image/jpeg'], $child, []);
     check("R66-03: someone else's image under a PDF keeps its URL", [$response['url'], isset($response['picIsThumbnail'])], ['https://example.test/cover.jpg', false]);
+
+    // R67-03: only the Media Library screen's main query hides generated images.
+    if (!function_exists('is_admin')) { function is_admin() { return true; } }
+    $hideOn = new ReflectionProperty(\Rapls\PDFImageCreator\Settings::class, 'settings');
+    if (PHP_VERSION_ID < 80100) { $hideOn->setAccessible(true); }
+    $hideOn->setValue($settings, ['hide_generated_images' => true]);
+    $narrowed = static function (string $page, bool $main) use ($library): bool {
+        $GLOBALS['pagenow'] = $page;
+        $q = new WP_Query(['post_type' => 'attachment'], $main);
+        $library->filterMediaLibrary($q);
+        return '' !== $q->get('meta_query');
+    };
+    check("R67-03: upload.php's main query hides generated images", $narrowed('upload.php', true), true);
+    check('  ...another query on that screen is left alone', $narrowed('upload.php', false), false);
+    check("  ...another plugin's admin-ajax query is left alone", $narrowed('admin-ajax.php', true), false);
 
     echo "\n$pass passed, $fail failed\n";
     exit($fail ? 1 : 0);

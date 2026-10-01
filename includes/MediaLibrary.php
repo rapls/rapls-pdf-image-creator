@@ -564,6 +564,17 @@ final class MediaLibrary
             return;
         }
 
+        // Only the Media Library's own list: the screen's main query. Any
+        // attachment query in the admin used to qualify -- another plugin's
+        // picker, a maintenance job -- and lost this plugin's images from its
+        // answer, with no way to ask for them (R67-03). The media modal asks
+        // through admin-ajax and is handled in allowPdfsInImageSelection().
+        global $pagenow;
+
+        if ('upload.php' !== $pagenow || !$query->is_main_query()) {
+            return;
+        }
+
         // Only filter media library queries
         if ($query->get('post_type') !== 'attachment') {
             return;
@@ -812,9 +823,15 @@ final class MediaLibrary
 
         global $wpdb;
 
+        // And the image the key names is there: a key left behind by an
+        // image deleted from the library let the PDF in, and the response
+        // then had no image for it (R67-01) -- getThumbnailId() asks the same.
         return $where . " AND ({$wpdb->posts}.post_mime_type <> 'application/pdf' OR EXISTS ("
-            . "SELECT 1 FROM {$wpdb->postmeta} rapls_pic_thumb WHERE rapls_pic_thumb.post_id = {$wpdb->posts}.ID"
-            . " AND rapls_pic_thumb.meta_key IN ('_rapls_pic_thumbnail_id', '_thumbnail_id') AND rapls_pic_thumb.meta_value NOT IN ('', '0')))";
+            . "SELECT 1 FROM {$wpdb->postmeta} rapls_pic_thumb"
+            . " INNER JOIN {$wpdb->posts} rapls_pic_image ON rapls_pic_image.ID = CAST(rapls_pic_thumb.meta_value AS UNSIGNED)"
+            . " WHERE rapls_pic_thumb.post_id = {$wpdb->posts}.ID"
+            . " AND rapls_pic_thumb.meta_key IN ('_rapls_pic_thumbnail_id', '_thumbnail_id') AND rapls_pic_thumb.meta_value NOT IN ('', '0')"
+            . " AND rapls_pic_image.post_type = 'attachment'))";
     }
 
     /**
@@ -862,6 +879,13 @@ final class MediaLibrary
             RAPLS_PIC_VERSION,
             true
         );
+
+        // A PDF dropped into the editor becomes an image block only if it
+        // will get a thumbnail on upload. With Auto Generate off it never
+        // does, and the block had a PDF and no image (R67-02).
+        wp_localize_script('pic-block-editor', 'raplsPicBlockEditor', [
+            'autoGenerate' => $this->settings->isAutoGenerateEnabled(),
+        ]);
     }
 
     /**

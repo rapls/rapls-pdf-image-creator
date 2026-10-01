@@ -30,11 +30,14 @@
                     if (transform.type === 'files' && transform.isMatch) {
                         const originalIsMatch = transform.isMatch;
                         transform.isMatch = function(files) {
-                            // Check if any file is a PDF
+                            // Check if any file is a PDF -- taken as an image
+                            // only when it will get a thumbnail on upload.
+                            // With Auto Generate off it never does (R67-02).
+                            const autoGenerate = !window.raplsPicBlockEditor || !!window.raplsPicBlockEditor.autoGenerate;
                             const hasPdf = Array.from(files).some(function(file) {
                                 return file.type === 'application/pdf';
                             });
-                            if (hasPdf) {
+                            if (hasPdf && autoGenerate) {
                                 return true;
                             }
                             return originalIsMatch(files);
