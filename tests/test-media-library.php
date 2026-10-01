@@ -135,6 +135,17 @@ namespace {
     $response = $library->filterAttachmentForJs(['url' => 'https://example.test/cover.jpg', 'mime' => 'image/jpeg'], $child, []);
     check("R66-03: someone else's image under a PDF keeps its URL", [$response['url'], isset($response['picIsThumbnail'])], ['https://example.test/cover.jpg', false]);
 
+    // R68-02: a generated image's REST response keeps core's source_url and link.
+    if (!class_exists('WP_REST_Response')) {
+        eval('final class WP_REST_Response { private $data; public function __construct($d = []) { $this->data = $d; } public function get_data() { return $this->data; } public function set_data($d) { $this->data = $d; } }');
+        eval('final class WP_REST_Request {}');
+    }
+    $GLOBALS['mimes'][210] = 'image/jpeg';
+    $GLOBALS['meta'][210]['_rapls_pic_is_thumbnail'] = '1';
+    $GLOBALS['meta'][210]['_rapls_pic_source_pdf'] = 10;
+    $rest = $library->filterRestAttachment(new WP_REST_Response(['id' => 210, 'mime_type' => 'image/jpeg', 'source_url' => 'https://example.test/doc-pdf-thumbnail.jpg', 'link' => 'https://example.test/?attachment_id=210']), new WP_Post(210, 10, 'image/jpeg'), new WP_REST_Request())->get_data();
+    check("R68-02: a generated image's source_url stays its own", [$rest['source_url'], $rest['link'], $rest['rapls_pic_source_pdf_id'] ?? null, $rest['rapls_pic_source_pdf_url'] ?? null], ['https://example.test/doc-pdf-thumbnail.jpg', 'https://example.test/?attachment_id=210', 10, 'https://example.test/10.pdf']);
+
     // R67-03: only the Media Library screen's main query hides generated images.
     if (!function_exists('is_admin')) { function is_admin() { return true; } }
     $hideOn = new ReflectionProperty(\Rapls\PDFImageCreator\Settings::class, 'settings');

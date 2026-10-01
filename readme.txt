@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.1
-Stable tag: 1.4.22
+Stable tag: 1.4.23
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -313,6 +313,11 @@ No other profile is bundled. CMYK profiles are read from the host when one is
 present and are never redistributed.
 
 == Changelog ==
+= 1.4.23 =
+* Fixed: dropping a PDF into the block editor together with a file that is neither an image nor a PDF -- a Word document, a ZIP -- no longer makes every file an image block. The image block takes the files only when all of them are images or PDFs
+* Changed: in the REST API, a generated thumbnail's source_url and link are now its own, as WordPress defines them, instead of the PDF's; the block editor reads source_url as the image to show. The PDF is still given in rapls_pic_source_pdf_id and rapls_pic_source_pdf_url. "Copy URL" in the Media Library still gives the PDF's URL
+* Changed: the block editor script now declares the WordPress packages it uses itself
+
 = 1.4.22 =
 * Fixed: with "Auto Generate" off, a PDF dropped into the block editor is no longer made into an image block. No thumbnail is made for it on upload, so the block had no image to show
 * Fixed: a PDF whose generated thumbnail has been deleted from the Media Library is no longer offered when choosing an image. The record of the thumbnail stayed behind, and that was enough to offer it
@@ -564,6 +569,9 @@ present and are never redistributed.
 * Japanese translation included
 
 == Upgrade Notice ==
+
+= 1.4.23 =
+A generated thumbnail's REST source_url is now its own image's URL; the PDF is in rapls_pic_source_pdf_url.
 
 = 1.4.22 =
 Image pickers and the block editor treat a PDF as an image only when it has a thumbnail, and the plugin no longer changes other plugins' attachment queries.

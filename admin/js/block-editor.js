@@ -34,10 +34,17 @@
                             // only when it will get a thumbnail on upload.
                             // With Auto Generate off it never does (R67-02).
                             const autoGenerate = !window.raplsPicBlockEditor || !!window.raplsPicBlockEditor.autoGenerate;
-                            const hasPdf = Array.from(files).some(function(file) {
+                            const list = Array.from(files);
+                            const hasPdf = list.some(function(file) {
                                 return file.type === 'application/pdf';
                             });
-                            if (hasPdf && autoGenerate) {
+                            // And every file is an image or a PDF, as core asks
+                            // every file to be an image: a PDF dropped with a
+                            // DOCX made both into image blocks (R68-01).
+                            const allImagesOrPdfs = list.every(function(file) {
+                                return file.type.indexOf('image/') === 0 || file.type === 'application/pdf';
+                            });
+                            if (hasPdf && autoGenerate && allImagesOrPdfs) {
                                 return true;
                             }
                             return originalIsMatch(files);

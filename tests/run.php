@@ -21,18 +21,29 @@ $suites = [
     'test-thumbnail-ownership.php',
     'test-regenerate.php',
     'test-uninstall.php',
+    // JavaScript, run with node when there is one.
+    'test-block-editor.js',
 ];
 $failed = [];
 
 foreach ($suites as $suite) {
     echo str_repeat('=', 70) . "\n$suite\n" . str_repeat('=', 70) . "\n";
 
+    $command = [PHP_BINARY, '-d', 'error_reporting=E_ALL & ~E_DEPRECATED', __DIR__ . '/' . $suite];
+
+    if ('.js' === substr($suite, -3)) {
+        $node = trim((string) @shell_exec('command -v node 2>/dev/null'));
+
+        if ('' === $node) {
+            echo "skipped: node not found\n\n";
+            continue;
+        }
+
+        $command = [$node, __DIR__ . '/' . $suite];
+    }
+
     $descriptors = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
-    $process = proc_open(
-        [PHP_BINARY, '-d', 'error_reporting=E_ALL & ~E_DEPRECATED', __DIR__ . '/' . $suite],
-        $descriptors,
-        $pipes
-    );
+    $process = proc_open($command, $descriptors, $pipes);
 
     if (!is_resource($process)) {
         $failed[] = $suite;

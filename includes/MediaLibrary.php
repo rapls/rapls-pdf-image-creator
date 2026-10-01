@@ -469,8 +469,11 @@ final class MediaLibrary
             $pdfUrl = wp_get_attachment_url((int) $sourcePdfId);
             if ($pdfUrl) {
                 $data = $response->get_data();
-                $data['source_url'] = $pdfUrl;
-                $data['link'] = get_attachment_link((int) $sourcePdfId);
+                // source_url and link stay core's: the REST schema defines
+                // source_url as this attachment's own file, and the block
+                // editor reads it as the image to show. Replaced with the
+                // PDF's, the response said image/jpeg and handed over a PDF
+                // (R68-02). The PDF is in the fields of this plugin's own.
                 $data['rapls_pic_source_pdf_id'] = (int) $sourcePdfId;
                 $data['rapls_pic_source_pdf_url'] = $pdfUrl;
                 $response->set_data($data);
@@ -875,7 +878,9 @@ final class MediaLibrary
         wp_enqueue_script(
             'pic-block-editor',
             RAPLS_PIC_PLUGIN_URL . 'admin/js/block-editor.js',
-            ['wp-blocks', 'wp-dom-ready', 'wp-edit-post'],
+            // What the script itself uses, not what wp-edit-post happens to
+            // bring along (R68-03). wp.media is optional and checked for.
+            ['wp-blocks', 'wp-hooks', 'wp-compose', 'wp-element', 'wp-dom-ready', 'wp-edit-post'],
             RAPLS_PIC_VERSION,
             true
         );
