@@ -104,6 +104,36 @@ namespace {
     @rmdir($uploads . '/2026');
     @rmdir($uploads);
 
+    // R66-01: the hide clause is ANDed with an existing meta query, not added to its OR.
+    if (!function_exists('apply_filters')) { function apply_filters($tag, $value, ...$args) { return $value; } }
+    $orQuery = ['relation' => 'OR', ['key' => 'a', 'value' => '1'], ['key' => 'b', 'value' => '1']];
+    $joined = \Rapls\PDFImageCreator\MediaLibrary::withoutGeneratedImages($orQuery);
+    check('R66-01: an OR query is kept whole and ANDed', [$joined['relation'] ?? null, $joined[0] ?? null, $joined[1]['relation'] ?? null, $joined[1][0]['compare'] ?? null], ['AND', $orQuery, 'OR', 'NOT EXISTS']);
+    check('  ...no query: the hide clause alone', count(\Rapls\PDFImageCreator\MediaLibrary::withoutGeneratedImages([])), 1);
+
+    // R66-02: an image picker gets PDFs only with a thumbnail.
+    if (!class_exists('WP_Query')) {
+        eval('final class WP_Query { private $vars; public function __construct(array $v = []) { $this->vars = $v; } public function get($k) { return $this->vars[$k] ?? ""; } }');
+    }
+    $GLOBALS['wpdb'] = (object) ['posts' => 'wp_posts', 'postmeta' => 'wp_postmeta'];
+    $args = $library->allowPdfsInImageSelection(['post_mime_type' => 'image']);
+    check('R66-02: an image query takes PDFs and is marked', [$args['post_mime_type'], $args['rapls_pic_image_pick'] ?? null], [['image', 'application/pdf'], true]);
+    $where = $library->limitPdfsToThumbnailed(' AND 1=1', new WP_Query($args));
+    check('  ...and its WHERE lets a PDF in only with a thumbnail key', [false !== strpos($where, "post_mime_type <> 'application/pdf' OR EXISTS"), false !== strpos($where, "'_rapls_pic_thumbnail_id', '_thumbnail_id'")], [true, true]);
+    check('  ...other queries are left alone', $library->limitPdfsToThumbnailed(' AND 1=1', new WP_Query(['post_mime_type' => 'image'])), ' AND 1=1');
+    check('  ...a non-image query is not marked', isset($library->allowPdfsInImageSelection(['post_mime_type' => 'application/pdf'])['rapls_pic_image_pick']), false);
+
+    // R66-03: an image attached to a PDF, without this plugin's marks, keeps its own URL.
+    if (!function_exists('wp_get_attachment_url')) { function wp_get_attachment_url($id) { return 'https://example.test/' . $id . '.pdf'; } }
+    if (!function_exists('get_attachment_link')) { function get_attachment_link($id) { return 'https://example.test/?attachment_id=' . $id; } }
+    $GLOBALS['mimes'][200] = 'image/jpeg';
+    if (!class_exists('WP_Post')) {
+        eval('final class WP_Post { public $ID; public $post_parent; public $post_mime_type; public $post_type = "attachment"; public function __construct($id, $parent, $mime) { $this->ID = $id; $this->post_parent = $parent; $this->post_mime_type = $mime; } }');
+    }
+    $child = new WP_Post(200, 10, 'image/jpeg');
+    $response = $library->filterAttachmentForJs(['url' => 'https://example.test/cover.jpg', 'mime' => 'image/jpeg'], $child, []);
+    check("R66-03: someone else's image under a PDF keeps its URL", [$response['url'], isset($response['picIsThumbnail'])], ['https://example.test/cover.jpg', false]);
+
     echo "\n$pass passed, $fail failed\n";
     exit($fail ? 1 : 0);
 }

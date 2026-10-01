@@ -89,6 +89,7 @@ final class MediaLibrary
 
         // Allow PDFs in image block media selection
         add_filter('ajax_query_attachments_args', [$this, 'allowPdfsInImageSelection']);
+        add_filter('posts_where', [$this, 'limitPdfsToThumbnailed'], 10, 2);
 
         // Add PDF support info to block editor
         add_action('enqueue_block_editor_assets', [$this, 'enqueueBlockEditorAssets']);
@@ -355,14 +356,11 @@ final class MediaLibrary
         $isThumbnail = get_post_meta($attachment->ID, '_rapls_pic_is_thumbnail', true);
         $sourcePdfId = get_post_meta($attachment->ID, '_rapls_pic_source_pdf', true);
 
-        // Also check by post_parent for older thumbnails without meta
-        if (empty($sourcePdfId) && $attachment->post_parent > 0) {
-            $parentMime = get_post_mime_type($attachment->post_parent);
-            if ($parentMime === 'application/pdf') {
-                $sourcePdfId = $attachment->post_parent;
-                $isThumbnail = true;
-            }
-        }
+        // The two marks only. A guess from post_parent -- "for older
+        // thumbnails without meta" -- took any image another plugin attached
+        // to a PDF for this plugin's, and gave it the PDF's URL. There are no
+        // such thumbnails: the first version published on WordPress.org
+        // (1.0.6) already set both marks (R66-03).
 
         if (!empty($isThumbnail) && !empty($sourcePdfId)) {
             $pdfUrl = wp_get_attachment_url((int) $sourcePdfId);
@@ -461,14 +459,11 @@ final class MediaLibrary
         $isThumbnail = get_post_meta($post->ID, '_rapls_pic_is_thumbnail', true);
         $sourcePdfId = get_post_meta($post->ID, '_rapls_pic_source_pdf', true);
 
-        // Also check by post_parent for older thumbnails without meta
-        if (empty($sourcePdfId) && $post->post_parent > 0) {
-            $parentMime = get_post_mime_type($post->post_parent);
-            if ($parentMime === 'application/pdf') {
-                $sourcePdfId = $post->post_parent;
-                $isThumbnail = true;
-            }
-        }
+        // The two marks only. A guess from post_parent -- "for older
+        // thumbnails without meta" -- took any image another plugin attached
+        // to a PDF for this plugin's, and gave it the PDF's URL. There are no
+        // such thumbnails: the first version published on WordPress.org
+        // (1.0.6) already set both marks (R66-03).
 
         if (!empty($isThumbnail) && !empty($sourcePdfId)) {
             $pdfUrl = wp_get_attachment_url((int) $sourcePdfId);
@@ -591,20 +586,7 @@ final class MediaLibrary
         }
 
         // Exclude thumbnails created by this plugin
-        $metaQuery = $query->get('meta_query') ?: [];
-        $metaQuery[] = [
-            'relation' => 'OR',
-            [
-                'key' => '_rapls_pic_is_thumbnail',
-                'compare' => 'NOT EXISTS',
-            ],
-            [
-                'key' => '_rapls_pic_is_thumbnail',
-                'value' => '1',
-                'compare' => '!=',
-            ],
-        ];
-        $query->set('meta_query', $metaQuery);
+        $query->set('meta_query', self::withoutGeneratedImages($query->get('meta_query')));
     }
 
     /**
@@ -784,20 +766,7 @@ final class MediaLibrary
         $hideThumbnails = apply_filters('rapls_pdf_image_creator_hide_thumbnails_in_library', $hideThumbnails);
 
         if ($hideThumbnails) {
-            $metaQuery = isset($query['meta_query']) ? $query['meta_query'] : [];
-            $metaQuery[] = [
-                'relation' => 'OR',
-                [
-                    'key' => '_rapls_pic_is_thumbnail',
-                    'compare' => 'NOT EXISTS',
-                ],
-                [
-                    'key' => '_rapls_pic_is_thumbnail',
-                    'value' => '1',
-                    'compare' => '!=',
-                ],
-            ];
-            $query['meta_query'] = $metaQuery;
+            $query['meta_query'] = self::withoutGeneratedImages($query['meta_query'] ?? []);
         }
 
         // Check if this is an image-only query
@@ -809,15 +778,76 @@ final class MediaLibrary
 
         // If querying for images, also include PDFs
         if ($mimeType === 'image' || (is_array($mimeType) && in_array('image', $mimeType, true))) {
-            // Include PDFs that have thumbnails
+            // Include PDFs that have thumbnails -- those only, which
+            // limitPdfsToThumbnailed() sees to. Every PDF went in, and one
+            // with no thumbnail reached an image picker as a plain PDF, with
+            // no image to show (R66-02).
             if (is_array($mimeType)) {
                 $query['post_mime_type'][] = 'application/pdf';
             } else {
                 $query['post_mime_type'] = ['image', 'application/pdf'];
             }
+
+            $query['rapls_pic_image_pick'] = true;
         }
 
         return $query;
+    }
+
+    /**
+     * In an image picker, a PDF only when it has a thumbnail to show
+     *
+     * The same two keys getThumbnailId() reads. A PDF is let through on the
+     * key alone; one whose image has since gone shows as a PDF, as anywhere
+     * else in the library.
+     *
+     * @param string    $where The query's WHERE clause
+     * @param \WP_Query $query The query
+     */
+    public function limitPdfsToThumbnailed(string $where, $query): string
+    {
+        if (!$query instanceof \WP_Query || !$query->get('rapls_pic_image_pick')) {
+            return $where;
+        }
+
+        global $wpdb;
+
+        return $where . " AND ({$wpdb->posts}.post_mime_type <> 'application/pdf' OR EXISTS ("
+            . "SELECT 1 FROM {$wpdb->postmeta} rapls_pic_thumb WHERE rapls_pic_thumb.post_id = {$wpdb->posts}.ID"
+            . " AND rapls_pic_thumb.meta_key IN ('_rapls_pic_thumbnail_id', '_thumbnail_id') AND rapls_pic_thumb.meta_value NOT IN ('', '0')))";
+    }
+
+    /**
+     * Add "not a generated image" to a meta query, as a clause of its own
+     *
+     * Appended to the same level, it joined whatever relation the query
+     * already had: under 'OR' it widened another plugin's conditions instead
+     * of narrowing them (R66-01). The existing query is kept whole and the
+     * two are joined with AND.
+     *
+     * @param mixed $metaQuery The query's meta_query, as given
+     * @return array<int|string, mixed>
+     */
+    public static function withoutGeneratedImages($metaQuery): array
+    {
+        $hide = [
+            'relation' => 'OR',
+            [
+                'key' => '_rapls_pic_is_thumbnail',
+                'compare' => 'NOT EXISTS',
+            ],
+            [
+                'key' => '_rapls_pic_is_thumbnail',
+                'value' => '1',
+                'compare' => '!=',
+            ],
+        ];
+
+        if (!is_array($metaQuery) || [] === $metaQuery) {
+            return [$hide];
+        }
+
+        return ['relation' => 'AND', $metaQuery, $hide];
     }
 
     /**

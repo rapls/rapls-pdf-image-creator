@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.1
-Stable tag: 1.4.20
+Stable tag: 1.4.21
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -313,6 +313,11 @@ No other profile is bundled. CMYK profiles are read from the host when one is
 present and are never redistributed.
 
 == Changelog ==
+= 1.4.21 =
+* Fixed: when choosing an image -- in the image block, or any picker that takes images -- a PDF is now offered only if it has a thumbnail. A PDF with none was offered too, and picked, it gave the picker a PDF with no image to show
+* Fixed: hiding generated images from the Media Library no longer widens another plugin's own search conditions. Added to a query whose conditions were joined with OR, it became one more alternative instead of a further condition
+* Fixed: an image that another plugin attached to a PDF is no longer taken for this plugin's thumbnail. Only images carrying this plugin's own marks are, and the Media Library and the REST API now show such an image's own URL instead of the PDF's
+
 = 1.4.20 =
 * Fixed: deleting the plugin from a multisite network now cleans up every site, each by its own "Keep Images on Uninstall" setting. Before, only the site it was deleted from was cleaned up, and the other sites kept the plugin's settings, its markers on PDFs and images, and -- with that setting off -- the generated images
 
@@ -554,6 +559,9 @@ present and are never redistributed.
 * Japanese translation included
 
 == Upgrade Notice ==
+
+= 1.4.21 =
+Image pickers offer a PDF only when it has a thumbnail, and the plugin no longer changes other plugins' Media Library searches.
 
 = 1.4.20 =
 Includes the 1.4.12 security fix. Deleting the plugin from a multisite network now cleans up every site.
