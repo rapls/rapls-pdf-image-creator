@@ -965,6 +965,18 @@ final class ImagickEngine implements EngineInterface
      */
     private function readPage(\Imagick $imagick, string $pdfPath, int $page, int $resolution): \Imagick
     {
+        // Not a PDF: a raster an add-on drew with Ghostscript and hands over
+        // to be finished. The retries below are about how Ghostscript renders
+        // a PDF, and run on a raster they read it twice more for nothing --
+        // and wrote what they found into this server's answers, so a black
+        // cover finished this way told the Status tab that Ghostscript needs
+        // no -dNOTRANSPARENCY here when it had been measured to.
+        if (!self::looksLikePdf($pdfPath)) {
+            $imagick->readImage($pdfPath . '[' . $page . ']');
+
+            return $imagick;
+        }
+
         $imagick = $this->readPageDirect($imagick, $pdfPath, $page, $resolution);
 
         if (!$this->looksEmpty($imagick)) {
@@ -980,6 +992,27 @@ final class ImagickEngine implements EngineInterface
         $imagick->clear();
 
         return $rescued;
+    }
+
+    /**
+     * Does the file start like a PDF?
+     *
+     * The header may sit anywhere in the first 1024 bytes, as readers allow.
+     * A file that cannot be read is treated as a PDF: the read that follows
+     * reports the real problem.
+     */
+    private static function looksLikePdf(string $path): bool
+    {
+        $handle = @fopen($path, 'rb');
+
+        if (false === $handle) {
+            return true;
+        }
+
+        $head = (string) fread($handle, 1024);
+        fclose($handle);
+
+        return false !== strpos($head, '%PDF-');
     }
 
     /**

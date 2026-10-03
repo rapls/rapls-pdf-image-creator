@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.1
-Stable tag: 1.4.23
+Stable tag: 1.4.24
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -313,6 +313,9 @@ No other profile is bundled. CMYK profiles are read from the host when one is
 present and are never redistributed.
 
 == Changelog ==
+= 1.4.24 =
+* Fixed: when an add-on hands over a page it has already drawn as an image to be finished as a thumbnail, it is no longer read again by the routes meant for PDFs. On a page of a single colour those two extra reads cost time, and what they found was saved as this server's answer about how Ghostscript renders PDFs, which could take away the Status tab's note that this host needs -dNOTRANSPARENCY
+
 = 1.4.23 =
 * Fixed: dropping a PDF into the block editor together with a file that is neither an image nor a PDF -- a Word document, a ZIP -- no longer makes every file an image block. The image block takes the files only when all of them are images or PDFs
 * Changed: in the REST API, a generated thumbnail's source_url and link are now its own, as WordPress defines them, instead of the PDF's; the block editor reads source_url as the image to show. The PDF is still given in rapls_pic_source_pdf_id and rapls_pic_source_pdf_url. "Copy URL" in the Media Library still gives the PDF's URL
@@ -569,6 +572,9 @@ present and are never redistributed.
 * Japanese translation included
 
 == Upgrade Notice ==
+
+= 1.4.24 =
+An image handed over by an add-on to be finished is no longer read as a PDF, so this server's measured Ghostscript settings are kept.
 
 = 1.4.23 =
 A generated thumbnail's REST source_url is now its own image's URL; the PDF is in rapls_pic_source_pdf_url.

@@ -258,6 +258,23 @@ check('  ...and recorded as not the suffix', $GLOBALS['transients']['rapls_pic_p
 check('a blank page on a server whose suffix works is read once', in_array('readImage(whole)', $log, true), false);
 check('  ...with the page suffix', in_array('readImage[n]', $log, true), true);
 
+// A raster an add-on drew with Ghostscript and hands over to be finished is
+// not a PDF: a flat one is read once, and nothing is written into this
+// server's answers about how Ghostscript renders PDFs.
+$pdfWas = $pdf;
+$pdf = RAPLS_PIC_TEST_TMP . '/raster.png';
+file_put_contents($pdf, "\x89PNG\r\n\x1a\nraster");
+Imagick::$emptyFor = ['suffix' => true, 'whole' => true];
+Imagick::$flatColor = ['r' => 0, 'g' => 0, 'b' => 0];
+[$r, $log] = run(['format' => 'jpeg'], Imagick::COLORSPACE_CMYK, true, function () {
+    set_transient('rapls_pic_gs_options', 'yes', 604800);
+});
+check('a raster that is not a PDF is read once, without the PDF retries', [substr_count(implode(' ', $log), 'readImage'), in_array('readImage(whole)', $log, true)], [1, false]);
+check('  ...and this server\'s answers are left as they were', [$GLOBALS['transients']['rapls_pic_page_suffix'] ?? null, $GLOBALS['transients']['rapls_pic_gs_options'] ?? null], [null, 'yes']);
+@unlink($pdf);
+$pdf = $pdfWas;
+Imagick::$flatColor = ['r' => 255, 'g' => 255, 'b' => 255];
+
 // Once known broken, the suffix is not tried at all.
 Imagick::$emptyFor = ['suffix' => true, 'whole' => false];
 [$r, $log] = run(['format' => 'jpeg'], Imagick::COLORSPACE_CMYK, true, function () {
