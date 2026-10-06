@@ -185,6 +185,18 @@ echo "\n--- the Ghostscript blank-page retry ---\n";
 reset_state();
 check('this process may set its own environment', priv($engine, $ref, 'canSetEnvironment'), true);
 
+// disable_functions read as PHP reads it: compared with PHP's own answer, in
+// a child process started with each list.
+foreach (['putenv', 'exec putenv', 'exec,putenv', 'exec , putenv', 'PUTENV', "exec\tputenv", 'putenvx', ''] as $list) {
+    $out = [];
+    exec(escapeshellarg(PHP_BINARY) . ' -n -d ' . escapeshellarg('disable_functions=' . $list) . ' -r ' . escapeshellarg('echo function_exists("putenv") ? "on" : "off";'), $out);
+    check(
+        sprintf('disable_functions %s: putenv %s, as PHP says', json_encode($list), implode('', $out)),
+        priv($engine, $ref, 'isListedDisabled', 'putenv', $list) ? 'off' : 'on',
+        implode('', $out)
+    );
+}
+
 reset_state();
 Imagick::$blankWithoutGsOptions = true;
 $page = priv($engine, $ref, 'readPage', new Imagick(), '/tmp/none.pdf', 0, 150);

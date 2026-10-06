@@ -1289,13 +1289,26 @@ final class ImagickEngine implements EngineInterface
             return false;
         }
 
-        foreach (explode(',', (string) ini_get('disable_functions')) as $name) {
-            if ('putenv' === strtolower(trim($name))) {
-                return false;
+        return !self::isListedDisabled('putenv', (string) ini_get('disable_functions'));
+    }
+
+    /**
+     * Is this name on a disable_functions list, read the way PHP reads it?
+     *
+     * PHP splits the list on spaces and commas only, and takes each name as
+     * written. This split on commas alone and lowered the case: "exec putenv"
+     * was one name that disabled nothing here, and "PUTENV" -- which PHP does
+     * not disable -- turned the blank-page retry off.
+     */
+    private static function isListedDisabled(string $function, string $list): bool
+    {
+        foreach ((array) preg_split('/[ ,]+/', $list, -1, PREG_SPLIT_NO_EMPTY) as $name) {
+            if ($function === (string) $name) {
+                return true;
             }
         }
 
-        return true;
+        return false;
     }
 
     /**

@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.1
-Stable tag: 1.4.24
+Stable tag: 1.4.25
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -313,6 +313,9 @@ No other profile is bundled. CMYK profiles are read from the host when one is
 present and are never redistributed.
 
 == Changelog ==
+= 1.4.25 =
+* Fixed: the list of functions a host disables is read the way PHP reads it, split on spaces as well as commas and with each name taken as written. A list such as "exec putenv" was read as one name, and "PUTENV", which PHP does not disable, turned off the retry that recovers blank pages on hosts that need -dNOTRANSPARENCY
+
 = 1.4.24 =
 * Fixed: when an add-on hands over a page it has already drawn as an image to be finished as a thumbnail, it is no longer read again by the routes meant for PDFs. On a page of a single colour those two extra reads cost time, and what they found was saved as this server's answer about how Ghostscript renders PDFs, which could take away the Status tab's note that this host needs -dNOTRANSPARENCY
 
@@ -572,6 +575,9 @@ present and are never redistributed.
 * Japanese translation included
 
 == Upgrade Notice ==
+
+= 1.4.25 =
+Disabled functions are read as PHP reads them, so the blank-page retry is no longer turned off by a name PHP does not disable.
 
 = 1.4.24 =
 An image handed over by an add-on to be finished is no longer read as a PDF, so this server's measured Ghostscript settings are kept.
