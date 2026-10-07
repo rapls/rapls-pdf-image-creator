@@ -21,21 +21,22 @@ if (!defined('ABSPATH')) {
     </p>
 
     <div class="rapls-pic-tabs">
-        <nav class="nav-tab-wrapper">
-            <a href="#tab-settings" class="nav-tab nav-tab-active" data-tab="settings">
+        <?php // The tab pattern, so a screen reader says which tab is chosen; admin.js keeps the states and the arrow keys (Codex review of 1.4.26, 4). ?>
+        <nav class="nav-tab-wrapper" role="tablist">
+            <a href="#tab-settings" id="rapls-pic-tab-link-settings" class="nav-tab nav-tab-active" data-tab="settings" role="tab" aria-controls="tab-settings" aria-selected="true">
                 <?php esc_html_e('Settings', 'rapls-pdf-image-creator'); ?>
             </a>
-            <a href="#tab-bulk" class="nav-tab" data-tab="bulk">
+            <a href="#tab-bulk" id="rapls-pic-tab-link-bulk" class="nav-tab" data-tab="bulk" role="tab" aria-controls="tab-bulk" aria-selected="false">
                 <?php esc_html_e('Bulk Generate', 'rapls-pdf-image-creator'); ?>
             </a>
-            <a href="#tab-status" class="nav-tab" data-tab="status">
+            <a href="#tab-status" id="rapls-pic-tab-link-status" class="nav-tab" data-tab="status" role="tab" aria-controls="tab-status" aria-selected="false">
                 <?php esc_html_e('Status', 'rapls-pdf-image-creator'); ?>
             </a>
         </nav>
     </div>
 
     <!-- Settings Tab -->
-    <div id="tab-settings" class="rapls-pic-tab-content active">
+    <div id="tab-settings" class="rapls-pic-tab-content active" role="tabpanel" aria-labelledby="rapls-pic-tab-link-settings">
         <form method="post" action="options.php">
             <?php settings_fields('rapls_pic_settings_group'); ?>
 
@@ -356,7 +357,7 @@ if (!defined('ABSPATH')) {
     </div>
 
     <!-- Bulk Generate Tab -->
-    <div id="tab-bulk" class="rapls-pic-tab-content">
+    <div id="tab-bulk" class="rapls-pic-tab-content" role="tabpanel" aria-labelledby="rapls-pic-tab-link-bulk">
         <h2><?php esc_html_e('Bulk Generate Thumbnails', 'rapls-pdf-image-creator'); ?></h2>
 
         <p class="description">
@@ -400,20 +401,20 @@ if (!defined('ABSPATH')) {
                         <td id="rapls-pic-bulk-rows">0</td>
                     </tr>
                     <tr id="rapls-pic-bulk-note-row" style="display:none;">
-                        <td colspan="2" id="rapls-pic-bulk-note"></td>
+                        <td colspan="2" id="rapls-pic-bulk-note" role="status"></td>
                     </tr>
                 </tbody>
             </table>
         </div>
 
         <div id="rapls-pic-bulk-progress" style="display: none;">
-            <h3><?php esc_html_e('Progress', 'rapls-pdf-image-creator'); ?></h3>
+            <h3 id="rapls-pic-progress-heading"><?php esc_html_e('Progress', 'rapls-pdf-image-creator'); ?></h3>
 
-            <div class="rapls-pic-progress-bar">
+            <div class="rapls-pic-progress-bar" id="rapls-pic-progress" role="progressbar" aria-labelledby="rapls-pic-progress-heading" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
                 <div class="rapls-pic-progress-bar-inner" id="rapls-pic-progress-bar" style="width: 0%"></div>
             </div>
 
-            <p id="rapls-pic-bulk-status"><?php esc_html_e('Ready', 'rapls-pdf-image-creator'); ?></p>
+            <p id="rapls-pic-bulk-status" role="status" aria-live="polite"><?php esc_html_e('Ready', 'rapls-pdf-image-creator'); ?></p>
 
             <table class="widefat rapls-pic-stats-table">
                 <tbody>
@@ -430,13 +431,13 @@ if (!defined('ABSPATH')) {
 
             <div id="rapls-pic-bulk-log" class="rapls-pic-log-container" style="display: none;">
                 <h4><?php esc_html_e('Log', 'rapls-pdf-image-creator'); ?></h4>
-                <div class="rapls-pic-log-content"></div>
+                <div class="rapls-pic-log-content" role="log" aria-live="polite"></div>
             </div>
         </div>
     </div>
 
     <!-- Status Tab -->
-    <div id="tab-status" class="rapls-pic-tab-content">
+    <div id="tab-status" class="rapls-pic-tab-content" role="tabpanel" aria-labelledby="rapls-pic-tab-link-status">
         <h2><?php esc_html_e('Server Status', 'rapls-pdf-image-creator'); ?></h2>
 
         <p class="description">

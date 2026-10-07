@@ -58,6 +58,62 @@
     );
 
     /**
+     * A PDF the image block can show: one with a thumbnail
+     *
+     * The server marks those (picThumbnailId, MediaLibrary::filterAttachmentForJs).
+     * The library offers only those, but a PDF uploaded in the same window
+     * is offered too, and with Auto Generate off -- or a generation that
+     * failed -- it has no thumbnail: the image block took a PDF with no image
+     * to show (Codex review of 1.4.26, 3).
+     */
+    function isPdfWithoutThumbnail(media) {
+        // Or a picture to show: some frames pass a slimmed copy that drops
+        // the mark but keeps the sizes the server built from the thumbnail.
+        const hasPicture = !!(media && media.sizes && media.sizes.full && media.sizes.full.url);
+
+        return !!media
+            && ('application/pdf' === media.mime || 'application/pdf' === media.mime_type)
+            && !media.picThumbnailId
+            && !hasPicture;
+    }
+
+    /**
+     * Pass on what was chosen, without the PDFs that have no thumbnail
+     *
+     * Those are left out, and the editor says why. Nothing is passed on when
+     * nothing is left.
+     */
+    function onlyWithThumbnails(onSelect) {
+        if ('function' !== typeof onSelect) {
+            return onSelect;
+        }
+
+        return function(media) {
+            const list = Array.isArray(media) ? media : [media];
+            const kept = list.filter(function(item) {
+                return !isPdfWithoutThumbnail(item);
+            });
+
+            if (kept.length === list.length) {
+                return onSelect(media);
+            }
+
+            const settings = window.raplsPicBlockEditor || {};
+            const message = settings.noThumbnail || 'This PDF has no thumbnail, so it cannot be shown as an image.';
+
+            if (wp.data && wp.data.dispatch && wp.data.dispatch('core/notices')) {
+                wp.data.dispatch('core/notices').createErrorNotice(message, { type: 'snackbar', id: 'rapls-pic-no-thumbnail' });
+            }
+
+            if (Array.isArray(media) && kept.length > 0) {
+                return onSelect(kept);
+            }
+
+            return undefined;
+        };
+    }
+
+    /**
      * Modify the MediaUpload component to accept PDFs
      */
     addFilter(
@@ -71,8 +127,11 @@
                     if (!newAllowedTypes.includes('application/pdf')) {
                         newAllowedTypes.push('application/pdf');
                     }
+                    // Not the gallery: its frame hands over slimmed copies, and
+                    // it already keeps only what has a URL to show.
                     return wp.element.createElement(MediaUpload, Object.assign({}, props, {
-                        allowedTypes: newAllowedTypes
+                        allowedTypes: newAllowedTypes,
+                        onSelect: props.gallery ? props.onSelect : onlyWithThumbnails(props.onSelect)
                     }));
                 }
                 return wp.element.createElement(MediaUpload, props);

@@ -892,6 +892,12 @@ msgstr "いまの PDF が終わったら停止します..."
 msgid "Continue"
 msgstr "続ける"
 
+msgid "This PDF has no thumbnail, so it cannot be shown as an image. Generate its thumbnail in the Media Library, then choose it again."
+msgstr "この PDF にはサムネイルが無いため、画像として表示できません。メディアライブラリでサムネイルを生成してから、もう一度選んでください。"
+
+msgid "This PDF has no thumbnail, so it cannot be shown as an image: automatic thumbnail generation is off. Generate its thumbnail in the Media Library, then choose it again."
+msgstr "この PDF にはサムネイルが無いため、画像として表示できません（サムネイルの自動生成がオフです）。メディアライブラリでサムネイルを生成してから、もう一度選んでください。"
+
 #. translators: %d: number of PDFs looked at so far
 #, php-format
 msgid "Scanning... %d PDFs so far"

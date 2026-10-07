@@ -312,8 +312,9 @@ final class Generator
             return $this->fail($pdfId, $status['code'], $status['summary']);
         }
 
-        // Prepare output path
-        $uploadDir = wp_upload_dir();
+        // Prepare output path: next to the PDF. (wp_upload_dir() was asked
+        // here too and never read -- a run of every upload_dir filter for
+        // nothing; Codex review of 1.4.26, 5.)
         $pdfDir = dirname($pdfPath);
         $pdfBasename = pathinfo($pdfPath, PATHINFO_FILENAME);
         // The format, filtered once and before the name is chosen: the name's

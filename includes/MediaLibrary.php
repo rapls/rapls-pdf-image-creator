@@ -880,7 +880,7 @@ final class MediaLibrary
             RAPLS_PIC_PLUGIN_URL . 'admin/js/block-editor.js',
             // What the script itself uses, not what wp-edit-post happens to
             // bring along (R68-03). wp.media is optional and checked for.
-            ['wp-blocks', 'wp-hooks', 'wp-compose', 'wp-element', 'wp-dom-ready', 'wp-edit-post'],
+            ['wp-blocks', 'wp-hooks', 'wp-compose', 'wp-element', 'wp-dom-ready', 'wp-edit-post', 'wp-data', 'wp-notices'],
             RAPLS_PIC_VERSION,
             true
         );
@@ -890,6 +890,12 @@ final class MediaLibrary
         // does, and the block had a PDF and no image (R67-02).
         wp_localize_script('pic-block-editor', 'raplsPicBlockEditor', [
             'autoGenerate' => $this->settings->isAutoGenerateEnabled(),
+            // Said when a PDF without a thumbnail is chosen for an image
+            // block -- one uploaded in the media window with Auto Generate
+            // off, or whose generation failed (Codex review of 1.4.26, 3).
+            'noThumbnail' => $this->settings->isAutoGenerateEnabled()
+                ? __('This PDF has no thumbnail, so it cannot be shown as an image. Generate its thumbnail in the Media Library, then choose it again.', 'rapls-pdf-image-creator')
+                : __('This PDF has no thumbnail, so it cannot be shown as an image: automatic thumbnail generation is off. Generate its thumbnail in the Media Library, then choose it again.', 'rapls-pdf-image-creator'),
         ]);
     }
 

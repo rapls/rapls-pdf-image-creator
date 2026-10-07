@@ -13,6 +13,12 @@
     const Tabs = {
         init: function() {
             $('.rapls-pic-tabs .nav-tab').on('click', this.switchTab);
+            $('.rapls-pic-tabs .nav-tab').on('keydown', this.moveWithKeys);
+
+            // Only the chosen tab in the Tab order -- set here, not in the
+            // markup, so without this script every tab is still a link the
+            // keyboard reaches.
+            $('.rapls-pic-tabs .nav-tab').not('.nav-tab-active').attr('tabindex', '-1');
 
             // Handle hash in URL
             const hash = window.location.hash;
@@ -28,10 +34,45 @@
             Tabs.activateTab(tabName);
         },
 
+        // The arrow keys, Home and End move between tabs, as the tab pattern
+        // has them; Tab itself goes on to the chosen tab's panel.
+        moveWithKeys: function(e) {
+            const $tabs = $('.rapls-pic-tabs .nav-tab');
+            const at = $tabs.index(this);
+            let to = -1;
+
+            if ('ArrowRight' === e.key || 'ArrowDown' === e.key) {
+                to = (at + 1) % $tabs.length;
+            } else if ('ArrowLeft' === e.key || 'ArrowUp' === e.key) {
+                to = (at - 1 + $tabs.length) % $tabs.length;
+            } else if ('Home' === e.key) {
+                to = 0;
+            } else if ('End' === e.key) {
+                to = $tabs.length - 1;
+            }
+
+            if (to < 0) {
+                return;
+            }
+
+            e.preventDefault();
+            const $to = $tabs.eq(to);
+            Tabs.activateTab($to.data('tab'));
+            $to.trigger('focus');
+        },
+
         activateTab: function(tabName) {
-            // Update nav tabs
-            $('.rapls-pic-tabs .nav-tab').removeClass('nav-tab-active');
-            $('.rapls-pic-tabs .nav-tab[data-tab="' + tabName + '"]').addClass('nav-tab-active');
+            // A name no tab has -- "#tab-foo" in the address -- changes
+            // nothing: unselecting every tab left none the Tab key could reach.
+            if (!$('.rapls-pic-tabs .nav-tab[data-tab="' + tabName + '"]').length) {
+                return;
+            }
+
+            // Update nav tabs, and what a screen reader is told of them
+            // (Codex review of 1.4.26, 4): the chosen one is selected and is
+            // the one the Tab key lands on.
+            $('.rapls-pic-tabs .nav-tab').removeClass('nav-tab-active').attr('aria-selected', 'false').attr('tabindex', '-1');
+            $('.rapls-pic-tabs .nav-tab[data-tab="' + tabName + '"]').addClass('nav-tab-active').attr('aria-selected', 'true').removeAttr('tabindex');
 
             // Update content
             $('.rapls-pic-tab-content').removeClass('active');
@@ -236,6 +277,23 @@
                     force: this.force ? 1 : 0
                 },
                 success: function(response) {
+                    // Stop pressed while the next PDF was being looked for:
+                    // nothing is being drawn, so nothing more starts. The
+                    // cursor stays, and Continue looks for the same PDF again
+                    // (Codex review of 1.4.26, 2).
+                    if (self.stopRequested) {
+                        // The end reached meanwhile is the end, not a stop;
+                        // empty pages looked through are not looked at again.
+                        if (response.success && response.data && !response.data.pdf_id) {
+                            self.after = response.data.after;
+                            self.finish(!!response.data.done);
+                            return;
+                        }
+
+                        self.finish(false);
+                        return;
+                    }
+
                     if (!response.success) {
                         self.log('✗ ' + ((response.data && response.data.message) || raplsPicAdmin.i18n.requestFailed), 'error');
                         self.finish(false);
@@ -320,6 +378,7 @@
         updateStats: function() {
             const percent = this.total > 0 ? Math.min(100, Math.round((this.done / this.total) * 100)) : 100;
             $('#rapls-pic-progress-bar').css('width', percent + '%');
+            $('#rapls-pic-progress').attr('aria-valuenow', percent);
             $('#rapls-pic-stat-generated').text(this.generated);
             $('#rapls-pic-stat-failed').text(this.failed);
         },

@@ -20,20 +20,16 @@ final class BulkProcessor
     private Generator $generator;
 
     /**
-     * Settings instance
-     */
-    private Settings $settings;
-
-    /**
      * Constructor
      *
+     * The settings were taken and kept too, and never read (Codex review of
+     * 1.4.26, 5).
+     *
      * @param Generator $generator Thumbnail generator
-     * @param Settings $settings Settings manager
      */
-    public function __construct(Generator $generator, Settings $settings)
+    public function __construct(Generator $generator)
     {
         $this->generator = $generator;
-        $this->settings = $settings;
     }
 
     /**

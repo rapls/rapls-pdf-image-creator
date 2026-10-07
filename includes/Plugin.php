@@ -90,7 +90,7 @@ final class Plugin
         $this->generator = new Generator($this->settings);
         $this->mediaLibrary = new MediaLibrary($this->generator, $this->settings);
         $this->inserter = new Inserter($this->generator, $this->settings);
-        $this->bulkProcessor = new BulkProcessor($this->generator, $this->settings);
+        $this->bulkProcessor = new BulkProcessor($this->generator);
     }
 
     /**

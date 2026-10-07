@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.1
-Stable tag: 1.4.26
+Stable tag: 1.4.27
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -315,6 +315,12 @@ No other profile is bundled. CMYK profiles are read from the host when one is
 present and are never redistributed.
 
 == Changelog ==
+= 1.4.27 =
+* Fixed: Bulk Generate's Stop, pressed while the next PDF is being looked for, no longer starts drawing the PDF that is found; Continue looks for it again. A run that reaches the end meanwhile says Complete
+* Fixed: an image block no longer takes a PDF that has no thumbnail -- one uploaded in the media window while Auto Generate is off, or one whose thumbnail could not be made. The editor says why. PDFs with thumbnails can still be chosen, with Auto Generate on or off, and galleries are unchanged
+* Changed: the settings tabs and Bulk Generate's progress are announced to screen readers: the tabs say which one is chosen and move with the arrow keys, Home and End, and the progress bar, status line and log are read out as they change
+* Changed: two pieces of unused code are gone, one of which ran the upload_dir filter once more for every thumbnail generated
+
 = 1.4.26 =
 * Fixed: Bulk Generate no longer reads the whole Media Library at once. Scanning, the statistics and finding the next PDF each read 200 PDFs per request, and the browser no longer holds the list of every PDF, so large libraries can be scanned and generated without running out of memory or time
 * Changed: Bulk Generate's Stop button says it stops after the current PDF, which the server has already started on; that PDF's result is still counted. After stopping, Continue carries on from the next PDF, and a new scan starts from the beginning. A PDF whose request fails is counted as failed and the run goes on to the next one, as before
@@ -583,6 +589,9 @@ present and are never redistributed.
 * Japanese translation included
 
 == Upgrade Notice ==
+
+= 1.4.27 =
+Stop no longer starts a new PDF, image blocks no longer take PDFs without a thumbnail, and the settings screen is clearer to screen readers.
 
 = 1.4.26 =
 Bulk Generate reads large Media Libraries a page at a time, Stop waits for the current PDF, and shortcodes keep several classes.

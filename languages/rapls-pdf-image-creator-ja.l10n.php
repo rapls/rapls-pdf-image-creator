@@ -211,6 +211,8 @@ return array (
     'The server was checked again just now.' => 'サーバーを再検査しました。',
     'The test could not be run, so this is a guess based on the version number rather than a measurement. What stopped it: %s' => 'テストを実行できなかったため、これは実測ではなくバージョン番号からの推測です。実行できなかった理由: %s',
     'There are no PDF files in the Media Library. Uploading a PDF over FTP or SSH does not add it — it has to go through Media > Add New.' => 'メディアライブラリに PDF ファイルがありません。FTP や SSH でアップロードしただけでは登録されません —「メディア」>「新規追加」から追加する必要があります。',
+    'This PDF has no thumbnail, so it cannot be shown as an image. Generate its thumbnail in the Media Library, then choose it again.' => 'この PDF にはサムネイルが無いため、画像として表示できません。メディアライブラリでサムネイルを生成してから、もう一度選んでください。',
+    'This PDF has no thumbnail, so it cannot be shown as an image: automatic thumbnail generation is off. Generate its thumbnail in the Media Library, then choose it again.' => 'この PDF にはサムネイルが無いため、画像として表示できません（サムネイルの自動生成がオフです）。メディアライブラリでサムネイルを生成してから、もう一度選んでください。',
     'This build renders CMYK PDFs through the %s device.' => 'このビルドは CMYK の PDF を %s デバイスで描画します。',
     'This clears itself the next time a thumbnail is generated successfully.' => '次にサムネイルの生成が成功した時点で、この表示は消えます。',
     'This plugin requires ImageMagick (Imagick PHP extension) with PDF support to generate thumbnails.' => 'このプラグインはサムネイル生成に ImageMagick (Imagick PHP 拡張) と PDF サポートが必要です。',
