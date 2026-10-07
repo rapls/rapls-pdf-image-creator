@@ -55,18 +55,32 @@
 
     /**
      * Bulk processor functionality
+     *
+     * The library is read a page at a time on the server, from a cursor this
+     * hands back: the scan counts, and each generate request finds the next
+     * PDF after the cursor and draws it. Nothing here holds the list of PDFs.
      */
     const BulkProcessor = {
-        pdfs: [],
-        currentIndex: 0,
+        total: 0,
+        done: 0,
+        after: 0,
+        force: false,
         generated: 0,
         failed: 0,
         isRunning: false,
+        stopRequested: false,
+        canContinue: false,
 
         init: function() {
             $('#rapls-pic-bulk-scan').on('click', this.scan.bind(this));
             $('#rapls-pic-bulk-start').on('click', this.start.bind(this));
             $('#rapls-pic-bulk-stop').on('click', this.stop.bind(this));
+            $('#rapls-pic-bulk-start').data('original-text', $('#rapls-pic-bulk-start').text());
+        },
+
+        scanFailed: function(message) {
+            $('#rapls-pic-bulk-scan').prop('disabled', false).text($('#rapls-pic-bulk-scan').data('original-text') || raplsPicAdmin.i18n.scan);
+            alert(message);
         },
 
         scan: function() {
@@ -74,130 +88,203 @@
             const includeExisting = $('#rapls-pic-include-existing').is(':checked');
 
             $('#rapls-pic-bulk-scan').prop('disabled', true).text(raplsPicAdmin.i18n.processing);
+            $('#rapls-pic-bulk-start').prop('disabled', true).text($('#rapls-pic-bulk-start').data('original-text'));
             $('#rapls-pic-bulk-results').hide();
             $('#rapls-pic-bulk-progress').hide();
+            this.canContinue = false;
+
+            const page = function(after, counts) {
+                $.ajax({
+                    url: raplsPicAdmin.ajaxUrl,
+                    type: 'POST',
+                    data: {
+                        action: 'rapls_pic_bulk_scan',
+                        nonce: raplsPicAdmin.nonce,
+                        include_existing: includeExisting ? 1 : 0,
+                        after: after,
+                        total_pdfs: counts.total_pdfs,
+                        with_thumbnail: counts.with_thumbnail
+                    },
+                    success: function(response) {
+                        if (!response.success) {
+                            self.scanFailed((response.data && response.data.message) || raplsPicAdmin.i18n.error);
+                            return;
+                        }
+
+                        if (!response.data.done) {
+                            $('#rapls-pic-bulk-scan').text(raplsPicAdmin.i18n.scanning.replace('%d', response.data.total_pdfs));
+                            page(response.data.after, response.data);
+                            return;
+                        }
+
+                        self.showScan(response.data, includeExisting);
+                    },
+                    error: function(xhr, status, error) {
+                        self.scanFailed(raplsPicAdmin.i18n.error + '\n\n' + raplsPicAdmin.i18n.httpStatus.replace('%s', status) + '\n' + raplsPicAdmin.i18n.httpError.replace('%s', error));
+                    }
+                });
+            };
+
+            page(0, {total_pdfs: 0, with_thumbnail: 0});
+        },
+
+        showScan: function(data, includeExisting) {
+            const self = this;
+
+            $('#rapls-pic-bulk-scan').prop('disabled', false).text($('#rapls-pic-bulk-scan').data('original-text') || raplsPicAdmin.i18n.scan);
+            this.total = data.total;
+            this.force = includeExisting;
+            this.after = 0;
+            $('#rapls-pic-bulk-total').text(data.total);
+
+            // Only worth showing when it disagrees with the scan;
+            // otherwise it is a second number saying the same thing.
+            if (typeof data.rows !== 'undefined' && data.rows !== data.total) {
+                $('#rapls-pic-bulk-rows').text(data.rows + (data.statuses ? ' (' + data.statuses + ')' : ''));
+                $('#rapls-pic-bulk-rows-row').show();
+            } else {
+                $('#rapls-pic-bulk-rows-row').hide();
+            }
+
+            if (data.note) {
+                $('#rapls-pic-bulk-note').text(data.note);
+
+                if (data.retry) {
+                    $('<button>')
+                        .attr('type', 'button')
+                        .addClass('button button-secondary')
+                        .css('margin-left', '8px')
+                        .text(data.retry_label)
+                        .on('click', function() {
+                            $('#rapls-pic-include-existing').prop('checked', true);
+                            self.scan();
+                        })
+                        .appendTo('#rapls-pic-bulk-note');
+                }
+
+                $('#rapls-pic-bulk-note-row').show();
+            } else {
+                $('#rapls-pic-bulk-note-row').hide();
+            }
+
+            $('#rapls-pic-bulk-results').show();
+            $('#rapls-pic-bulk-start').prop('disabled', !(data.total > 0));
+        },
+
+        start: function() {
+            if (this.total < 1) {
+                return;
+            }
+
+            // Carrying on after Stop starts from where it stopped, with the
+            // counts so far; a fresh start asks first.
+            if (!this.canContinue) {
+                if (!confirm(raplsPicAdmin.i18n.confirmBulk)) {
+                    return;
+                }
+
+                this.after = 0;
+                this.done = 0;
+                this.generated = 0;
+                this.failed = 0;
+                $('.rapls-pic-log-content').empty();
+                this.updateStats();
+            }
+
+            this.canContinue = false;
+            this.isRunning = true;
+            this.stopRequested = false;
+
+            // Update UI
+            $('#rapls-pic-bulk-scan').prop('disabled', true);
+            $('#rapls-pic-bulk-start').prop('disabled', true).text($('#rapls-pic-bulk-start').data('original-text'));
+            $('#rapls-pic-bulk-stop').prop('disabled', false);
+            $('#rapls-pic-bulk-progress').show();
+            $('#rapls-pic-bulk-log').show();
+
+            this.processNext();
+        },
+
+        // The PDF being drawn is not interrupted: the server has already
+        // started on it, and its result is still counted. What stops is
+        // everything after it, and the screen says so until it has.
+        stop: function() {
+            if (!this.isRunning) {
+                return;
+            }
+
+            this.stopRequested = true;
+            $('#rapls-pic-bulk-stop').prop('disabled', true);
+            this.updateStatus(raplsPicAdmin.i18n.stopping);
+        },
+
+        processNext: function() {
+            if (this.stopRequested) {
+                this.finish(false);
+                return;
+            }
+
+            const self = this;
 
             $.ajax({
                 url: raplsPicAdmin.ajaxUrl,
                 type: 'POST',
                 data: {
-                    action: 'rapls_pic_bulk_scan',
+                    action: 'rapls_pic_bulk_next',
                     nonce: raplsPicAdmin.nonce,
-                    include_existing: includeExisting ? 1 : 0
+                    after: this.after,
+                    force: this.force ? 1 : 0
                 },
                 success: function(response) {
-                    $('#rapls-pic-bulk-scan').prop('disabled', false).text($('#rapls-pic-bulk-scan').data('original-text') || raplsPicAdmin.i18n.scan);
-
-                    if (response.success) {
-                        self.pdfs = response.data.pdfs;
-                        $('#rapls-pic-bulk-total').text(response.data.total);
-
-                        // Only worth showing when it disagrees with the scan;
-                        // otherwise it is a second number saying the same thing.
-                        if (typeof response.data.rows !== 'undefined'
-                            && response.data.rows !== response.data.total) {
-                            $('#rapls-pic-bulk-rows').text(
-                                response.data.rows
-                                + (response.data.statuses ? ' (' + response.data.statuses + ')' : '')
-                            );
-                            $('#rapls-pic-bulk-rows-row').show();
-                        } else {
-                            $('#rapls-pic-bulk-rows-row').hide();
-                        }
-
-                        if (response.data.note) {
-                            $('#rapls-pic-bulk-note').text(response.data.note);
-
-                            if (response.data.retry) {
-                                $('<button>')
-                                    .attr('type', 'button')
-                                    .addClass('button button-secondary')
-                                    .css('margin-left', '8px')
-                                    .text(response.data.retry_label)
-                                    .on('click', function() {
-                                        $('#rapls-pic-include-existing').prop('checked', true);
-                                        self.scan();
-                                    })
-                                    .appendTo('#rapls-pic-bulk-note');
-                            }
-
-                            $('#rapls-pic-bulk-note-row').show();
-                        } else {
-                            $('#rapls-pic-bulk-note-row').hide();
-                        }
-
-                        $('#rapls-pic-bulk-results').show();
-
-                        if (response.data.total > 0) {
-                            $('#rapls-pic-bulk-start').prop('disabled', false);
-                        } else {
-                            $('#rapls-pic-bulk-start').prop('disabled', true);
-                        }
-                    } else {
-                        var errorMsg = response.data.message || raplsPicAdmin.i18n.error;
-                        if (response.data.file) {
-                            errorMsg += '\n\nFile: ' + response.data.file + '\nLine: ' + response.data.line;
-                        }
-                        alert(errorMsg);
+                    if (!response.success) {
+                        self.log('✗ ' + ((response.data && response.data.message) || raplsPicAdmin.i18n.requestFailed), 'error');
+                        self.finish(false);
+                        return;
                     }
+
+                    // Nothing in the pages looked at: on from where the
+                    // server got to, or the end.
+                    if (!response.data.pdf_id) {
+                        self.after = response.data.after;
+
+                        if (response.data.done) {
+                            self.finish(true);
+                        } else {
+                            self.processNext();
+                        }
+
+                        return;
+                    }
+
+                    self.generate(response.data.pdf_id, response.data.filename);
                 },
-                error: function(xhr, status, error) {
-                    $('#rapls-pic-bulk-scan').prop('disabled', false).text($('#rapls-pic-bulk-scan').data('original-text') || raplsPicAdmin.i18n.scan);
-                    alert(raplsPicAdmin.i18n.error + '\n\n' + raplsPicAdmin.i18n.httpStatus.replace('%s', status) + '\n' + raplsPicAdmin.i18n.httpError.replace('%s', error));
+                error: function() {
+                    // Nothing was drawn and the cursor did not move: stopped,
+                    // so Continue asks again from the same place.
+                    self.log('✗ ' + raplsPicAdmin.i18n.requestFailed, 'error');
+                    self.finish(false);
                 }
             });
         },
 
-        start: function() {
-            if (this.pdfs.length === 0) {
-                return;
-            }
-
-            if (!confirm(raplsPicAdmin.i18n.confirmBulk)) {
-                return;
-            }
-
-            this.currentIndex = 0;
-            this.generated = 0;
-            this.failed = 0;
-            this.isRunning = true;
-
-            // Update UI
-            $('#rapls-pic-bulk-scan').prop('disabled', true);
-            $('#rapls-pic-bulk-start').prop('disabled', true);
-            $('#rapls-pic-bulk-stop').prop('disabled', false);
-            $('#rapls-pic-bulk-progress').show();
-            $('#rapls-pic-bulk-log').show();
-            $('.rapls-pic-log-content').empty();
-
-            this.processNext();
-        },
-
-        stop: function() {
-            this.isRunning = false;
-            $('#rapls-pic-bulk-stop').prop('disabled', true);
-            this.updateStatus(raplsPicAdmin.i18n.stopped);
-            this.finish();
-        },
-
-        processNext: function() {
-            if (!this.isRunning || this.currentIndex >= this.pdfs.length) {
-                this.finish();
-                return;
-            }
-
+        generate: function(pdfId, filename) {
             const self = this;
-            const pdf = this.pdfs[this.currentIndex];
-            const force = $('#rapls-pic-include-existing').is(':checked');
 
             // Update status
-            const statusText = raplsPicAdmin.i18n.generating
-                .replace('%1$d', this.currentIndex + 1)
-                .replace('%2$d', this.pdfs.length);
-            this.updateStatus(statusText);
+            this.updateStatus(raplsPicAdmin.i18n.generating
+                .replace('%1$d', Math.min(this.done + 1, this.total))
+                .replace('%2$d', this.total));
 
             // Log current file
-            this.log(raplsPicAdmin.i18n.processingFile.replace('%s', pdf.filename), 'info');
+            this.log(raplsPicAdmin.i18n.processingFile.replace('%s', filename), 'info');
+
+            // On past this PDF whatever happens to it, as before.
+            const next = function() {
+                self.after = pdfId;
+                self.done++;
+                self.updateStats();
+                self.processNext();
+            };
 
             $.ajax({
                 url: raplsPicAdmin.ajaxUrl,
@@ -205,27 +292,23 @@
                 data: {
                     action: 'rapls_pic_bulk_generate',
                     nonce: raplsPicAdmin.nonce,
-                    pdf_id: pdf.id,
-                    force: force ? 1 : 0
+                    pdf_id: pdfId,
+                    force: this.force ? 1 : 0
                 },
                 success: function(response) {
                     if (response.success) {
                         self.generated++;
-                        self.log('✓ ' + pdf.filename, 'success');
+                        self.log('✓ ' + filename, 'success');
                     } else {
                         self.failed++;
-                        self.log('✗ ' + pdf.filename + ': ' + (response.data.message || raplsPicAdmin.i18n.failed), 'error');
+                        self.log('✗ ' + filename + ': ' + ((response.data && response.data.message) || raplsPicAdmin.i18n.failed), 'error');
                     }
-                    self.updateStats();
-                    self.currentIndex++;
-                    self.processNext();
+                    next();
                 },
                 error: function() {
                     self.failed++;
-                    self.log('✗ ' + pdf.filename + ': ' + raplsPicAdmin.i18n.requestFailed, 'error');
-                    self.updateStats();
-                    self.currentIndex++;
-                    self.processNext();
+                    self.log('✗ ' + filename + ': ' + raplsPicAdmin.i18n.requestFailed, 'error');
+                    next();
                 }
             });
         },
@@ -235,7 +318,7 @@
         },
 
         updateStats: function() {
-            const percent = Math.round((this.currentIndex / this.pdfs.length) * 100);
+            const percent = this.total > 0 ? Math.min(100, Math.round((this.done / this.total) * 100)) : 100;
             $('#rapls-pic-progress-bar').css('width', percent + '%');
             $('#rapls-pic-stat-generated').text(this.generated);
             $('#rapls-pic-stat-failed').text(this.failed);
@@ -248,21 +331,30 @@
             $log.scrollTop($log[0].scrollHeight);
         },
 
-        finish: function() {
+        finish: function(complete) {
             this.isRunning = false;
+            this.stopRequested = false;
             $('#rapls-pic-bulk-scan').prop('disabled', false);
-            $('#rapls-pic-bulk-start').prop('disabled', true);
             $('#rapls-pic-bulk-stop').prop('disabled', true);
 
-            if (this.currentIndex >= this.pdfs.length) {
+            if (complete) {
+                this.canContinue = false;
+                $('#rapls-pic-bulk-start').prop('disabled', true).text($('#rapls-pic-bulk-start').data('original-text'));
+                this.done = this.total;
                 this.updateStatus(raplsPicAdmin.i18n.complete);
                 this.updateStats();
+                return;
             }
+
+            // Stopped: Start carries on from the PDF after the last one.
+            this.canContinue = true;
+            $('#rapls-pic-bulk-start').prop('disabled', false).text(raplsPicAdmin.i18n.continueRun);
+            this.updateStatus(raplsPicAdmin.i18n.stopped);
         }
     };
 
     /**
-     * Statistics refresh
+     * Statistics refresh, a page of the library at a time
      */
     const Statistics = {
         init: function() {
@@ -274,26 +366,40 @@
             const $button = $('#rapls-pic-refresh-stats');
             $button.prop('disabled', true);
 
-            $.ajax({
-                url: raplsPicAdmin.ajaxUrl,
-                type: 'POST',
-                data: {
-                    action: 'rapls_pic_bulk_status',
-                    nonce: raplsPicAdmin.nonce
-                },
-                success: function(response) {
-                    $button.prop('disabled', false);
+            const page = function(after, counts) {
+                $.ajax({
+                    url: raplsPicAdmin.ajaxUrl,
+                    type: 'POST',
+                    data: {
+                        action: 'rapls_pic_bulk_status',
+                        nonce: raplsPicAdmin.nonce,
+                        after: after,
+                        total: counts.total,
+                        with_thumbnail: counts.with_thumbnail
+                    },
+                    success: function(response) {
+                        if (!response.success) {
+                            $button.prop('disabled', false);
+                            return;
+                        }
 
-                    if (response.success) {
                         $('#rapls-pic-stats-total').text(response.data.total);
                         $('#rapls-pic-stats-with').text(response.data.with_thumbnail);
                         $('#rapls-pic-stats-without').text(response.data.without_thumbnail);
+
+                        if (response.data.done) {
+                            $button.prop('disabled', false);
+                        } else {
+                            page(response.data.after, response.data);
+                        }
+                    },
+                    error: function() {
+                        $button.prop('disabled', false);
                     }
-                },
-                error: function() {
-                    $button.prop('disabled', false);
-                }
-            });
+                });
+            };
+
+            page(0, {total: 0, with_thumbnail: 0});
         }
     };
 

@@ -42,12 +42,36 @@ final class BulkProcessor
     public function init(): void
     {
         add_action('wp_ajax_rapls_pic_bulk_scan', [$this, 'ajaxScan']);
+        add_action('wp_ajax_rapls_pic_bulk_next', [$this, 'ajaxNext']);
         add_action('wp_ajax_rapls_pic_bulk_generate', [$this, 'ajaxGenerate']);
         add_action('wp_ajax_rapls_pic_bulk_status', [$this, 'ajaxStatus']);
     }
 
     /**
-     * AJAX: Scan for PDFs
+     * PDFs looked at per request
+     *
+     * Scanning, counting and finding the next PDF to draw each read the
+     * library a page at a time, from a cursor the browser hands back. Up to
+     * 1.4.25 a scan read every PDF twice in one request -- all their IDs held
+     * at once, every one's meta looked at -- and sent the browser the whole
+     * list: on a large library the request ran out of memory or time before
+     * anything started (Codex review of 1.4.25, 5).
+     */
+    public const PAGE = 200;
+
+    /**
+     * Pages looked through for the next PDF to draw in one request
+     *
+     * When everything after the cursor already has a thumbnail, the search
+     * stops here and says where it got to; the browser asks again from there.
+     */
+    private const SEARCH_PAGES = 5;
+
+    /**
+     * AJAX: Scan for PDFs, one page at a time
+     *
+     * Counts carried by the browser from page to page; the last page, the
+     * one that says done, adds the note about what was found.
      */
     public function ajaxScan(): void
     {
@@ -67,8 +91,24 @@ final class BulkProcessor
             }
 
             $includeExisting = !empty($_POST['include_existing']);
-            $pdfs = $this->getPDFs($includeExisting);
-            $stats = $this->getStats();
+            $after = isset($_POST['after']) ? absint($_POST['after']) : 0;
+            $page = $this->statsPage($after);
+            $stats = [
+                'total' => self::carried('total_pdfs') + $page['total'],
+                'with_thumbnail' => self::carried('with_thumbnail') + $page['with_thumbnail'],
+            ];
+            $todo = $includeExisting ? $stats['total'] : $stats['total'] - $stats['with_thumbnail'];
+
+            if (!$page['done']) {
+                wp_send_json_success([
+                    'done' => false,
+                    'after' => $page['after'],
+                    'total' => $todo,
+                    'total_pdfs' => $stats['total'],
+                    'with_thumbnail' => $stats['with_thumbnail'],
+                ]);
+                return;
+            }
 
             // "PDFs found: 0" on its own leaves the reader with no idea
             // whether the library is empty, whether everything is already
@@ -80,7 +120,7 @@ final class BulkProcessor
             // Whether the screen can turn this dead end into an action.
             $retry = false;
 
-            if (0 === count($pdfs)) {
+            if (0 === $todo) {
                 if (0 === $rows['total']) {
                     $note = __('There are no PDF files in the Media Library. Uploading a PDF over FTP or SSH does not add it — it has to go through Media > Add New.', 'rapls-pdf-image-creator');
                 } elseif (0 === $stats['total']) {
@@ -107,8 +147,11 @@ final class BulkProcessor
             }
 
             wp_send_json_success([
-                'total' => count($pdfs),
+                'done' => true,
+                'after' => $page['after'],
+                'total' => $todo,
                 'total_pdfs' => $stats['total'],
+                'with_thumbnail' => $stats['with_thumbnail'],
                 'rows' => $rows['total'],
                 'statuses' => $rows['statuses'],
                 'note' => $note,
@@ -120,10 +163,48 @@ final class BulkProcessor
                 'retry_label' => $retry
                     ? __('Scan again, including these', 'rapls-pdf-image-creator')
                     : '',
-                'pdfs' => $pdfs,
             ]);
         } catch (\Throwable $e) {
             // Log error for debugging
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('Rapls PDF Image Creator: ' . $e->getMessage());
+            }
+            wp_send_json_error([
+                'message' => __('An error occurred while scanning for PDFs.', 'rapls-pdf-image-creator'),
+            ]);
+        }
+    }
+
+    /**
+     * AJAX: The next PDF after a cursor that needs drawing
+     *
+     * Every PDF with `force`, otherwise those without a thumbnail. Asked
+     * apart from drawing it, so a draw that never answers -- a timeout, a
+     * fatal error -- still leaves the browser knowing which PDF that was,
+     * and it goes on to the next one as it always has.
+     */
+    public function ajaxNext(): void
+    {
+        try {
+            if (!check_ajax_referer('rapls_pic_admin', 'nonce', false)) {
+                wp_send_json_error(['message' => __('Security check failed.', 'rapls-pdf-image-creator')]);
+                return;
+            }
+
+            if (!current_user_can('manage_options')) {
+                wp_send_json_error(['message' => __('Permission denied.', 'rapls-pdf-image-creator')], 403);
+                return;
+            }
+
+            $next = $this->nextToGenerate(isset($_POST['after']) ? absint($_POST['after']) : 0, !empty($_POST['force']));
+
+            wp_send_json_success([
+                'pdf_id' => $next['pdf_id'],
+                'filename' => null !== $next['pdf_id'] ? basename(get_attached_file($next['pdf_id']) ?: '') : '',
+                'after' => $next['after'],
+                'done' => $next['done'],
+            ]);
+        } catch (\Throwable $e) {
             if (defined('WP_DEBUG') && WP_DEBUG) {
                 error_log('Rapls PDF Image Creator: ' . $e->getMessage());
             }
@@ -200,7 +281,11 @@ final class BulkProcessor
     }
 
     /**
-     * AJAX: Get bulk status
+     * AJAX: Get bulk status, one page at a time
+     *
+     * Counts carried by the browser, as for the scan. Without `after` the
+     * first page is counted, so a caller that asks once gets the totals of
+     * that page and `done` says whether there is more.
      */
     public function ajaxStatus(): void
     {
@@ -218,8 +303,17 @@ final class BulkProcessor
                 return;
             }
 
-            $stats = $this->getStats();
-            wp_send_json_success($stats);
+            $page = $this->statsPage(isset($_POST['after']) ? absint($_POST['after']) : 0);
+            $total = self::carried('total') + $page['total'];
+            $with = self::carried('with_thumbnail') + $page['with_thumbnail'];
+
+            wp_send_json_success([
+                'total' => $total,
+                'with_thumbnail' => $with,
+                'without_thumbnail' => $total - $with,
+                'after' => $page['after'],
+                'done' => $page['done'],
+            ]);
         } catch (\Throwable $e) {
             // Log error for debugging
             if (defined('WP_DEBUG') && WP_DEBUG) {
@@ -229,6 +323,13 @@ final class BulkProcessor
                 'message' => __('An error occurred while fetching status.', 'rapls-pdf-image-creator'),
             ]);
         }
+    }
+
+    /** A count the browser carried from the pages before this one; 0 when it sent none. */
+    private static function carried(string $name): int
+    {
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- checked by the caller
+        return isset($_POST[$name]) ? absint($_POST[$name]) : 0;
     }
 
     /**
@@ -278,74 +379,152 @@ final class BulkProcessor
     }
 
     /**
-     * Get all PDFs
+     * The IDs of the next page of PDFs after a cursor, in ID order
      *
-     * @param bool $includeExisting Include PDFs that already have thumbnails
-     * @return array<array<string, mixed>>
+     * Through WP_Query, as before, so the scan sees what the Media Library
+     * sees and countPdfRows() can still tell a filtered query from an empty
+     * library. Their meta is read in one query per page, not one per PDF.
+     *
+     * @return array<int, int>
      */
-    public function getPDFs(bool $includeExisting = false): array
+    private function idsAfter(int $after, int $limit): array
     {
-        $args = [
-            'post_type' => 'attachment',
-            'post_mime_type' => 'application/pdf',
-            'post_status' => 'inherit',
-            'posts_per_page' => -1,
-            'fields' => 'ids',
-            // Marks this as the plugin asking, so MediaLibrary's pre_get_posts
-            // filter leaves it alone.
-            'rapls_pic_internal' => true,
-        ];
+        global $wpdb;
 
-        $query = new \WP_Query($args);
-        $pdfIds = $query->posts;
+        $where = static function (string $sql) use ($wpdb, $after): string {
+            return $sql . $wpdb->prepare(" AND {$wpdb->posts}.ID > %d", $after);
+        };
 
-        $pdfs = [];
-        foreach ($pdfIds as $pdfId) {
-            $pdfId = (int) $pdfId;
-            $hasThumbnail = $this->generator->hasThumbnail($pdfId);
+        add_filter('posts_where', $where);
 
-            if (!$includeExisting && $hasThumbnail) {
-                continue;
-            }
-
-            $pdfs[] = [
-                'id' => $pdfId,
-                'title' => get_the_title($pdfId),
-                'filename' => basename(get_attached_file($pdfId) ?: ''),
-                'has_thumbnail' => $hasThumbnail,
-            ];
+        try {
+            $query = new \WP_Query([
+                'post_type' => 'attachment',
+                'post_mime_type' => 'application/pdf',
+                'post_status' => 'inherit',
+                'posts_per_page' => $limit,
+                'orderby' => 'ID',
+                'order' => 'ASC',
+                'fields' => 'ids',
+                'no_found_rows' => true,
+                'suppress_filters' => false,
+                // Marks this as the plugin asking, so MediaLibrary's
+                // pre_get_posts filter leaves it alone.
+                'rapls_pic_internal' => true,
+            ]);
+        } finally {
+            remove_filter('posts_where', $where);
         }
 
-        return $pdfs;
+        $ids = array_map('intval', (array) $query->posts);
+
+        if ([] !== $ids && function_exists('update_postmeta_cache')) {
+            update_postmeta_cache($ids);
+        }
+
+        return $ids;
     }
 
     /**
-     * Get statistics
+     * Forget what one page put in the object cache
+     *
+     * Without a persistent object cache it is this request's memory, and a
+     * scan of the whole library kept every PDF's meta in it. With one, it is
+     * left alone: emptying it would only cost the next page view.
+     *
+     * @param array<int, int> $ids
+     */
+    private static function release(array $ids): void
+    {
+        if (function_exists('wp_using_ext_object_cache') && wp_using_ext_object_cache()) {
+            return;
+        }
+
+        foreach ($ids as $id) {
+            wp_cache_delete($id, 'post_meta');
+            wp_cache_delete($id, 'posts');
+        }
+    }
+
+    /**
+     * One page of the library counted: how many PDFs, how many with a thumbnail
+     *
+     * @return array{total: int, with_thumbnail: int, after: int, done: bool}
+     */
+    public function statsPage(int $after): array
+    {
+        $ids = $this->idsAfter($after, self::PAGE);
+        $with = 0;
+
+        foreach ($ids as $id) {
+            if ($this->generator->hasThumbnail($id)) {
+                ++$with;
+            }
+        }
+
+        self::release($ids);
+
+        return [
+            'total' => count($ids),
+            'with_thumbnail' => $with,
+            'after' => [] !== $ids ? (int) end($ids) : $after,
+            'done' => count($ids) < self::PAGE,
+        ];
+    }
+
+    /**
+     * The next PDF after a cursor that needs drawing
+     *
+     * Every PDF with $force; otherwise one without a thumbnail. Looks through
+     * SEARCH_PAGES pages at most.
+     *
+     * @return array{pdf_id: int|null, after: int, done: bool}
+     */
+    public function nextToGenerate(int $after, bool $force): array
+    {
+        for ($i = 0; $i < self::SEARCH_PAGES; ++$i) {
+            $ids = $this->idsAfter($after, self::PAGE);
+
+            foreach ($ids as $id) {
+                if ($force || !$this->generator->hasThumbnail($id)) {
+                    self::release($ids);
+
+                    return ['pdf_id' => $id, 'after' => $id, 'done' => false];
+                }
+            }
+
+            self::release($ids);
+
+            if (count($ids) < self::PAGE) {
+                return ['pdf_id' => null, 'after' => [] !== $ids ? (int) end($ids) : $after, 'done' => true];
+            }
+
+            $after = (int) end($ids);
+        }
+
+        return ['pdf_id' => null, 'after' => $after, 'done' => false];
+    }
+
+    /**
+     * Get statistics for the whole library
+     *
+     * Page by page, as statsPage() counts them, for a caller in PHP. The
+     * screens ask page by page themselves (ajaxStatus()).
      *
      * @return array<string, int>
      */
     public function getStats(): array
     {
-        $args = [
-            'post_type' => 'attachment',
-            'post_mime_type' => 'application/pdf',
-            'post_status' => 'inherit',
-            'posts_per_page' => -1,
-            'fields' => 'ids',
-            'rapls_pic_internal' => true,
-        ];
-
-        $query = new \WP_Query($args);
-        $pdfIds = $query->posts;
-
-        $total = count($pdfIds);
+        $total = 0;
         $withThumbnail = 0;
+        $after = 0;
 
-        foreach ($pdfIds as $pdfId) {
-            if ($this->generator->hasThumbnail((int) $pdfId)) {
-                $withThumbnail++;
-            }
-        }
+        do {
+            $page = $this->statsPage($after);
+            $total += $page['total'];
+            $withThumbnail += $page['with_thumbnail'];
+            $after = $page['after'];
+        } while (!$page['done']);
 
         return [
             'total' => $total,

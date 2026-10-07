@@ -20,9 +20,11 @@ $suites = [
     'test-media-library.php',
     'test-thumbnail-ownership.php',
     'test-regenerate.php',
+    'test-bulk.php',
     'test-uninstall.php',
     // JavaScript, run with node when there is one.
     'test-block-editor.js',
+    'test-bulk-admin.js',
 ];
 $failed = [];
 

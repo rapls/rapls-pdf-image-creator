@@ -251,8 +251,8 @@ msgstr "PDF をスキャン"
 msgid "Start Generation"
 msgstr "生成開始"
 
-msgid "Stop"
-msgstr "停止"
+msgid "Stop after the current PDF"
+msgstr "いまの PDF が終わったら停止"
 
 msgid "Scan Results"
 msgstr "スキャン結果"
@@ -885,6 +885,17 @@ msgstr "画像は作成しましたが、この PDF のサムネイルとして�
 
 msgid "Stopped"
 msgstr "停止しました"
+
+msgid "Stopping after the current PDF..."
+msgstr "いまの PDF が終わったら停止します..."
+
+msgid "Continue"
+msgstr "続ける"
+
+#. translators: %d: number of PDFs looked at so far
+#, php-format
+msgid "Scanning... %d PDFs so far"
+msgstr "スキャン中... ここまで %d 件の PDF"
 
 #. translators: %s: PDF file name
 #, php-format

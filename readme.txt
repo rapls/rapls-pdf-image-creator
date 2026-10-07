@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.1
-Stable tag: 1.4.25
+Stable tag: 1.4.26
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -64,6 +64,8 @@ When you upload `my-document.pdf`, the plugin creates:
 * `[rapls_pdf_thumbnail_url id="123"]` - Output thumbnail URL
 * `[rapls_pdf_clickable_thumbnail id="123"]` - Thumbnail linked to PDF
 * `[rapls_pdf_download_link id="123"]` - Download link with thumbnail
+
+The thumbnail, clickable thumbnail and download link shortcodes take a `class` attribute, which can hold several classes separated by spaces: `[rapls_pdf_thumbnail id="123" class="alignleft shadow"]`.
 
 = Template Functions =
 
@@ -313,6 +315,12 @@ No other profile is bundled. CMYK profiles are read from the host when one is
 present and are never redistributed.
 
 == Changelog ==
+= 1.4.26 =
+* Fixed: Bulk Generate no longer reads the whole Media Library at once. Scanning, the statistics and finding the next PDF each read 200 PDFs per request, and the browser no longer holds the list of every PDF, so large libraries can be scanned and generated without running out of memory or time
+* Changed: Bulk Generate's Stop button says it stops after the current PDF, which the server has already started on; that PDF's result is still counted. After stopping, Continue carries on from the next PDF, and a new scan starts from the beginning. A PDF whose request fails is counted as failed and the run goes on to the next one, as before
+* Fixed: the generated and failed counts are reset on screen when a new run starts
+* Fixed: the thumbnail, clickable thumbnail and download link shortcodes keep several classes in their class attribute: class="alignleft shadow" was turned into "alignleftshadow"
+
 = 1.4.25 =
 * Fixed: the list of functions a host disables is read the way PHP reads it, split on spaces as well as commas and with each name taken as written. A list such as "exec putenv" was read as one name, and "PUTENV", which PHP does not disable, turned off the retry that recovers blank pages on hosts that need -dNOTRANSPARENCY
 
@@ -575,6 +583,9 @@ present and are never redistributed.
 * Japanese translation included
 
 == Upgrade Notice ==
+
+= 1.4.26 =
+Bulk Generate reads large Media Libraries a page at a time, Stop waits for the current PDF, and shortcodes keep several classes.
 
 = 1.4.25 =
 Disabled functions are read as PHP reads them, so the blank-page retry is no longer turned off by a name PHP does not disable.

@@ -206,6 +206,12 @@ final class Admin
                 // What the scripts used to say in English whatever the admin language (R55-07).
                 'scan' => __('Scan for PDFs', 'rapls-pdf-image-creator'),
                 'stopped' => __('Stopped', 'rapls-pdf-image-creator'),
+                // Said while the PDF being drawn finishes: the server has
+                // already started on it (Codex review of 1.4.25, 6).
+                'stopping' => __('Stopping after the current PDF...', 'rapls-pdf-image-creator'),
+                'continueRun' => __('Continue', 'rapls-pdf-image-creator'),
+                /* translators: %d: number of PDFs looked at so far */
+                'scanning' => __('Scanning... %d PDFs so far', 'rapls-pdf-image-creator'),
                 /* translators: %s: PDF file name */
                 'processingFile' => __('Processing: %s', 'rapls-pdf-image-creator'),
                 'failed' => __('Failed', 'rapls-pdf-image-creator'),

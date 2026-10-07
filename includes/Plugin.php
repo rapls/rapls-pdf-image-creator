@@ -197,7 +197,7 @@ final class Plugin
             }
 
             return $this->generator->getThumbnailImage($id, $atts['size'], [
-                'class' => sanitize_html_class($atts['class']),
+                'class' => self::classList((string) $atts['class']),
             ]);
         });
 
@@ -236,7 +236,7 @@ final class Plugin
             }
 
             $image = $this->generator->getThumbnailImage($id, $atts['size'], [
-                'class' => sanitize_html_class($atts['class']),
+                'class' => self::classList((string) $atts['class']),
             ]);
 
             if (!$image) {
@@ -282,10 +282,34 @@ final class Plugin
             return sprintf(
                 '<a href="%s" class="%s" download>%s</a>',
                 esc_url($pdfUrl),
-                esc_attr($atts['class']),
+                esc_attr(self::classList((string) $atts['class'])),
                 $content
             );
         });
+    }
+
+    /**
+     * A shortcode's class attribute, one class at a time
+     *
+     * sanitize_html_class() takes one class: given the whole attribute it
+     * dropped the spaces, and class="alignleft shadow" became
+     * "alignleftshadow" (Codex review of 1.4.25, 7). Each class is cleaned on
+     * its own and the ones left are joined with a space -- the same for all
+     * three shortcodes that take one, the download link included.
+     */
+    public static function classList(string $classes): string
+    {
+        $clean = [];
+
+        foreach ((array) preg_split('/\s+/', $classes, -1, PREG_SPLIT_NO_EMPTY) as $class) {
+            $class = sanitize_html_class((string) $class);
+
+            if ('' !== $class) {
+                $clean[] = $class;
+            }
+        }
+
+        return implode(' ', array_unique($clean));
     }
 
     /**

@@ -383,7 +383,7 @@ if (!defined('ABSPATH')) {
                 <?php esc_html_e('Start Generation', 'rapls-pdf-image-creator'); ?>
             </button>
             <button type="button" id="rapls-pic-bulk-stop" class="button button-secondary" disabled>
-                <?php esc_html_e('Stop', 'rapls-pdf-image-creator'); ?>
+                <?php esc_html_e('Stop after the current PDF', 'rapls-pdf-image-creator'); ?>
             </button>
         </p>
 
