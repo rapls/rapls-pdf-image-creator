@@ -78,23 +78,95 @@
     }
 
     /**
-     * Pass on what was chosen, without the PDFs that have no thumbnail
+     * The pickers of WordPress's own that are opened to PDFs
      *
-     * Those are left out, and the editor says why. Nothing is passed on when
-     * nothing is left.
+     * editor.MediaUpload wraps every MediaUpload on the screen and is not
+     * told which block, or which plugin, it is for. Any picker that asked for
+     * images was given PDFs, another plugin's too -- one that can take only
+     * images was handed a PDF, and shown this plugin's upload message and
+     * delete button (Codex review of 1.4.29, 1). So the image and gallery
+     * blocks say so to the pickers inside them, through a context set where
+     * the block's name is known (editor.BlockEdit). Their toolbar and sidebar
+     * render through portals, which keep it. The featured image picker is
+     * known by its own prop. Every other picker is left as it is.
      */
-    /**
-     * The image block's picker, as this plugin makes it: images and PDFs only
-     *
-     * Not Cover or Media & Text (video too), nor another plugin's image
-     * picker.
-     */
-    function isImageBlockFrame(options) {
-        const library = options && options.library ? options.library.type : null;
+    const InBlock = wp.element.createContext ? wp.element.createContext(null) : null;
 
-        return Array.isArray(library) && 2 === library.length
-            && library.indexOf('image') !== -1 && library.indexOf('application/pdf') !== -1;
+    /**
+     * Set by the block's own media controls -- MediaPlaceholder and
+     * MediaReplaceFlow, inside the image or gallery block -- for the
+     * MediaUpload they render. A MediaUpload another plugin puts in the same
+     * block, in its sidebar or toolbar, is not inside them, and is left as it
+     * is (review of the uncommitted change).
+     */
+    const PdfPicker = InBlock ? wp.element.createContext(null) : null;
+
+    /** The type added to a picker's library query, so the server knows it (MediaLibrary::PICKER_MARK). */
+    const PICKER_MARK = 'rapls-pic/with-thumbnail';
+
+    /** Which of those pickers is opening now: 'core/image', 'core/gallery', 'featured', or ''. */
+    let openingPicker = '';
+
+    function pickerKind(props, fromBlock) {
+        const name = fromBlock && fromBlock.name;
+
+        if ('core/gallery' === name) {
+            return name;
+        }
+
+        // The site editor's Post Featured Image block sets the same featured
+        // image as the editor's own picker.
+        if ('core/post-featured-image' === name) {
+            return 'featured';
+        }
+
+        // The image block's own pickers choose its image: an id they are
+        // given is the block's. A picker another plugin added inside the
+        // block -- its sidebar, its toolbar -- chooses something else, and
+        // is left as it is.
+        if ('core/image' === name) {
+            return fromBlock.id && props.value && String(props.value) !== String(fromBlock.id) ? '' : name;
+        }
+
+        return props.unstableFeaturedImageFlow || 'editor-post-featured-image__media-modal' === props.modalClass
+            ? 'featured'
+            : '';
     }
+
+    addFilter(
+        'editor.BlockEdit',
+        'pic/pdf-picker-context',
+        createHigherOrderComponent(function(BlockEdit) {
+            return function(props) {
+                if (InBlock && ('core/image' === props.name || 'core/gallery' === props.name || 'core/post-featured-image' === props.name)) {
+                    const value = { name: props.name, id: props.attributes ? props.attributes.id : undefined };
+
+                    return wp.element.createElement(InBlock.Provider, { value: value }, wp.element.createElement(BlockEdit, props));
+                }
+
+                return wp.element.createElement(BlockEdit, props);
+            };
+        }, 'withPdfPickerContext')
+    );
+
+    // The block's own media controls pass the block on to their MediaUpload.
+    ['editor.MediaPlaceholder', 'editor.MediaReplaceFlow'].forEach(function(hook) {
+        addFilter(
+            hook,
+            'pic/pdf-picker-controls',
+            createHigherOrderComponent(function(Control) {
+                return function(props) {
+                    const block = InBlock && wp.element.useContext ? wp.element.useContext(InBlock) : null;
+
+                    if (!block || !PdfPicker) {
+                        return wp.element.createElement(Control, props);
+                    }
+
+                    return wp.element.createElement(PdfPicker.Provider, { value: block }, wp.element.createElement(Control, props));
+                };
+            }, 'withPdfPickerControl')
+        );
+    });
 
     /**
      * Attachments uploaded in the image block's picker, while it is open
@@ -125,7 +197,14 @@
         });
     }
 
-    function onlyWithThumbnails(onSelect, current) {
+    /**
+     * Pass on what was chosen, without the PDFs that have no thumbnail
+     *
+     * Those are left out, and the editor says why. Nothing is passed on when
+     * nothing is left. Only the image block's picker offers to delete one
+     * just uploaded ($offerDelete).
+     */
+    function onlyWithThumbnails(onSelect, current, offerDelete) {
         if ('function' !== typeof onSelect) {
             return onSelect;
         }
@@ -154,7 +233,7 @@
             }).filter(function(id) {
                 return !!id && String(id) !== String(current) && wasUploadedHere(id);
             });
-            const actions = !settings.autoGenerate && wp.apiFetch && dropped.length
+            const actions = offerDelete && !settings.autoGenerate && wp.apiFetch && dropped.length
                 ? [{
                     label: settings.deleteUploaded || 'Delete the uploaded PDF',
                     onClick: function() {
@@ -209,33 +288,65 @@
     }
 
     /**
-     * Modify the MediaUpload component to accept PDFs
+     * Open the pickers of WordPress's own to PDFs that have a thumbnail
      */
     addFilter(
         'editor.MediaUpload',
         'pic/media-upload-pdf-support',
         createHigherOrderComponent(function(MediaUpload) {
             return function(props) {
-                // If this is for image blocks, allow PDFs too
-                if (props.allowedTypes && props.allowedTypes.includes('image')) {
-                    const newAllowedTypes = [...props.allowedTypes];
-                    if (!newAllowedTypes.includes('application/pdf')) {
-                        newAllowedTypes.push('application/pdf');
-                    }
-                    // Not the gallery: its frame hands over slimmed copies, and
-                    // it already keeps only what has a URL to show.
-                    return wp.element.createElement(MediaUpload, Object.assign({}, props, {
-                        allowedTypes: newAllowedTypes,
-                        onSelect: props.gallery ? props.onSelect : onlyWithThumbnails(props.onSelect, props.value)
-                    }));
+                const fromBlock = PdfPicker && wp.element.useContext ? wp.element.useContext(PdfPicker) : null;
+                const kind = pickerKind(props, fromBlock);
+
+                if (!kind || !props.allowedTypes || !props.allowedTypes.includes('image')) {
+                    return wp.element.createElement(MediaUpload, props);
                 }
-                return wp.element.createElement(MediaUpload, props);
+
+                const newAllowedTypes = [...props.allowedTypes];
+                if (!newAllowedTypes.includes('application/pdf')) {
+                    newAllowedTypes.push('application/pdf');
+                }
+                newAllowedTypes.push(PICKER_MARK);
+
+                // Which picker this is, said as it opens: the upload message,
+                // the delete button and the list of uploads belong to the
+                // image block's alone.
+                const render = 'function' === typeof props.render
+                    ? function(args) {
+                        const open = args && args.open;
+
+                        return props.render(Object.assign({}, args, {
+                            open: function() {
+                                // For the frame built as it opens, and no
+                                // longer: a frame built later -- another
+                                // plugin's -- must not take it for this one.
+                                openingPicker = kind;
+
+                                try {
+                                    return 'function' === typeof open ? open.apply(this, arguments) : undefined;
+                                } finally {
+                                    openingPicker = '';
+                                }
+                            }
+                        }));
+                    }
+                    : props.render;
+
+                // Not the gallery: its frame hands over slimmed copies, and
+                // it already keeps only what has a URL to show.
+                return wp.element.createElement(MediaUpload, Object.assign({}, props, {
+                    allowedTypes: newAllowedTypes,
+                    render: render,
+                    onSelect: props.gallery || 'core/gallery' === kind
+                        ? props.onSelect
+                        : onlyWithThumbnails(props.onSelect, props.value, 'core/image' === kind)
+                }));
             };
         }, 'withPdfSupport')
     );
 
     /**
-     * Filter media library frame to include PDFs when selecting images
+     * The media frame: the image block's upload message and its list of uploads
      */
     if (typeof wp !== 'undefined' && wp.media) {
         const originalMediaFrame = wp.media.view.MediaFrame.Select;
@@ -247,10 +358,8 @@
             // with that message; every other frame as it was.
             uploadContent: function() {
                 const settings = window.raplsPicBlockEditor || {};
-                // Only in the image block's picker, where the message applies.
-                const forImages = isImageBlockFrame(this.options);
 
-                if (settings.autoGenerate || !forImages || !settings.uploadMessage || !wp.media.view.UploaderInline) {
+                if (settings.autoGenerate || 'core/image' !== this.raplsPicPicker || !settings.uploadMessage || !wp.media.view.UploaderInline) {
                     return originalMediaFrame.prototype.uploadContent.apply(this, arguments);
                 }
 
@@ -262,31 +371,49 @@
             },
 
             initialize: function() {
+                // Which picker opened this frame, as it was built; '' for any
+                // other, another plugin's included.
+                this.raplsPicPicker = openingPicker;
+
                 originalMediaFrame.prototype.initialize.apply(this, arguments);
 
                 // What is uploaded after the image block's picker opens is
                 // what it may offer to delete; each opening starts afresh.
                 // Not on close: core closes the window before it hands over
                 // the selection.
-                if (isImageBlockFrame(this.options)) {
+                if ('core/image' === this.raplsPicPicker) {
                     this.on('open', function() {
                         uploadedHere.length = 0;
                     });
                 }
 
-                // Listen for library ready
-                this.on('ready', function() {
-                    const library = this.state().get('library');
-                    if (library && library.props) {
-                        const type = library.props.get('type');
-                        if (type === 'image') {
-                            // Also include PDFs
-                            library.props.set('type', ['image', 'application/pdf']);
-                        }
-                    }
-                }, this);
             }
         });
+    }
+
+    /**
+     * The libraries those pickers ask for, as they are built
+     *
+     * The gallery's frame and the featured image's ask for images themselves
+     * -- wp.media.query({ type: 'image' }) -- whatever MediaUpload was told,
+     * so a mark on allowedTypes never reached them, and the server no longer
+     * adds PDFs to a plain image query (review of the uncommitted change).
+     * While one of WordPress's own pickers is being opened, and only then
+     * (openingPicker is set around the open), an image query it makes asks
+     * for thumbnailed PDFs too.
+     */
+    if (typeof wp !== 'undefined' && wp.media && 'function' === typeof wp.media.query) {
+        const originalQuery = wp.media.query;
+
+        wp.media.query = function(props) {
+            const args = Array.prototype.slice.call(arguments);
+
+            if (openingPicker && props && 'image' === props.type) {
+                args[0] = Object.assign({}, props, { type: ['image', 'application/pdf', PICKER_MARK] });
+            }
+
+            return originalQuery.apply(this, args);
+        };
     }
 
 })();

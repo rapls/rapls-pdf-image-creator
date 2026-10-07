@@ -93,6 +93,8 @@ final class MediaLibrary
 
         // Add PDF support info to block editor
         add_action('enqueue_block_editor_assets', [$this, 'enqueueBlockEditorAssets']);
+        // And the classic editor's featured image
+        add_action('wp_enqueue_media', [$this, 'enqueueClassicFeaturedImage']);
 
         // Replace PDF icon with thumbnail in media library
         add_filter('wp_get_attachment_image_attributes', [$this, 'filterAttachmentImageAttributes'], 10, 3);
@@ -768,6 +770,17 @@ final class MediaLibrary
     }
 
     /**
+     * The type WordPress's own image pickers add to their library query
+     *
+     * Added by admin/js/block-editor.js and admin/js/classic-featured.js for
+     * the image block, the gallery and the featured image. Not a real MIME
+     * type: it matches no attachment, and is taken out here before the query
+     * runs. It says the picker is one this plugin opened to PDFs, which a
+     * plain "image" query does not.
+     */
+    public const PICKER_MARK = 'rapls-pic/with-thumbnail';
+
+    /**
      * Allow PDFs with thumbnails in image selection queries and hide generated thumbnails
      *
      * @param array $query Query arguments
@@ -790,20 +803,27 @@ final class MediaLibrary
 
         $mimeType = $query['post_mime_type'];
 
-        // If querying for images, also include PDFs
-        if ($mimeType === 'image' || (is_array($mimeType) && in_array('image', $mimeType, true))) {
-            // Include PDFs that have thumbnails -- those only, which
-            // limitPdfsToThumbnailed() sees to. Every PDF went in, and one
-            // with no thumbnail reached an image picker as a plain PDF, with
-            // no image to show (R66-02).
-            if (is_array($mimeType)) {
-                $query['post_mime_type'][] = 'application/pdf';
-            } else {
-                $query['post_mime_type'] = ['image', 'application/pdf'];
-            }
-
-            $query['rapls_pic_image_pick'] = true;
+        // Only a picker of WordPress's own that this plugin opened up to PDFs
+        // -- the image block, the gallery, the featured image -- carries the
+        // mark (admin/js/block-editor.js). Any image query used to get PDFs:
+        // another plugin's image picker too, which can take only images, and
+        // was handed a PDF (Codex review of 1.4.29, 1).
+        if (!is_array($mimeType) || !in_array(self::PICKER_MARK, $mimeType, true)) {
+            return $query;
         }
+
+        $types = array_values(array_diff($mimeType, [self::PICKER_MARK]));
+
+        // PDFs that have thumbnails -- those only, which
+        // limitPdfsToThumbnailed() sees to. Every PDF went in, and one with no
+        // thumbnail reached an image picker as a plain PDF, with no image to
+        // show (R66-02).
+        if (!in_array('application/pdf', $types, true)) {
+            $types[] = 'application/pdf';
+        }
+
+        $query['post_mime_type'] = $types;
+        $query['rapls_pic_image_pick'] = true;
 
         return $query;
     }
@@ -904,6 +924,35 @@ final class MediaLibrary
             'deleted' => __('The PDF was deleted from the Media Library.', 'rapls-pdf-image-creator'),
             'deleteFailed' => __('The PDF could not be deleted. Delete it in the Media Library.', 'rapls-pdf-image-creator'),
         ]);
+    }
+
+    /**
+     * The classic editor's "Set featured image" offers PDFs with a thumbnail
+     *
+     * As the block editor's featured image picker does. Only on a post screen
+     * the block editor is not running on: there, block-editor.js does it.
+     * Any other screen that loads the media library is left as it is
+     * (Codex review of 1.4.29, 1).
+     */
+    public function enqueueClassicFeaturedImage(): void
+    {
+        $screen = function_exists('get_current_screen') ? get_current_screen() : null;
+
+        // Not an attachment's own edit screen (an audio or video file can
+        // have a featured image too): the picker there is not a post's.
+        if (!is_object($screen) || 'post' !== ($screen->base ?? '') || 'attachment' === ($screen->post_type ?? '')
+            || (method_exists($screen, 'is_block_editor') && $screen->is_block_editor())
+        ) {
+            return;
+        }
+
+        wp_enqueue_script(
+            'pic-classic-featured',
+            RAPLS_PIC_PLUGIN_URL . 'admin/js/classic-featured.js',
+            ['media-editor'],
+            RAPLS_PIC_VERSION,
+            true
+        );
     }
 
     /**

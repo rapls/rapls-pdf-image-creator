@@ -116,13 +116,40 @@ namespace {
         eval('final class WP_Query { private $vars; private $main; public function __construct(array $v = [], bool $main = false) { $this->vars = $v; $this->main = $main; } public function get($k) { return $this->vars[$k] ?? ""; } public function set($k, $v) { $this->vars[$k] = $v; } public function is_main_query() { return $this->main; } }');
     }
     $GLOBALS['wpdb'] = (object) ['posts' => 'wp_posts', 'postmeta' => 'wp_postmeta'];
-    $args = $library->allowPdfsInImageSelection(['post_mime_type' => 'image']);
-    check('R66-02: an image query takes PDFs and is marked', [$args['post_mime_type'], $args['rapls_pic_image_pick'] ?? null], [['image', 'application/pdf'], true]);
+    $args = $library->allowPdfsInImageSelection(['post_mime_type' => ['image', 'application/pdf', \Rapls\PDFImageCreator\MediaLibrary::PICKER_MARK]]);
+    check('R66-02: a picker of this plugin\'s takes PDFs, is marked, and loses the mark', [$args['post_mime_type'], $args['rapls_pic_image_pick'] ?? null], [['image', 'application/pdf'], true]);
+    $markOnly = $library->allowPdfsInImageSelection(['post_mime_type' => ['image', \Rapls\PDFImageCreator\MediaLibrary::PICKER_MARK]]);
+    check('  ...the mark alone adds PDFs', $markOnly['post_mime_type'], ['image', 'application/pdf']);
+    // Codex review of 1.4.29, 1: another plugin's image picker asks for images only, and gets images only.
+    check('  ...another plugin\'s image query is left as it asked (Codex review of 1.4.29, 1)', [$library->allowPdfsInImageSelection(['post_mime_type' => 'image'])['post_mime_type'], isset($library->allowPdfsInImageSelection(['post_mime_type' => ['image']])['rapls_pic_image_pick'])], ['image', false]);
+    check('  ...and one that asks for images and PDFs itself is not narrowed', isset($library->allowPdfsInImageSelection(['post_mime_type' => ['image', 'application/pdf']])['rapls_pic_image_pick']), false);
     $where = $library->limitPdfsToThumbnailed(' AND 1=1', new WP_Query($args));
     check('  ...and its WHERE lets a PDF in only with a thumbnail key', [false !== strpos($where, "post_mime_type <> 'application/pdf' OR EXISTS"), false !== strpos($where, "'_rapls_pic_thumbnail_id', '_thumbnail_id'")], [true, true]);
     check('  ...and the image the key names must exist (R67-01)', [false !== strpos($where, 'INNER JOIN wp_posts rapls_pic_image ON rapls_pic_image.ID = CAST(rapls_pic_thumb.meta_value AS UNSIGNED)'), false !== strpos($where, "rapls_pic_image.post_type = 'attachment'")], [true, true]);
     check('  ...other queries are left alone', $library->limitPdfsToThumbnailed(' AND 1=1', new WP_Query(['post_mime_type' => 'image'])), ' AND 1=1');
     check('  ...a non-image query is not marked', isset($library->allowPdfsInImageSelection(['post_mime_type' => 'application/pdf'])['rapls_pic_image_pick']), false);
+
+    // Codex review of 1.4.29, 1: the classic editor's featured image script loads on a classic post screen only.
+    if (!defined('RAPLS_PIC_PLUGIN_URL')) { define('RAPLS_PIC_PLUGIN_URL', 'https://example.test/wp-content/plugins/rapls-pdf-image-creator/'); }
+    if (!defined('RAPLS_PIC_VERSION')) { define('RAPLS_PIC_VERSION', 'test'); }
+    if (!function_exists('wp_enqueue_script')) { function wp_enqueue_script($handle, ...$rest) { $GLOBALS['enqueued'][] = $handle; } }
+    if (!function_exists('get_current_screen')) { function get_current_screen() { return $GLOBALS['screen'] ?? null; } }
+    $screens = [
+        'classic post' => [(object) ['base' => 'post'], true],
+        'block editor' => [new class { public $base = 'post'; public function is_block_editor() { return true; } }, false],
+        'classic, says so' => [new class { public $base = 'post'; public function is_block_editor() { return false; } }, true],
+        'another screen (widgets)' => [(object) ['base' => 'widgets'], false],
+        'an attachment\'s edit screen' => [(object) ['base' => 'post', 'post_type' => 'attachment'], false],
+        'no screen' => [null, false],
+    ];
+    $loaded = [];
+    foreach ($screens as $label => [$screen, $want]) {
+        $GLOBALS['enqueued'] = [];
+        $GLOBALS['screen'] = $screen;
+        $library->enqueueClassicFeaturedImage();
+        $loaded[$label] = in_array('pic-classic-featured', $GLOBALS['enqueued'], true);
+    }
+    check('  ...the classic featured image script: classic post screens only', $loaded, array_map(static function (array $x): bool { return $x[1]; }, $screens));
 
     // R66-03: an image attached to a PDF, without this plugin's marks, keeps its own URL.
     if (!function_exists('wp_get_attachment_url')) { function wp_get_attachment_url($id) { return 'https://example.test/' . $id . '.pdf'; } }

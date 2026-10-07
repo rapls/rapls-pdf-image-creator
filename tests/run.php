@@ -25,6 +25,7 @@ $suites = [
     // JavaScript, run with node when there is one.
     'test-block-editor.js',
     'test-bulk-admin.js',
+    'test-classic-featured.js',
 ];
 $failed = [];
 

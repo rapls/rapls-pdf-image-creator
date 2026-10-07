@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.1
-Stable tag: 1.4.29
+Stable tag: 1.4.30
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -315,6 +315,10 @@ No other profile is bundled. CMYK profiles are read from the host when one is
 present and are never redistributed.
 
 == Changelog ==
+= 1.4.30 =
+* Changed: PDFs with a thumbnail are offered in WordPress's own image pickers only -- the image, gallery and Post Featured Image blocks, the block editor's featured image, and the classic editor's "Set featured image" and "Add Media". Other plugins' image pickers are no longer given PDFs, which they may not be able to show, nor this plugin's upload message or delete button. Core pickers that also take other media, such as Cover and Media & Text, offer images only, as before this plugin. This replaces 1.4.21's "any picker that takes images"
+* Changed: the upload message and the "Delete the uploaded PDF" button belong to the image block's own picker alone
+
 = 1.4.29 =
 * Fixed: the "Delete the uploaded PDF" button in the image block's notice is offered only for a PDF uploaded since that media window was last opened, never for one uploaded on the same page for another block or another plugin
 
@@ -596,6 +600,9 @@ present and are never redistributed.
 * Japanese translation included
 
 == Upgrade Notice ==
+
+= 1.4.30 =
+PDFs are offered in WordPress's own image pickers only (image, gallery and featured image); other plugins' image pickers are left as they are.
 
 = 1.4.29 =
 The image block offers to delete only a PDF uploaded in its own media window.
