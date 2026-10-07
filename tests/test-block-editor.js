@@ -116,8 +116,9 @@ async function deleteFlow(autoGenerate, apiOk, opts = {}) {
     let uploadAdded = null;
     let coreUpload = 0;
     class Base {
-        constructor(options) { this.options = options; this.$el = { removeClass() {} }; this.content = { set(view) { uploadOptions = view.options; } }; }
-        on() {}
+        constructor(options) { this.options = options; this.$el = { removeClass() {} }; this.content = { set(view) { uploadOptions = view.options; } }; this.handlers = {}; }
+        on(event, cb) { (this.handlers[event] = this.handlers[event] || []).push(cb); }
+        trigger(event) { (this.handlers[event] || []).forEach((cb) => cb()); }
     }
     Base.prototype.uploadContent = function () { coreUpload++; };
     Base.prototype.initialize = function () {};
@@ -135,7 +136,27 @@ async function deleteFlow(autoGenerate, apiOk, opts = {}) {
     });
     const window = { raplsPicBlockEditor: { autoGenerate, noThumbnail: 'no thumbnail', uploadMessage: 'uploaded PDFs get no thumbnail', deleteUploaded: 'Delete', deleted: 'Deleted', deleteFailed: 'Not deleted' } };
     vm.runInNewContext(source, { wp: localWp, window, Promise });
-    if (false !== opts.uploaded) { uploadAdded({ id: 41 }); }
+    const Frame0 = localWp.media.view.MediaFrame.Select;
+    const open = (type) => { const f = new Frame0({ library: { type } }); f.initialize(); f.trigger('open'); return f; };
+    if ('elsewhere' === opts.uploaded) {
+        // Uploaded in another picker on the same page (a File block, say).
+        const other = open(['application/pdf']);
+        uploadAdded({ id: 41 });
+        other.trigger('close');
+        open(['image', 'application/pdf']).trigger('close');
+    } else if ('closed' === opts.uploaded) {
+        uploadAdded({ id: 41 });
+        open(['image', 'application/pdf']).trigger('close');
+    } else if ('before-reopen' === opts.uploaded) {
+        const first = open(['image', 'application/pdf']);
+        uploadAdded({ id: 41 });
+        first.trigger('close');
+        open(['image', 'application/pdf']).trigger('close');
+    } else if (false !== opts.uploaded) {
+        const frame = open(['image', 'application/pdf']);
+        uploadAdded({ id: 41 });
+        frame.trigger('close');
+    }
     const element = mediaUploadFilter('MediaUpload')({ allowedTypes: ['image'], value: opts.value, onSelect: () => {} });
     element.props.onSelect({ id: 41, mime: 'application/pdf' });
     const actions = (seen.notices[0] && seen.notices[0].options.actions) || [];
@@ -163,6 +184,10 @@ async function deleteFlow(autoGenerate, apiOk, opts = {}) {
     check('Auto on: nothing offered to delete, core\'s upload tab', JSON.stringify([on.actions, on.fetched, on.imageUpload, on.coreUpload]), JSON.stringify([[], [], null, 4]));
     const notHere = await deleteFlow(false, true, { uploaded: false });
     check('A PDF not uploaded in this window is never offered for deletion', JSON.stringify([notHere.actions, notHere.fetched]), JSON.stringify([[], []]));
+    for (const [how, label] of [['elsewhere', 'uploaded in another picker on the page'], ['closed', 'uploaded while no image picker was open'], ['before-reopen', 'uploaded the last time the picker was open']]) {
+        const r = await deleteFlow(false, true, { uploaded: how });
+        check(`  ...nor one ${label} (Codex review of 1.4.28, 3)`, JSON.stringify([r.actions, r.fetched]), JSON.stringify([[], []]));
+    }
     const current = await deleteFlow(false, true, { value: 41 });
     check('  ...nor the block\'s own PDF, preselected when the window opens', JSON.stringify([current.actions, current.fetched]), JSON.stringify([[], []]));
     const twice = await deleteFlow(false, true, { twice: true });

@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.1
-Stable tag: 1.4.28
+Stable tag: 1.4.29
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -315,6 +315,9 @@ No other profile is bundled. CMYK profiles are read from the host when one is
 present and are never redistributed.
 
 == Changelog ==
+= 1.4.29 =
+* Fixed: the "Delete the uploaded PDF" button in the image block's notice is offered only for a PDF uploaded since that media window was last opened, never for one uploaded on the same page for another block or another plugin
+
 = 1.4.28 =
 * Changed: with Auto Generate off, the upload tab of an image block's media window says beforehand that a PDF uploaded there gets no thumbnail and cannot be used in the block, and that PDFs which already have one can be chosen in the Media Library tab
 * Changed: with Auto Generate off, a PDF uploaded in that window and then chosen for the image block can be deleted again straight from the notice that says it has no thumbnail. Only a PDF uploaded on that page is offered, never the block's own
@@ -593,6 +596,9 @@ present and are never redistributed.
 * Japanese translation included
 
 == Upgrade Notice ==
+
+= 1.4.29 =
+The image block offers to delete only a PDF uploaded in its own media window.
 
 = 1.4.28 =
 With Auto Generate off, the image block's upload tab says a PDF uploaded there gets no thumbnail, and one uploaded by mistake can be deleted from the notice.

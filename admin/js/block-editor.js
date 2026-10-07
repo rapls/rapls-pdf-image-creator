@@ -84,13 +84,31 @@
      * nothing is left.
      */
     /**
-     * Attachments uploaded on this page, as WordPress's uploader adds them
+     * The image block's picker, as this plugin makes it: images and PDFs only
+     *
+     * Not Cover or Media & Text (video too), nor another plugin's image
+     * picker.
+     */
+    function isImageBlockFrame(options) {
+        const library = options && options.library ? options.library.type : null;
+
+        return Array.isArray(library) && 2 === library.length
+            && library.indexOf('image') !== -1 && library.indexOf('application/pdf') !== -1;
+    }
+
+    /**
+     * Attachments uploaded in the image block's picker, while it is open
      *
      * Only these may be offered for deletion. A PDF without a thumbnail can
      * reach the image block another way too -- the block's own PDF,
      * preselected when the window opens, after its thumbnail was deleted --
-     * and offering that one for deletion could remove a PDF other posts link
-     * to (review of the uncommitted change).
+     * and offering that one could remove a PDF other posts link to. Nor one
+     * uploaded on the same page for something else -- a File block, Media &
+     * Text, another plugin's picker -- and chosen here later (Codex review of
+     * 1.4.28, 3): the list is emptied each time the image block's picker
+     * opens. Nothing can be chosen there without opening it, and while it is
+     * open it covers the editor, so what is uploaded meanwhile is uploaded
+     * in it.
      */
     const uploadedHere = [];
 
@@ -229,13 +247,8 @@
             // with that message; every other frame as it was.
             uploadContent: function() {
                 const settings = window.raplsPicBlockEditor || {};
-                // The image block's picker, as this plugin makes it: images
-                // and PDFs, nothing else. Not Cover or Media & Text (video
-                // too), nor another plugin's image picker, where the message
-                // does not apply (review of the uncommitted change).
-                const library = this.options && this.options.library ? this.options.library.type : null;
-                const forImages = Array.isArray(library) && 2 === library.length
-                    && library.indexOf('image') !== -1 && library.indexOf('application/pdf') !== -1;
+                // Only in the image block's picker, where the message applies.
+                const forImages = isImageBlockFrame(this.options);
 
                 if (settings.autoGenerate || !forImages || !settings.uploadMessage || !wp.media.view.UploaderInline) {
                     return originalMediaFrame.prototype.uploadContent.apply(this, arguments);
@@ -250,6 +263,16 @@
 
             initialize: function() {
                 originalMediaFrame.prototype.initialize.apply(this, arguments);
+
+                // What is uploaded after the image block's picker opens is
+                // what it may offer to delete; each opening starts afresh.
+                // Not on close: core closes the window before it hands over
+                // the selection.
+                if (isImageBlockFrame(this.options)) {
+                    this.on('open', function() {
+                        uploadedHere.length = 0;
+                    });
+                }
 
                 // Listen for library ready
                 this.on('ready', function() {
