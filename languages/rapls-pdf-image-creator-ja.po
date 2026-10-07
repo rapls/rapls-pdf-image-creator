@@ -892,6 +892,18 @@ msgstr "いまの PDF が終わったら停止します..."
 msgid "Continue"
 msgstr "続ける"
 
+msgid "Automatic thumbnail generation is off, so a PDF uploaded here gets no thumbnail and cannot be used in an image block. PDFs that already have a thumbnail can be chosen in the Media Library tab."
+msgstr "サムネイルの自動生成がオフのため、ここでアップロードした PDF にはサムネイルが作られず、画像ブロックでは使えません。サムネイルのある PDF は「メディアライブラリ」タブで選べます。"
+
+msgid "Delete the uploaded PDF"
+msgstr "アップロードした PDF を削除"
+
+msgid "The PDF was deleted from the Media Library."
+msgstr "PDF をメディアライブラリから削除しました。"
+
+msgid "The PDF could not be deleted. Delete it in the Media Library."
+msgstr "PDF を削除できませんでした。メディアライブラリで削除してください。"
+
 msgid "This PDF has no thumbnail, so it cannot be shown as an image. Generate its thumbnail in the Media Library, then choose it again."
 msgstr "この PDF にはサムネイルが無いため、画像として表示できません。メディアライブラリでサムネイルを生成してから、もう一度選んでください。"
 

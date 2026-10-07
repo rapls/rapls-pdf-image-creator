@@ -880,7 +880,7 @@ final class MediaLibrary
             RAPLS_PIC_PLUGIN_URL . 'admin/js/block-editor.js',
             // What the script itself uses, not what wp-edit-post happens to
             // bring along (R68-03). wp.media is optional and checked for.
-            ['wp-blocks', 'wp-hooks', 'wp-compose', 'wp-element', 'wp-dom-ready', 'wp-edit-post', 'wp-data', 'wp-notices'],
+            ['wp-blocks', 'wp-hooks', 'wp-compose', 'wp-element', 'wp-dom-ready', 'wp-edit-post', 'wp-data', 'wp-notices', 'wp-api-fetch'],
             RAPLS_PIC_VERSION,
             true
         );
@@ -896,6 +896,13 @@ final class MediaLibrary
             'noThumbnail' => $this->settings->isAutoGenerateEnabled()
                 ? __('This PDF has no thumbnail, so it cannot be shown as an image. Generate its thumbnail in the Media Library, then choose it again.', 'rapls-pdf-image-creator')
                 : __('This PDF has no thumbnail, so it cannot be shown as an image: automatic thumbnail generation is off. Generate its thumbnail in the Media Library, then choose it again.', 'rapls-pdf-image-creator'),
+            // With Auto Generate off: said on the upload tab before anything
+            // is uploaded, and the PDF just uploaded can be deleted again
+            // (Codex review of 1.4.27, 2).
+            'uploadMessage' => __('Automatic thumbnail generation is off, so a PDF uploaded here gets no thumbnail and cannot be used in an image block. PDFs that already have a thumbnail can be chosen in the Media Library tab.', 'rapls-pdf-image-creator'),
+            'deleteUploaded' => __('Delete the uploaded PDF', 'rapls-pdf-image-creator'),
+            'deleted' => __('The PDF was deleted from the Media Library.', 'rapls-pdf-image-creator'),
+            'deleteFailed' => __('The PDF could not be deleted. Delete it in the Media Library.', 'rapls-pdf-image-creator'),
         ]);
     }
 

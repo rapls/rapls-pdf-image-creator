@@ -83,7 +83,31 @@
      * Those are left out, and the editor says why. Nothing is passed on when
      * nothing is left.
      */
-    function onlyWithThumbnails(onSelect) {
+    /**
+     * Attachments uploaded on this page, as WordPress's uploader adds them
+     *
+     * Only these may be offered for deletion. A PDF without a thumbnail can
+     * reach the image block another way too -- the block's own PDF,
+     * preselected when the window opens, after its thumbnail was deleted --
+     * and offering that one for deletion could remove a PDF other posts link
+     * to (review of the uncommitted change).
+     */
+    const uploadedHere = [];
+
+    if (wp.Uploader && wp.Uploader.queue && 'function' === typeof wp.Uploader.queue.on) {
+        wp.Uploader.queue.on('add', function(attachment) {
+            uploadedHere.push(attachment);
+        });
+    }
+
+    function wasUploadedHere(id) {
+        return uploadedHere.some(function(attachment) {
+            const own = attachment && (attachment.id || ('function' === typeof attachment.get ? attachment.get('id') : 0));
+            return !!own && String(own) === String(id);
+        });
+    }
+
+    function onlyWithThumbnails(onSelect, current) {
         if ('function' !== typeof onSelect) {
             return onSelect;
         }
@@ -100,9 +124,29 @@
 
             const settings = window.raplsPicBlockEditor || {};
             const message = settings.noThumbnail || 'This PDF has no thumbnail, so it cannot be shown as an image.';
+            const notices = wp.data && wp.data.dispatch ? wp.data.dispatch('core/notices') : null;
 
-            if (wp.data && wp.data.dispatch && wp.data.dispatch('core/notices')) {
-                wp.data.dispatch('core/notices').createErrorNotice(message, { type: 'snackbar', id: 'rapls-pic-no-thumbnail' });
+            // With Auto Generate off, a PDF without a thumbnail chosen here was
+            // uploaded in this window (the library lists only PDFs that have
+            // one), and it stayed in the Media Library for nothing. Offered
+            // to be deleted again, by the person who just uploaded it (Codex
+            // review of 1.4.27, 2).
+            const dropped = list.filter(isPdfWithoutThumbnail).map(function(item) {
+                return item.id;
+            }).filter(function(id) {
+                return !!id && String(id) !== String(current) && wasUploadedHere(id);
+            });
+            const actions = !settings.autoGenerate && wp.apiFetch && dropped.length
+                ? [{
+                    label: settings.deleteUploaded || 'Delete the uploaded PDF',
+                    onClick: function() {
+                        deleteUploaded(dropped, notices, settings);
+                    }
+                }]
+                : [];
+
+            if (notices) {
+                notices.createErrorNotice(message, { type: actions.length ? 'default' : 'snackbar', id: 'rapls-pic-no-thumbnail', isDismissible: true, actions: actions });
             }
 
             if (Array.isArray(media) && kept.length > 0) {
@@ -111,6 +155,39 @@
 
             return undefined;
         };
+    }
+
+    /**
+     * Delete PDFs just uploaded that the image block could not take
+     */
+    function deleteUploaded(ids, notices, settings) {
+        // Once: the notice stays until the request answers, and a second
+        // click deleted nothing and said it had failed.
+        if (deleteUploaded.busy) {
+            return;
+        }
+
+        deleteUploaded.busy = true;
+
+        if (notices) {
+            notices.removeNotice('rapls-pic-no-thumbnail');
+        }
+
+        Promise.all(ids.map(function(id) {
+            return wp.apiFetch({ path: '/wp/v2/media/' + encodeURIComponent(id) + '?force=true', method: 'DELETE' });
+        })).then(function() {
+            deleteUploaded.busy = false;
+
+            if (notices) {
+                notices.createSuccessNotice(settings.deleted || 'The PDF was deleted from the Media Library.', { type: 'snackbar' });
+            }
+        }, function() {
+            deleteUploaded.busy = false;
+
+            if (notices) {
+                notices.createErrorNotice(settings.deleteFailed || 'The PDF could not be deleted. Delete it in the Media Library.', { type: 'snackbar' });
+            }
+        });
     }
 
     /**
@@ -131,7 +208,7 @@
                     // it already keeps only what has a URL to show.
                     return wp.element.createElement(MediaUpload, Object.assign({}, props, {
                         allowedTypes: newAllowedTypes,
-                        onSelect: props.gallery ? props.onSelect : onlyWithThumbnails(props.onSelect)
+                        onSelect: props.gallery ? props.onSelect : onlyWithThumbnails(props.onSelect, props.value)
                     }));
                 }
                 return wp.element.createElement(MediaUpload, props);
@@ -146,6 +223,31 @@
         const originalMediaFrame = wp.media.view.MediaFrame.Select;
 
         wp.media.view.MediaFrame.Select = originalMediaFrame.extend({
+            // Said before anything is uploaded: with Auto Generate off, a PDF
+            // uploaded while choosing an image gets no thumbnail and cannot
+            // be used (Codex review of 1.4.27, 2). Core's own upload tab,
+            // with that message; every other frame as it was.
+            uploadContent: function() {
+                const settings = window.raplsPicBlockEditor || {};
+                // The image block's picker, as this plugin makes it: images
+                // and PDFs, nothing else. Not Cover or Media & Text (video
+                // too), nor another plugin's image picker, where the message
+                // does not apply (review of the uncommitted change).
+                const library = this.options && this.options.library ? this.options.library.type : null;
+                const forImages = Array.isArray(library) && 2 === library.length
+                    && library.indexOf('image') !== -1 && library.indexOf('application/pdf') !== -1;
+
+                if (settings.autoGenerate || !forImages || !settings.uploadMessage || !wp.media.view.UploaderInline) {
+                    return originalMediaFrame.prototype.uploadContent.apply(this, arguments);
+                }
+
+                this.$el.removeClass('hide-toolbar');
+                this.content.set(new wp.media.view.UploaderInline({
+                    controller: this,
+                    message: settings.uploadMessage
+                }));
+            },
+
             initialize: function() {
                 originalMediaFrame.prototype.initialize.apply(this, arguments);
 

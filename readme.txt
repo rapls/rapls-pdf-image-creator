@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.1
-Stable tag: 1.4.27
+Stable tag: 1.4.28
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -315,6 +315,10 @@ No other profile is bundled. CMYK profiles are read from the host when one is
 present and are never redistributed.
 
 == Changelog ==
+= 1.4.28 =
+* Changed: with Auto Generate off, the upload tab of an image block's media window says beforehand that a PDF uploaded there gets no thumbnail and cannot be used in the block, and that PDFs which already have one can be chosen in the Media Library tab
+* Changed: with Auto Generate off, a PDF uploaded in that window and then chosen for the image block can be deleted again straight from the notice that says it has no thumbnail. Only a PDF uploaded on that page is offered, never the block's own
+
 = 1.4.27 =
 * Fixed: Bulk Generate's Stop, pressed while the next PDF is being looked for, no longer starts drawing the PDF that is found; Continue looks for it again. A run that reaches the end meanwhile says Complete
 * Fixed: an image block no longer takes a PDF that has no thumbnail -- one uploaded in the media window while Auto Generate is off, or one whose thumbnail could not be made. The editor says why. PDFs with thumbnails can still be chosen, with Auto Generate on or off, and galleries are unchanged
@@ -589,6 +593,9 @@ present and are never redistributed.
 * Japanese translation included
 
 == Upgrade Notice ==
+
+= 1.4.28 =
+With Auto Generate off, the image block's upload tab says a PDF uploaded there gets no thumbnail, and one uploaded by mistake can be deleted from the notice.
 
 = 1.4.27 =
 Stop no longer starts a new PDF, image blocks no longer take PDFs without a thumbnail, and the settings screen is clearer to screen readers.
