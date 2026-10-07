@@ -832,9 +832,11 @@ final class MediaLibrary
     /**
      * In an image picker, a PDF only when it has a thumbnail to show
      *
-     * The same two keys getThumbnailId() reads. A PDF is let through on the
-     * key alone; one whose image has since gone shows as a PDF, as anywhere
-     * else in the library.
+     * The same two keys getThumbnailId() reads, and the image they name must
+     * still be there: a PDF is let through only when one of the keys points
+     * at an attachment that exists. A key left behind by an image deleted
+     * from the library does not let it in (R67-01) -- the picker would have
+     * had no image to show for it.
      *
      * @param string    $where The query's WHERE clause
      * @param \WP_Query $query The query
