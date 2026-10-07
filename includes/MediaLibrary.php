@@ -772,8 +772,9 @@ final class MediaLibrary
     /**
      * The type WordPress's own image pickers add to their library query
      *
-     * Added by admin/js/block-editor.js and admin/js/classic-featured.js for
-     * the image block, the gallery and the featured image. Not a real MIME
+     * Added by admin/js/block-editor.js (the image block's picker) and
+     * admin/js/core-media-states.js (core's featured image and gallery
+     * states). Not a real MIME
      * type: it matches no attachment, and is taken out here before the query
      * runs. It says the picker is one this plugin opened to PDFs, which a
      * plain "image" query does not.
@@ -895,12 +896,14 @@ final class MediaLibrary
      */
     public function enqueueBlockEditorAssets(): void
     {
+        $this->registerCoreMediaStates();
+
         wp_enqueue_script(
             'pic-block-editor',
             RAPLS_PIC_PLUGIN_URL . 'admin/js/block-editor.js',
             // What the script itself uses, not what wp-edit-post happens to
             // bring along (R68-03). wp.media is optional and checked for.
-            ['wp-blocks', 'wp-hooks', 'wp-compose', 'wp-element', 'wp-dom-ready', 'wp-edit-post', 'wp-data', 'wp-notices', 'wp-api-fetch'],
+            ['wp-blocks', 'wp-hooks', 'wp-compose', 'wp-element', 'wp-dom-ready', 'wp-edit-post', 'wp-data', 'wp-notices', 'wp-api-fetch', 'pic-core-media-states'],
             RAPLS_PIC_VERSION,
             true
         );
@@ -927,10 +930,11 @@ final class MediaLibrary
     }
 
     /**
-     * The classic editor's "Set featured image" offers PDFs with a thumbnail
+     * The classic editor's "Set featured image" and "Add Media" offer PDFs with a thumbnail
      *
-     * As the block editor's featured image picker does. Only on a post screen
-     * the block editor is not running on: there, block-editor.js does it.
+     * As the block editor's pickers do. Only on a post screen the block
+     * editor is not running on: there, enqueueBlockEditorAssets() loads the
+     * same script.
      * Any other screen that loads the media library is left as it is
      * (Codex review of 1.4.29, 1).
      */
@@ -946,10 +950,22 @@ final class MediaLibrary
             return;
         }
 
-        wp_enqueue_script(
-            'pic-classic-featured',
-            RAPLS_PIC_PLUGIN_URL . 'admin/js/classic-featured.js',
-            ['media-editor'],
+        $this->registerCoreMediaStates();
+        wp_enqueue_script('pic-core-media-states');
+    }
+
+    /**
+     * The script that opens WordPress's own featured image and gallery pickers to PDFs
+     *
+     * admin/js/core-media-states.js marks the libraries of core's
+     * featured-image, gallery and gallery-library states, and nothing else.
+     */
+    private function registerCoreMediaStates(): void
+    {
+        wp_register_script(
+            'pic-core-media-states',
+            RAPLS_PIC_PLUGIN_URL . 'admin/js/core-media-states.js',
+            ['media-views'],
             RAPLS_PIC_VERSION,
             true
         );

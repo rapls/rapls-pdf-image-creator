@@ -131,8 +131,7 @@ function load(options = {}) {
         // Open it as MediaUpload does: the frame is built as it opens.
         open(element) {
             let frame = null;
-            // As core builds a gallery's or the featured image's frame: it asks for images itself.
-            const args = element.props.render({ open() { frame = new Frame({ library: { type: element.props.allowedTypes } }); frame.initialize(); localWp.media.query({ type: 'image' }); frame.trigger('open'); } });
+            const args = element.props.render({ open() { frame = new Frame({ library: { type: element.props.allowedTypes } }); frame.initialize(); frame.trigger('open'); } });
             args.open();
             return frame;
         },
@@ -175,13 +174,6 @@ const MARK = 'rapls-pic/with-thumbnail';
     const added = ed.picker('core/image', { value: 9, onSelect }, 5);
     check('  ...the block\'s own picker (its image) is opened to PDFs; another plugin\'s inside the block is not', JSON.stringify([own.element.props.allowedTypes, added.element.props.allowedTypes, added.element.props.onSelect === onSelect]), JSON.stringify([['image', 'application/pdf', MARK], ['image'], true]));
 
-    // The gallery's and the featured image's frames ask for images themselves: while they are built, those queries are marked.
-    ed.seen.queries.length = 0;
-    ed.open(gallery.element);
-    ed.open(featured.element);
-    ed.open(other.element.props.render ? Object.assign({}, other.element, { props: Object.assign({}, other.element.props, { allowedTypes: ['image'] }) }) : other.element);
-    ed.query({ type: 'image' });
-    check('Gallery and featured image: the image query made as they open asks for thumbnailed PDFs; any other does not', JSON.stringify(ed.seen.queries.map((q) => q.type)), JSON.stringify([['image', 'application/pdf', MARK], ['image', 'application/pdf', MARK], 'image', 'image']));
 }
 
 // Codex review of 1.4.26, 3: a PDF chosen for an image block is passed on only

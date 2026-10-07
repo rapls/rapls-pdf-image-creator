@@ -133,6 +133,7 @@ namespace {
     if (!defined('RAPLS_PIC_PLUGIN_URL')) { define('RAPLS_PIC_PLUGIN_URL', 'https://example.test/wp-content/plugins/rapls-pdf-image-creator/'); }
     if (!defined('RAPLS_PIC_VERSION')) { define('RAPLS_PIC_VERSION', 'test'); }
     if (!function_exists('wp_enqueue_script')) { function wp_enqueue_script($handle, ...$rest) { $GLOBALS['enqueued'][] = $handle; } }
+    if (!function_exists('wp_register_script')) { function wp_register_script($handle, $src, $deps = [], ...$rest) { $GLOBALS['registered'][$handle] = [$src, $deps]; return true; } }
     if (!function_exists('get_current_screen')) { function get_current_screen() { return $GLOBALS['screen'] ?? null; } }
     $screens = [
         'classic post' => [(object) ['base' => 'post'], true],
@@ -147,9 +148,10 @@ namespace {
         $GLOBALS['enqueued'] = [];
         $GLOBALS['screen'] = $screen;
         $library->enqueueClassicFeaturedImage();
-        $loaded[$label] = in_array('pic-classic-featured', $GLOBALS['enqueued'], true);
+        $loaded[$label] = in_array('pic-core-media-states', $GLOBALS['enqueued'], true);
     }
-    check('  ...the classic featured image script: classic post screens only', $loaded, array_map(static function (array $x): bool { return $x[1]; }, $screens));
+    check('  ...the core featured image and gallery script: classic post screens only', $loaded, array_map(static function (array $x): bool { return $x[1]; }, $screens));
+    check('  ...and it is core-media-states.js, after media-views', [basename((string) ($GLOBALS['registered']['pic-core-media-states'][0] ?? '')), $GLOBALS['registered']['pic-core-media-states'][1] ?? null], ['core-media-states.js', ['media-views']]);
 
     // R66-03: an image attached to a PDF, without this plugin's marks, keeps its own URL.
     if (!function_exists('wp_get_attachment_url')) { function wp_get_attachment_url($id) { return 'https://example.test/' . $id . '.pdf'; } }

@@ -391,29 +391,4 @@
         });
     }
 
-    /**
-     * The libraries those pickers ask for, as they are built
-     *
-     * The gallery's frame and the featured image's ask for images themselves
-     * -- wp.media.query({ type: 'image' }) -- whatever MediaUpload was told,
-     * so a mark on allowedTypes never reached them, and the server no longer
-     * adds PDFs to a plain image query (review of the uncommitted change).
-     * While one of WordPress's own pickers is being opened, and only then
-     * (openingPicker is set around the open), an image query it makes asks
-     * for thumbnailed PDFs too.
-     */
-    if (typeof wp !== 'undefined' && wp.media && 'function' === typeof wp.media.query) {
-        const originalQuery = wp.media.query;
-
-        wp.media.query = function(props) {
-            const args = Array.prototype.slice.call(arguments);
-
-            if (openingPicker && props && 'image' === props.type) {
-                args[0] = Object.assign({}, props, { type: ['image', 'application/pdf', PICKER_MARK] });
-            }
-
-            return originalQuery.apply(this, args);
-        };
-    }
-
 })();
