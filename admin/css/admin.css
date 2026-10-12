@@ -123,18 +123,6 @@
     background: #f6f7f7;
 }
 
-/* Requirements List */
-.rapls-pic-requirements-list {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-}
-
-.rapls-pic-requirements-list li {
-    margin: 4px 0;
-    padding: 2px 0;
-}
-
 /* Status Indicators */
 .rapls-pic-status-ok {
     color: #00a32a;

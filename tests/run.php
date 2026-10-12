@@ -22,7 +22,9 @@ $suites = [
     'test-regenerate.php',
     'test-bulk.php',
     'test-uninstall.php',
+    'test-admin-screens.php',
     // JavaScript, run with node when there is one.
+    'test-admin-tabs.js',
     'test-block-editor.js',
     'test-bulk-admin.js',
     'test-core-media-states.js',

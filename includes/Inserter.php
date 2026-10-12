@@ -46,8 +46,10 @@ final class Inserter
         // Filter media send to editor
         add_filter('media_send_to_editor', [$this, 'filterMediaSendToEditor'], 20, 3);
 
-        // Add insert settings to attachment JS data
-        add_filter('wp_prepare_attachment_for_js', [$this, 'addInsertSettingsToJs'], 20, 3);
+        // Not on wp_prepare_attachment_for_js: the insert settings and the
+        // whole insert HTML were added to every PDF in every media-modal
+        // query, and no script read either (review after 1.4.31). The HTML
+        // is made when "Insert into post" is pressed, above.
     }
 
     /**
@@ -209,13 +211,17 @@ final class Inserter
             );
         }
 
-        // Replace placeholders
+        // Replace placeholders. Escaped for where a template puts them --
+        // inside an attribute, as the example does: a title with a quote in
+        // it closed the attribute and broke the markup, which wp_kses_post()
+        // below does not repair (review after 1.4.31). In text, the escaped
+        // title reads the same.
         $replacements = [
-            '%PDF_URL%' => $pdfUrl,
-            '%THUMBNAIL_URL%' => $thumbnailUrl,
-            '%TITLE%' => $pdfTitle,
+            '%PDF_URL%' => esc_url($pdfUrl),
+            '%THUMBNAIL_URL%' => esc_url($thumbnailUrl),
+            '%TITLE%' => esc_attr($pdfTitle),
             '%ID%' => (string) $pdfId,
-            '%ATTACHMENT_URL%' => $attachmentUrl,
+            '%ATTACHMENT_URL%' => esc_url($attachmentUrl),
         ];
 
         $html = str_replace(
@@ -235,36 +241,5 @@ final class Inserter
 
         // Sanitize final HTML output
         return wp_kses_post($html);
-    }
-
-    /**
-     * Add insert settings to attachment JS data
-     *
-     * @param array $response Attachment response data
-     * @param \WP_Post $attachment Attachment post object
-     * @param array|bool $meta Attachment meta data
-     * @return array Modified response
-     */
-    public function addInsertSettingsToJs(array $response, \WP_Post $attachment, $meta): array
-    {
-        // Only process PDFs
-        if ($response['mime'] !== 'application/pdf') {
-            return $response;
-        }
-
-        // Add insert settings
-        $response['picInsertSettings'] = [
-            'type' => $this->settings->getInsertType(),
-            'size' => $this->settings->getInsertSize(),
-            'link' => $this->settings->getInsertLink(),
-            'hasThumbnail' => $this->generator->hasThumbnail($attachment->ID),
-        ];
-
-        // Pre-generate insert HTML
-        if ($this->generator->hasThumbnail($attachment->ID)) {
-            $response['picInsertHtml'] = $this->generateInsertHtml($attachment->ID);
-        }
-
-        return $response;
     }
 }

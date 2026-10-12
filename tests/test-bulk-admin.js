@@ -76,12 +76,21 @@ elements['.rapls-pic-tabs .nav-tab'] = {
     attr(name, value) { tabs.forEach((tab) => tab.attr(name, value)); return this; },
     index(tab) { return tabs.indexOf(tab); },
     eq(i) { return tabs[i]; },
+    // Review after 1.4.31: the tab is found by comparing names, not by a selector built from the address.
+    filter(fn) { const found = tabs.filter((tab) => fn.call(tab)); return found.length ? found[0] : { length: 0 }; },
 };
+const docHandlers = {};
 const requests = [];
 function $(arg) {
     if (arg === documentStub) {
-        return { ready(cb) { ready = cb; }, on() { return this; } };
+        return {
+            ready(cb) { ready = cb; },
+            on(event, cb) { docHandlers[event] = cb; return this; },
+            trigger(event, args) { if (docHandlers[event]) { docHandlers[event]({}, ...(args || [])); } return this; },
+        };
     }
+    // An element itself, as $(this) hands it.
+    if (arg && 'object' === typeof arg && arg._data) { return arg; }
     if ('string' === typeof arg && '<' === arg.charAt(0)) {
         const created = makeElement();
         const cls = /class="([^"]*)"/.exec(arg);
@@ -94,7 +103,7 @@ function $(arg) {
     return elements[arg];
 }
 $.ajax = (options) => { requests.push(options); };
-const documentStub = {};
+const documentStub = { getElementById: (id) => $('#' + id) };
 
 let confirms = 0;
 let alerts = [];
@@ -122,7 +131,13 @@ vm.runInNewContext(source, {
 });
 ready();
 
-// The Statistics box asks on load, page by page.
+// Review after 1.4.31: nothing is asked until the Status tab is opened (this
+// script also loads on the Media Library, and every visit read the library).
+check('Statistics: nothing is asked while another tab is open', requests.length, 0);
+tabs[2]._handlers.click.call(tabs[2], { preventDefault() {} });
+check('  ...opening the Status tab asks', requests.length, 1);
+
+// The Statistics box asks page by page.
 const answer = (data, success = true) => { const r = requests.shift(); r.success({ success, data }); return r; };
 const fault = () => { const r = requests.shift(); r.error({}, 'error', 'Gateway Timeout'); return r; };
 const next = () => requests[0];
@@ -133,6 +148,8 @@ check('  ...the next one from where the first stopped, with its counts', [next()
 answer({ total: 260, with_thumbnail: 60, without_thumbnail: 200, after: 1260, done: true });
 check('  ...the totals shown are the last page\'s, and it stops there', [$('#rapls-pic-stats-total').text(), requests.length, $('#rapls-pic-refresh-stats').prop('disabled')], ['260', 0, false]);
 
+// Back to the first tab, as the page loaded.
+tabs[0]._handlers.click.call(tabs[0], { preventDefault() {} });
 console.log('\n--- Tabs, as a screen reader is told of them (Codex review of 1.4.26, 4) ---');
 check('Only the chosen tab is in the Tab order, set by the script', tabs.map((t) => t.attr('tabindex')), [undefined, '-1', '-1']);
 const key = (tab, k) => { let prevented = false; tab._handlers.keydown.call(tab, { key: k, preventDefault() { prevented = true; } }); return prevented; };

@@ -18,15 +18,23 @@ namespace Rapls\PDFImageCreator\Engine;
  * coated-stock profile and an sRGB profile reproduces what the PDF actually
  * looks like.
  *
- * No profile ships with the plugin. Profiles are located on the host at run
- * time, so nothing is redistributed and no licence travels with the package.
- * When none can be found the arithmetic conversion is still used, which is the
- * behaviour every release before 1.1.0 had unconditionally.
+ * The two profiles are found differently, and the reason is legal, not
+ * technical (review after 1.4.31: this said no profile ships and that
+ * Ghostscript's are not searched, which stopped being true):
+ *
+ * - The destination (sRGB) is bundled -- icc/sRGB2014.icc, from the ICC's
+ *   registry, under a licence that names embedding -- because a copy of it
+ *   goes into every thumbnail the site serves (attachSrgb()).
+ * - The source (CMYK) is found on the host, including Ghostscript's own
+ *   default_cmyk.icc. It drives the transform and is replaced by the
+ *   destination, so no copy reaches the output, and reading a file the host
+ *   installed is not distributing it. Nothing of Ghostscript's is bundled.
+ *
+ * When no CMYK profile can be found the arithmetic conversion is still used,
+ * which is the behaviour every release before 1.1.0 had unconditionally.
  *
  * Everything here is PHP and the Imagick extension. No external process is
- * started, and Ghostscript-supplied profiles are deliberately not in the
- * candidate list: their AGPL terms do not sit well beside GPL-2.0-or-later.
- * Sites that want to use one can point the icc_paths filter at it themselves.
+ * started. The icc_paths filter can point at other profiles.
  */
 final class ColorProfile
 {

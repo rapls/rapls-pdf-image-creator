@@ -85,7 +85,9 @@ final class MediaLibrary
         add_action('admin_init', [$this, 'handleRegenerateAction']);
 
         // AJAX handler for regeneration
-        add_action('wp_ajax_rapls_pic_regenerate_thumbnail', [$this, 'ajaxRegenerateThumbnail']);
+        // No AJAX regenerate endpoint: nothing on any screen called it, and
+        // the row action above does the same through handleRegenerateAction()
+        // (review after 1.4.31).
 
         // Allow PDFs in image block media selection
         add_filter('ajax_query_attachments_args', [$this, 'allowPdfsInImageSelection']);
@@ -321,6 +323,12 @@ final class MediaLibrary
      */
     public function filterAttachmentImage(string $html, int $attachmentId, $size, bool $icon, $attr): string
     {
+        // A fallback, not the usual route. filterAttachmentImageSrc() above
+        // already gives core the thumbnail, so core's HTML is not empty for a
+        // PDF that has one. It is empty only when something later on
+        // wp_get_attachment_image_src took that answer away, and then this
+        // still shows the thumbnail (review after 1.4.31: read as dead code,
+        // which it is only while nothing else interferes).
         // Only process if HTML is empty
         if (!empty($html)) {
             return $html;
@@ -404,11 +412,13 @@ final class MediaLibrary
             return $response;
         }
 
-        // Get upload directory info
-        $uploadDir = wp_upload_dir();
-        $baseUrl = trailingslashit($uploadDir['baseurl']);
-        $thumbnailFile = get_post_meta($thumbnailId, '_wp_attached_file', true);
-        $thumbnailDir = trailingslashit(dirname($thumbnailFile));
+        // The sizes sit beside the full image, so their addresses are its
+        // address with the file name swapped -- as core's own
+        // wp_prepare_attachment_for_js() builds them. Built from the uploads
+        // folder's address instead, they went past a CDN or offload plugin
+        // that had rewritten the full image's, to a local copy that need not
+        // exist (review after 1.4.31).
+        $sizeBase = str_replace(wp_basename($thumbnailUrl), '', $thumbnailUrl);
 
         // Keep PDF URL for "File URL" field - DO NOT replace with thumbnail URL
         // $response['url'] stays as the PDF URL
@@ -431,7 +441,7 @@ final class MediaLibrary
         if (!empty($thumbnailMeta['sizes'])) {
             foreach ($thumbnailMeta['sizes'] as $sizeName => $sizeData) {
                 $sizes[$sizeName] = [
-                    'url' => $baseUrl . $thumbnailDir . $sizeData['file'],
+                    'url' => $sizeBase . $sizeData['file'],
                     'width' => $sizeData['width'],
                     'height' => $sizeData['height'],
                     'orientation' => $sizeData['width'] >= $sizeData['height'] ? 'landscape' : 'portrait',
@@ -509,11 +519,14 @@ final class MediaLibrary
 
         $data = $response->get_data();
 
-        // Get upload directory info
-        $uploadDir = wp_upload_dir();
-        $baseUrl = trailingslashit($uploadDir['baseurl']);
-        $thumbnailFile = get_post_meta($thumbnailId, '_wp_attached_file', true);
-        $thumbnailDir = trailingslashit(dirname($thumbnailFile));
+        // The sizes sit beside the full image, so their addresses are its
+        // address with the file name swapped -- as core's own
+        // wp_prepare_attachment_for_js() builds them. Built from the uploads
+        // folder's address instead, they went past a CDN or offload plugin
+        // that had rewritten the full image's, to a local copy that need not
+        // exist (review after 1.4.31).
+        $sizeBase = str_replace(wp_basename($thumbnailUrl), '', $thumbnailUrl);
+        $thumbnailFile = (string) get_post_meta($thumbnailId, '_wp_attached_file', true);
 
         // Keep PDF URL for source_url - DO NOT replace with thumbnail URL
         // $data['source_url'] stays as the PDF URL
@@ -543,7 +556,7 @@ final class MediaLibrary
                     'width' => $sizeData['width'],
                     'height' => $sizeData['height'],
                     'mime_type' => $sizeData['mime-type'] ?? get_post_mime_type($thumbnailId),
-                    'source_url' => $baseUrl . $thumbnailDir . $sizeData['file'],
+                    'source_url' => $sizeBase . $sizeData['file'],
                 ];
             }
         }
@@ -636,10 +649,15 @@ final class MediaLibrary
             return;
         }
 
+        // The stylesheet's class names (they were "pic-status", so the marks
+        // were never styled), and the words for a screen reader, which reads
+        // a title only sometimes (review after 1.4.31).
         if ($this->generator->hasThumbnail($postId)) {
-            echo '<span class="pic-status pic-status-yes" title="' . esc_attr__('Thumbnail generated', 'rapls-pdf-image-creator') . '">✓</span>';
+            echo '<span class="rapls-pic-status rapls-pic-status-yes" title="' . esc_attr__('Thumbnail generated', 'rapls-pdf-image-creator') . '" aria-hidden="true">✓</span>'
+                . '<span class="screen-reader-text">' . esc_html__('Thumbnail generated', 'rapls-pdf-image-creator') . '</span>';
         } else {
-            echo '<span class="pic-status pic-status-no" title="' . esc_attr__('No thumbnail', 'rapls-pdf-image-creator') . '">✗</span>';
+            echo '<span class="rapls-pic-status rapls-pic-status-no" title="' . esc_attr__('No thumbnail', 'rapls-pdf-image-creator') . '" aria-hidden="true">✗</span>'
+                . '<span class="screen-reader-text">' . esc_html__('No thumbnail', 'rapls-pdf-image-creator') . '</span>';
         }
     }
 
@@ -723,50 +741,6 @@ final class MediaLibrary
 
         wp_safe_redirect($redirectUrl);
         exit;
-    }
-
-    /**
-     * AJAX handler for regenerating thumbnail
-     */
-    public function ajaxRegenerateThumbnail(): void
-    {
-        check_ajax_referer('rapls_pic_admin', 'nonce');
-
-        if (!current_user_can('upload_files')) {
-            wp_send_json_error(['message' => __('Permission denied.', 'rapls-pdf-image-creator')]);
-        }
-
-        $attachmentId = isset($_POST['attachment_id']) ? absint($_POST['attachment_id']) : 0;
-        if (!$attachmentId) {
-            wp_send_json_error(['message' => __('Invalid attachment ID.', 'rapls-pdf-image-creator')]);
-        }
-
-        // This PDF, not only uploading in general: the link that calls this
-        // is shown only where edit_post holds (handleRegenerateAction() asks
-        // the same), and without it any author could regenerate -- and so
-        // delete the thumbnail of -- anyone's PDF (R55-01).
-        if (!current_user_can('edit_post', $attachmentId)) {
-            wp_send_json_error(['message' => __('Permission denied.', 'rapls-pdf-image-creator')], 403);
-        }
-
-        if ('application/pdf' !== get_post_mime_type($attachmentId)) {
-            wp_send_json_error(['message' => __('Not a PDF file.', 'rapls-pdf-image-creator')]);
-        }
-
-        $force = !empty($_POST['force']);
-        $result = $this->generator->generate($attachmentId, $force);
-
-        if ($result) {
-            wp_send_json_success([
-                'message' => __('Thumbnail generated successfully.', 'rapls-pdf-image-creator'),
-                'thumbnail_id' => $result,
-                'thumbnail_url' => $this->generator->getThumbnailUrl($attachmentId, 'thumbnail'),
-            ]);
-        } else {
-            wp_send_json_error([
-                'message' => __('Failed to generate thumbnail.', 'rapls-pdf-image-creator'),
-            ]);
-        }
     }
 
     /**
@@ -904,23 +878,25 @@ final class MediaLibrary
             'pic-block-editor',
             RAPLS_PIC_PLUGIN_URL . 'admin/js/block-editor.js',
             // What the script itself uses, not what wp-edit-post happens to
-            // bring along (R68-03). wp.media is optional and checked for.
-            ['wp-blocks', 'wp-hooks', 'wp-compose', 'wp-element', 'wp-dom-ready', 'wp-edit-post', 'wp-data', 'wp-notices', 'wp-api-fetch', 'pic-core-media-states'],
+            // bring along (R68-03) -- and not wp-edit-post itself, wp-blocks
+            // or wp-dom-ready, which it never used: listed, they loaded the
+            // post editor's code into the site, widget and customizer editors
+            // too (review after 1.4.31). wp.media is optional and checked for.
+            ['wp-hooks', 'wp-compose', 'wp-element', 'wp-data', 'wp-notices', 'wp-api-fetch', 'pic-core-media-states'],
             RAPLS_PIC_VERSION,
             true
         );
 
-        // A PDF dropped into the editor becomes an image block only if it
-        // will get a thumbnail on upload. With Auto Generate off it never
-        // does, and the block had a PDF and no image (R67-02).
+        // Whether a PDF uploaded in the editor's media window gets a
+        // thumbnail, which the pickers say and act on.
         wp_localize_script('pic-block-editor', 'raplsPicBlockEditor', [
             'autoGenerate' => $this->settings->isAutoGenerateEnabled(),
             // Said when a PDF without a thumbnail is chosen for an image
             // block -- one uploaded in the media window with Auto Generate
             // off, or whose generation failed (Codex review of 1.4.26, 3).
             'noThumbnail' => $this->settings->isAutoGenerateEnabled()
-                ? __('This PDF has no thumbnail, so it cannot be shown as an image. Generate its thumbnail in the Media Library, then choose it again.', 'rapls-pdf-image-creator')
-                : __('This PDF has no thumbnail, so it cannot be shown as an image: automatic thumbnail generation is off. Generate its thumbnail in the Media Library, then choose it again.', 'rapls-pdf-image-creator'),
+                ? __('This PDF has no thumbnail, so it cannot be shown as an image. In Media > Library, in list view, use "Generate Thumbnail" under the PDF, then choose it again.', 'rapls-pdf-image-creator')
+                : __('This PDF has no thumbnail, so it cannot be shown as an image: automatic thumbnail generation is off. In Media > Library, in list view, use "Generate Thumbnail" under the PDF, then choose it again.', 'rapls-pdf-image-creator'),
             // With Auto Generate off: said on the upload tab before anything
             // is uploaded, and the PDF just uploaded can be deleted again
             // (Codex review of 1.4.27, 2).

@@ -151,6 +151,15 @@ final class Plugin
         // paths cached by the previous version.
         (new \Rapls\PDFImageCreator\Engine\ColorProfile())->flushCache();
 
+        // Nor what the previous version measured about the server: how it
+        // reads PDFs, whether a page can be asked for, whether Ghostscript
+        // needed the workaround. The measuring may have changed with the
+        // version, and the old answers stood for up to a week (review after
+        // 1.4.31). Measured again when next needed.
+        foreach (\Rapls\PDFImageCreator\Engine\ImagickEngine::probeTransients() as $transient) {
+            delete_transient($transient);
+        }
+
         // Sites that were installed before the review request existed have no
         // activation date. Start their clock now rather than never: a week
         // from this upgrade is a fair moment to ask, and back-dating to an

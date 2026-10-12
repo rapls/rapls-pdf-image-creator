@@ -44,6 +44,44 @@ final class Admin
     private Generator $generator;
 
     /**
+     * Whether a WebP thumbnail can be made and kept here
+     *
+     * WordPress accepts WebP images from 5.8 -- before it, the generated file
+     * had no MIME type and failed as "could not be added to the Media
+     * Library" -- and ImageMagick needs a WebP encoder. The setting offered it
+     * on every server (review after 1.4.31).
+     */
+    public static function webpWorks(): bool
+    {
+        $types = function_exists('wp_get_mime_types') ? (array) wp_get_mime_types() : [];
+
+        if (!in_array('image/webp', $types, true)) {
+            return false;
+        }
+
+        try {
+            return class_exists('\Imagick') && [] !== (array) \Imagick::queryFormats('WEBP');
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    /**
+     * Whether the Status tab's CMYK box belongs under the CMYK row
+     *
+     * Only where the row does not say it works: tested broken, or not
+     * tested. It came with the row on every ImageMagick 6 server, under
+     * "Working on this server (tested)" too -- the version-number warning
+     * 1.3.2 meant to end (review after 1.4.31).
+     *
+     * @param mixed $row The cmyk_pdf requirement, or null when there is none.
+     */
+    public static function showsCmykWarning($row): bool
+    {
+        return is_array($row) && empty($row['status']);
+    }
+
+    /**
      * Constructor
      *
      * @param Settings $settings Settings manager
@@ -60,6 +98,10 @@ final class Admin
      */
     public function init(): void
     {
+        // The notices' own parameters come out of the address once shown, so
+        // a reload does not say them again (review after 1.4.31).
+        add_filter('removable_query_args', [$this, 'removableQueryArgs']);
+
         add_action('admin_menu', [$this, 'addMenuPage']);
         add_action('admin_init', [$this, 'registerSettings']);
         add_action('admin_init', [$this, 'maybeDismissColorNotice']);
@@ -101,11 +143,18 @@ final class Admin
     /**
      * Sanitize settings
      *
-     * @param array $input Raw input
+     * @param mixed $input What was submitted, or what update_option() was given.
      * @return array Sanitized input
      */
-    public function sanitizeSettings(array $input): array
+    public function sanitizeSettings($input): array
     {
+        // Not an array -- "wp option update rapls_pic_settings ''", another
+        // plugin -- was a TypeError here, under the save itself. The settings
+        // as they are stay (review after 1.4.31).
+        if (!is_array($input)) {
+            return $this->settings->get(true);
+        }
+
         $sanitized = [];
 
         // Max dimensions
@@ -295,6 +344,15 @@ final class Admin
     }
 
     /**
+     * @param array<int, string> $args
+     * @return array<int, string>
+     */
+    public function removableQueryArgs($args): array
+    {
+        return array_merge((array) $args, ['rapls_pic_generated', 'rapls_pic_error', 'rapls_pic_rechecked']);
+    }
+
+    /**
      * Show admin notices
      */
     public function showAdminNotices(): void
@@ -436,9 +494,6 @@ final class Admin
     }
 
     /**
-     * Render settings page
-     */
-    /**
      * Throw away the cached probe results and measure again
      *
      * The probes cache for twelve hours, which is right for a value read on
@@ -463,6 +518,11 @@ final class Admin
         foreach (\Rapls\PDFImageCreator\Engine\ImagickEngine::probeTransients() as $transient) {
             delete_transient($transient);
         }
+
+        // Where the ICC profiles are, too: "not found" is kept for an hour,
+        // and a CMYK profile the host has just installed still read as
+        // missing after "Check this server again" (review after 1.4.31).
+        (new \Rapls\PDFImageCreator\Engine\ColorProfile())->flushCache();
 
         // Whatever the last failure was, it was measured against the old
         // answer. Let the next generation decide.

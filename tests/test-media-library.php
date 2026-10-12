@@ -154,7 +154,7 @@ namespace {
     check('  ...and it is core-media-states.js, after media-views', [basename((string) ($GLOBALS['registered']['pic-core-media-states'][0] ?? '')), $GLOBALS['registered']['pic-core-media-states'][1] ?? null], ['core-media-states.js', ['media-views']]);
 
     // R66-03: an image attached to a PDF, without this plugin's marks, keeps its own URL.
-    if (!function_exists('wp_get_attachment_url')) { function wp_get_attachment_url($id) { return 'https://example.test/' . $id . '.pdf'; } }
+    if (!function_exists('wp_get_attachment_url')) { function wp_get_attachment_url($id) { return $GLOBALS['urls'][$id] ?? 'https://example.test/' . $id . '.pdf'; } }
     if (!function_exists('get_attachment_link')) { function get_attachment_link($id) { return 'https://example.test/?attachment_id=' . $id; } }
     $GLOBALS['mimes'][200] = 'image/jpeg';
     if (!class_exists('WP_Post')) {
@@ -174,6 +174,27 @@ namespace {
     $GLOBALS['meta'][210]['_rapls_pic_source_pdf'] = 10;
     $rest = $library->filterRestAttachment(new WP_REST_Response(['id' => 210, 'mime_type' => 'image/jpeg', 'source_url' => 'https://example.test/doc-pdf-thumbnail.jpg', 'link' => 'https://example.test/?attachment_id=210']), new WP_Post(210, 10, 'image/jpeg'), new WP_REST_Request())->get_data();
     check("R68-02: a generated image's source_url stays its own", [$rest['source_url'], $rest['link'], $rest['rapls_pic_source_pdf_id'] ?? null, $rest['rapls_pic_source_pdf_url'] ?? null], ['https://example.test/doc-pdf-thumbnail.jpg', 'https://example.test/?attachment_id=210', 10, 'https://example.test/10.pdf']);
+
+    // Review after 1.4.31: a PDF's sizes are addressed beside its image's own
+    // address -- a CDN's, where one rewrote it -- not under the uploads folder.
+    if (!function_exists('wp_basename')) { function wp_basename($p) { return basename((string) $p); } }
+    if (!function_exists('wp_get_attachment_metadata')) { function wp_get_attachment_metadata($id) { return $GLOBALS['attachment_meta'][$id] ?? false; } }
+    if (!function_exists('wp_upload_dir')) { function wp_upload_dir() { return ['basedir' => '/srv/uploads', 'baseurl' => 'https://example.test/wp-content/uploads']; } }
+    $GLOBALS['mimes'][300] = 'application/pdf';
+    $GLOBALS['meta'][300][\Rapls\PDFImageCreator\Generator::THUMBNAIL_META_KEY] = 3000;
+    $GLOBALS['posts'][3000] = new WP_Post(3000, 300, 'image/jpeg');
+    $GLOBALS['meta'][3000]['_wp_attached_file'] = '2026/10/doc-pdf-thumbnail.jpg';
+    $GLOBALS['urls'][3000] = 'https://cdn.example.net/media/2026/10/doc-pdf-thumbnail.jpg';
+    $GLOBALS['attachment_meta'][3000] = ['width' => 1024, 'height' => 768, 'sizes' => ['medium' => ['file' => 'doc-pdf-thumbnail-300x225.jpg', 'width' => 300, 'height' => 225]]];
+    $cdnJs = $library->filterAttachmentForJs(['url' => 'https://example.test/300.pdf', 'mime' => 'application/pdf'], new WP_Post(300, 0, 'application/pdf'), []);
+    $cdnRest = $library->filterRestAttachment(new WP_REST_Response(['id' => 300, 'mime_type' => 'application/pdf', 'source_url' => 'https://example.test/300.pdf', 'media_details' => []]), new WP_Post(300, 0, 'application/pdf'), new WP_REST_Request())->get_data();
+    check('a PDF\'s sizes sit beside its image\'s own address (a CDN\'s), in the media modal and the REST answer (review after 1.4.31)', [
+        $cdnJs['sizes']['medium']['url'] ?? null,
+        $cdnRest['media_details']['sizes']['medium']['source_url'] ?? null,
+    ], [
+        'https://cdn.example.net/media/2026/10/doc-pdf-thumbnail-300x225.jpg',
+        'https://cdn.example.net/media/2026/10/doc-pdf-thumbnail-300x225.jpg',
+    ]);
 
     // R67-03: only the Media Library screen's main query hides generated images.
     if (!function_exists('is_admin')) { function is_admin() { return true; } }

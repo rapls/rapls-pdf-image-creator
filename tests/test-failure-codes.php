@@ -137,5 +137,18 @@ foreach ($messages as $message => $expected) {
 
 check('no duplicates in the vocabulary', count($all), count(array_unique($all)));
 
+echo "\n=== Review after 1.4.31: a conversion's failure is about that file ===\n";
+
+$gsFailed = "FailedToExecuteCommand `'gs' -sstdout=%stderr -dQUIET -dSAFER ... -f/tmp/x.pdf' (1) @ error/delegate.c/ExternalDelegateCommand/516";
+$gsMissing = "FailedToExecuteCommand `'gs' -sstdout=%stderr ...' (127) @ error/delegate.c/ExternalDelegateCommand/516";
+$noEncoder = "NoEncodeDelegateForThisImageFormat `WEBP' @ error/constitute.c/WriteImage/1291";
+check('Ghostscript failing on one file, during a conversion, is a render error', FailureCode::fromExceptionMessage($gsFailed, true), FailureCode::RENDER_ERROR);
+check('  ...an output format with no encoder too', FailureCode::fromExceptionMessage($noEncoder, true), FailureCode::RENDER_ERROR);
+check('  ...Ghostscript not found at all is still no PDF support', [FailureCode::fromExceptionMessage($gsMissing, true), FailureCode::fromExceptionMessage(str_replace('(127)', '(32512)', $gsMissing), true)], [FailureCode::PDF_UNSUPPORTED, FailureCode::PDF_UNSUPPORTED]);
+check('  ...no decode delegate for PDF is no PDF support', FailureCode::fromExceptionMessage("NoDecodeDelegateForThisImageFormat `PDF' @ error/constitute.c/ReadImage/741", true), FailureCode::PDF_UNSUPPORTED);
+check('  ...and the availability check reads them as before', FailureCode::fromExceptionMessage($gsFailed), FailureCode::PDF_UNSUPPORTED);
+$engineSource = (string) file_get_contents(RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/ImagickEngine.php');
+check('  ...convert() asks as a conversion', substr_count($engineSource, 'FailureCode::fromExceptionMessage($e->getMessage(), true)'), 2);
+
 printf("\n%d passed, %d failed\n", $pass, $fail);
 exit(0 === $fail ? 0 : 1);

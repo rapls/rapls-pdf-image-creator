@@ -34,6 +34,9 @@ final class FailureCode
     // This attachment.
     public const NOT_A_PDF = 'not_a_pdf';
     public const SOURCE_MISSING = 'source_missing';
+    // The page asked for is past the end of the file. The same name the Pro
+    // add-on's queue gives it.
+    public const PAGE_OUT_OF_RANGE = 'page_out_of_range';
 
     // This attempt.
     public const BLANK_RENDER = 'blank_render';
@@ -60,6 +63,7 @@ final class FailureCode
             self::PDF_UNSUPPORTED,
             self::NOT_A_PDF,
             self::SOURCE_MISSING,
+            self::PAGE_OUT_OF_RANGE,
             self::RESOURCE_LIMIT,
             self::BLANK_RENDER,
         ];
@@ -77,13 +81,32 @@ final class FailureCode
      * is the only option. The patterns are deliberately loose: exact wording
      * moves between versions, and a message that no longer matches must fall
      * back to "something went wrong" rather than to a confident wrong answer.
+     *
+     * $converting is for a conversion of a particular file, after the
+     * availability check has already found PDF support. There, Ghostscript
+     * failing on that one file ("FailedToExecuteCommand ... (1)") and an
+     * output format with no encoder ("NoEncodeDelegateForThisImageFormat
+     * `WEBP'") are about this file and this setting, not the server's PDF
+     * support: read as PDF_UNSUPPORTED, they sent people to their host to
+     * enable something already enabled (review after 1.4.31). Ghostscript
+     * not found at all -- the shell's 127 -- is still unsupported.
      */
-    public static function fromExceptionMessage(string $message): string
+    public static function fromExceptionMessage(string $message, bool $converting = false): string
     {
         // "NotAuthorized" arrives with no space in it. An earlier version of
         // this pattern looked for "not authoriz" and missed every single one.
         if (preg_match('/not\s*authoriz|security policy/i', $message)) {
             return self::PDF_BLOCKED_BY_POLICY;
+        }
+
+        if ($converting) {
+            if (preg_match('/no\s*encode\s*delegate/i', $message)) {
+                return self::RENDER_ERROR;
+            }
+
+            if (preg_match('/FailedToExecuteCommand/i', $message) && !preg_match('/\((?:127|32512)\)/', $message)) {
+                return self::RENDER_ERROR;
+            }
         }
 
         if (preg_match('/no decode delegate|FailedToExecuteCommand|delegate/i', $message)) {
@@ -132,7 +155,13 @@ final class FailureCode
             case self::BLANK_RENDER:
                 return [
                     'label' => __('The page rendered as a blank white image.', 'rapls-pdf-image-creator'),
-                    'action' => __('Nothing was drawn. ImageMagick raised no error, so this is almost always the PDF renderer underneath it — Ghostscript — being too old for the file. Ghostscript 9.27 fails on PDFs that Ghostscript 10 handles, reporting "Error reading a content stream" and writing an empty page. Ask your hosting provider which version is installed and whether it can be updated.', 'rapls-pdf-image-creator'),
+                    'action' => __('Nothing was drawn, and ImageMagick raised no error. This is almost always the PDF renderer underneath it, Ghostscript, being too old for the file: Ghostscript 9.27 and earlier fail on files that Ghostscript 10 draws, and write an empty page. The page was already tried again with transparency switched off, which works around the most common case, where this server allows it. Ask your hosting provider which Ghostscript version is installed and whether it can be updated. If the page really is blank, choose another page.', 'rapls-pdf-image-creator'),
+                ];
+
+            case self::PAGE_OUT_OF_RANGE:
+                return [
+                    'label' => __('The chosen page is not in this PDF.', 'rapls-pdf-image-creator'),
+                    'action' => __('Page Number on the Settings tab counts from 0 (0 is the first page). Choose a page this PDF has, then generate the thumbnail again.', 'rapls-pdf-image-creator'),
                 ];
 
             case self::RESOURCE_LIMIT:
@@ -172,6 +201,7 @@ final class FailureCode
             self::PDF_UNSUPPORTED,
             self::NOT_A_PDF,
             self::SOURCE_MISSING,
+            self::PAGE_OUT_OF_RANGE,
             self::RESOURCE_LIMIT,
             self::BLANK_RENDER,
             self::WRITE_FAILED,

@@ -75,6 +75,9 @@ final class Settings
      */
     public function getValue(string $key, $default = null)
     {
+        // Without $default, DEFAULTS is the default. The getters below asked
+        // with the same numbers written out a second time (review after
+        // 1.4.31); they now leave it to DEFAULTS, the one place they live.
         $settings = $this->get();
         return $settings[$key] ?? $default ?? (self::DEFAULTS[$key] ?? null);
     }
@@ -121,7 +124,7 @@ final class Settings
      */
     public function getMaxWidth(): int
     {
-        return (int) $this->getValue('max_width', 1024);
+        return (int) $this->getValue('max_width');
     }
 
     /**
@@ -129,7 +132,7 @@ final class Settings
      */
     public function getMaxHeight(): int
     {
-        return (int) $this->getValue('max_height', 1024);
+        return (int) $this->getValue('max_height');
     }
 
     /**
@@ -141,7 +144,7 @@ final class Settings
      */
     public function getResolution(): int
     {
-        return (int) $this->getValue('resolution', 150);
+        return (int) $this->getValue('resolution');
     }
 
     /**
@@ -149,7 +152,7 @@ final class Settings
      */
     public function getQuality(): int
     {
-        return (int) $this->getValue('quality', 90);
+        return (int) $this->getValue('quality');
     }
 
     /**
@@ -157,7 +160,7 @@ final class Settings
      */
     public function getFormat(): string
     {
-        return (string) $this->getValue('format', 'jpeg');
+        return (string) $this->getValue('format');
     }
 
     /**
@@ -165,7 +168,7 @@ final class Settings
      */
     public function getBgColor(): string
     {
-        return (string) $this->getValue('bgcolor', 'white');
+        return (string) $this->getValue('bgcolor');
     }
 
     /**
@@ -173,7 +176,7 @@ final class Settings
      */
     public function getPage(): int
     {
-        return (int) $this->getValue('page', 0);
+        return (int) $this->getValue('page');
     }
 
     /**
@@ -181,7 +184,7 @@ final class Settings
      */
     public function isAutoGenerateEnabled(): bool
     {
-        return (bool) $this->getValue('auto_generate', true);
+        return (bool) $this->getValue('auto_generate');
     }
 
     /**
@@ -189,7 +192,7 @@ final class Settings
      */
     public function shouldSetFeatured(): bool
     {
-        return (bool) $this->getValue('set_featured', true);
+        return (bool) $this->getValue('set_featured');
     }
 
 
@@ -230,7 +233,7 @@ final class Settings
      */
     public function getInsertSize(): string
     {
-        return (string) $this->getValue('insert_size', 'medium');
+        return (string) $this->getValue('insert_size');
     }
 
     /**
@@ -238,7 +241,7 @@ final class Settings
      */
     public function getInsertType(): string
     {
-        return (string) $this->getValue('insert_type', 'image');
+        return (string) $this->getValue('insert_type');
     }
 
     /**
@@ -246,7 +249,7 @@ final class Settings
      */
     public function getInsertLink(): string
     {
-        return (string) $this->getValue('insert_link', 'file');
+        return (string) $this->getValue('insert_link');
     }
 
     /**
@@ -254,7 +257,7 @@ final class Settings
      */
     public function getCustomHtml(): string
     {
-        return (string) $this->getValue('custom_html', '');
+        return (string) $this->getValue('custom_html');
     }
 
     /**
@@ -262,7 +265,7 @@ final class Settings
      */
     public function shouldDisplayThumbnailIcon(): bool
     {
-        return (bool) $this->getValue('display_thumbnail_icon', true);
+        return (bool) $this->getValue('display_thumbnail_icon');
     }
 
     /**
@@ -270,7 +273,7 @@ final class Settings
      */
     public function shouldHideGeneratedImages(): bool
     {
-        return (bool) $this->getValue('hide_generated_images', true);
+        return (bool) $this->getValue('hide_generated_images');
     }
 
     /**
@@ -278,6 +281,6 @@ final class Settings
      */
     public function shouldKeepOnUninstall(): bool
     {
-        return (bool) $this->getValue('keep_on_uninstall', false);
+        return (bool) $this->getValue('keep_on_uninstall');
     }
 }

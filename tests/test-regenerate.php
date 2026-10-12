@@ -32,6 +32,7 @@ namespace {
     $GLOBALS['caps'] = [];
 
     function __($s, $d = null) { return $s; }
+    if (!function_exists('_n')) { function _n($one, $many, $n, $d = null) { return 1 === (int) $n ? $one : $many; } }
     function apply_filters($tag, $value, ...$args) { return isset($GLOBALS['filters'][$tag]) ? ($GLOBALS['filters'][$tag])($value) : $value; }
     function do_action($tag, ...$args) { if (isset($GLOBALS['actions'][$tag])) { ($GLOBALS['actions'][$tag])(...$args); } }
     function get_option($key, $default = false) { return $GLOBALS['options'][$key] ?? $default; }
@@ -152,9 +153,14 @@ namespace {
         public $sawReserved = null;
         public $throws = false;
         public $format = null;
+        public $options = [];
+        /** Run while drawing: another request at the same moment. */
+        public $during = null;
         public function convert(string $pdfPath, string $outputPath, array $options = []): \Rapls\PDFImageCreator\Engine\ConversionResult {
             $this->sawReserved = is_file($outputPath) && 0 === filesize($outputPath);
+            if (is_callable($this->during)) { ($this->during)(); }
             $this->format = $options['format'] ?? null;
+            $this->options = $options;
             if ($this->throws) { throw new \RuntimeException('engine boom'); }
             if (!$this->renders) { return \Rapls\PDFImageCreator\Engine\ConversionResult::failure('render failed'); }
             file_put_contents($outputPath, 'jpeg');
@@ -508,16 +514,66 @@ namespace {
     $pdf(90, 91);
     $GLOBALS['caps'] = ['upload_files' => true, 'edit_post:80' => true];
     $GLOBALS['deleted'] = [];
-    check('Media Library: a PDF the user may edit is regenerated', $call([$library, 'ajaxRegenerateThumbnail'], ['attachment_id' => 80, 'force' => 1]), [true, null]);
-    $GLOBALS['deleted'] = [];
-    check('Media Library: a PDF the user may not edit is refused', $call([$library, 'ajaxRegenerateThumbnail'], ['attachment_id' => 90, 'force' => 1]), [false, 403]);
-    check('  ...and its thumbnail is untouched', [$GLOBALS['deleted'], $GLOBALS['meta'][90]['_rapls_pic_thumbnail_id'] ?? null], [[], 91]);
+    // Review after 1.4.31: the AJAX regenerate endpoint is gone -- nothing on
+    // any screen called it; the row action (handleRegenerateAction()) does it.
+    $librarySource = (string) file_get_contents(RAPLS_PIC_PLUGIN_DIR . 'includes/MediaLibrary.php');
+    check('Media Library: no AJAX regenerate endpoint is left to answer', [method_exists($library, 'ajaxRegenerateThumbnail'), false !== strpos($librarySource, "wp_ajax_rapls_pic_regenerate_thumbnail")], [false, false]);
     check('Bulk Generate: refused without manage_options', $call([$bulk, 'ajaxGenerate'], ['pdf_id' => 80, 'force' => 1]), [false, 403]);
     check('Bulk Scan: refused without manage_options', $call([$bulk, 'ajaxScan'], []), [false, 403]);
     $GLOBALS['caps'] = ['manage_options' => true, 'edit_post:80' => true];
     check('Bulk Generate: an admin may regenerate a PDF they may edit', $call([$bulk, 'ajaxGenerate'], ['pdf_id' => 80, 'force' => 1]), [true, null]);
     check('Bulk Generate: ...but not one edit_post refuses', $call([$bulk, 'ajaxGenerate'], ['pdf_id' => 90, 'force' => 1]), [false, 403]);
     $GLOBALS['caps'] = [];
+
+    // Review after 1.4.31: asked to fill a gap, and another request filled it
+    // while this one drew -- the upload hook and Bulk Generate at once. Theirs
+    // stands, this one's image goes, and nothing is left as nobody's.
+    if (!function_exists('wp_cache_delete')) { function wp_cache_delete($key, $group = '') { return true; } }
+    $pdf(9090);
+    $GLOBALS['deleted'] = [];
+    $engine->during = static function () use ($pdf): void { $pdf(9090, 9091); };
+    $raced = $generator->generate(9090, false);
+    $engine->during = null;
+    check('a gap filled by another request meanwhile: theirs stands, this image is deleted', [$raced, $GLOBALS['meta'][9090]['_rapls_pic_thumbnail_id'] ?? null, count($GLOBALS['deleted']), in_array(9091, $GLOBALS['deleted'], true)], [9091, 9091, 1, false]);
+    // Asked to replace, it replaces whatever is there, as before.
+    $pdf(9092);
+    $engine->during = static function () use ($pdf): void { $pdf(9092, 9093); };
+    $forced = $generator->generate(9092, true);
+    $engine->during = null;
+    check('  ...a replacement asked for still replaces', [$forced !== null && $forced !== 9093, (int) ($GLOBALS['meta'][9092]['_rapls_pic_thumbnail_id'] ?? 0) === (int) $forced], [true, true]);
+
+    // Review after 1.4.31: numbers a listener hands back as strings or floats
+    // reach the engine as whole numbers.
+    $numberTags = ['page' => '2', 'max_width' => '800.7', 'max_height' => '600', 'resolution' => 150.0, 'quality' => '85'];
+    foreach ($numberTags as $key => $answer) {
+        $GLOBALS['filters']['rapls_pdf_image_creator_thumbnail_' . $key] = static function () use ($answer) { return $answer; };
+    }
+    $pdf(90);
+    $generator->generate(90, true);
+    foreach (array_keys($numberTags) as $key) {
+        unset($GLOBALS['filters']['rapls_pdf_image_creator_thumbnail_' . $key]);
+    }
+    check('numbers from the option filters reach the engine as integers', array_map(static function ($key) use ($engine) { return $engine->options[$key] ?? null; }, array_keys($numberTags)), [2, 800, 600, 150, 85]);
+
+    // Review after 1.4.31: an engines listener answering something that is
+    // not a list leaves the plugin's own; a list keeps only its engines.
+    require_once RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/ColorProfile.php';
+    require_once RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/ImagickEngine.php';
+    $initEngines = new ReflectionMethod(\Rapls\PDFImageCreator\Generator::class, 'initEngines');
+    $enginesOf = new ReflectionProperty(\Rapls\PDFImageCreator\Generator::class, 'engines');
+    if (PHP_VERSION_ID < 80100) { $initEngines->setAccessible(true); $enginesOf->setAccessible(true); }
+    $answers = [];
+    foreach (['not a list' => 'nonsense', 'a list with a stranger' => ['imagick' => new \stdClass(), 'stand-in' => $engine], 'none on purpose' => []] as $label => $answer) {
+        $GLOBALS['filters']['rapls_pdf_image_creator_engines'] = static function () use ($answer) { return $answer; };
+        try {
+            $initEngines->invoke($generator);
+            $answers[$label] = array_keys($enginesOf->getValue($generator));
+        } catch (\Throwable $e) {
+            $answers[$label] = get_class($e);
+        }
+    }
+    unset($GLOBALS['filters']['rapls_pdf_image_creator_engines']);
+    check('an engines listener: not a list keeps the plugin\'s own, a list keeps only engines, an empty list means none', $answers, ['not a list' => ['imagick'], 'a list with a stranger' => ['stand-in'], 'none on purpose' => []]);
 
     echo "\n$pass passed, $fail failed\n";
     exit($fail ? 1 : 0);

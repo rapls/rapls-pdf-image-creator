@@ -4,7 +4,7 @@
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: Rapls PDF Image Creator 1.4.2\n"
+"Project-Id-Version: Rapls PDF Image Creator 1.4.32\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-09-11 08:48+0900\n"
 "PO-Revision-Date: 2024-01-01 00:00+0000\n"
@@ -95,9 +95,6 @@ msgstr "白"
 msgid "Black"
 msgstr "黒"
 
-msgid "Transparent (PNG only)"
-msgstr "透明 (PNG のみ)"
-
 msgid "Background color for transparent areas in PDFs."
 msgstr "PDF 内の透明部分の背景色。"
 
@@ -135,23 +132,11 @@ msgid "Display generated thumbnail instead of default PDF mime-type icon"
 msgstr ""
 "デフォルトの PDF MIME タイプアイコンの代わりに生成されたサムネイルを表示"
 
-msgid ""
-"Shows the generated thumbnail image as the PDF icon in the Media Library."
-msgstr ""
-"メディアライブラリで PDF のアイコンとして生成されたサムネイル画像を表示しま"
-"す。"
-
 msgid "Hide Generated Images"
 msgstr "生成された画像を非表示"
 
 msgid "Hide generated thumbnail images in the Media Library"
 msgstr "メディアライブラリで生成されたサムネイル画像を非表示にする"
-
-msgid ""
-"When unchecked and a PDF is deleted, the generated image will NOT be deleted "
-"together."
-msgstr ""
-"チェックを外すと、PDF を削除しても生成された画像は一緒に削除されません。"
 
 msgid "Keep Images on Uninstall"
 msgstr "アンインストール時に画像を保持"
@@ -229,9 +214,6 @@ msgstr "PDF 添付ファイル ID"
 
 msgid "URL to the attachment page"
 msgstr "添付ファイルページの URL"
-
-msgid "Example for Google Doc Embedder:"
-msgstr "Google Doc Embedder の例:"
 
 msgid "Bulk Generate Thumbnails"
 msgstr "サムネイル一括生成"
@@ -324,15 +306,6 @@ msgid "CMYK PDFs may generate a blank white thumbnail on this server."
 msgstr ""
 "このサーバーでは、CMYK の PDF から真っ白なサムネイルが生成される場合がありま"
 "す。"
-
-msgid ""
-"ImageMagick 6 renders CMYK PDFs through Ghostscript's bmpsep8 device, which "
-"produces a separation BMP that ImageMagick cannot read back. ImageMagick 7 "
-"does not have this problem."
-msgstr ""
-"ImageMagick 6は CMYK の PDF を Ghostscript の bmpsep8 デバイスで描画します"
-"が、これが出力する分版 BMP を ImageMagick 自身が読み戻せません。ImageMagick 7"
-"ではこの問題は起きません。"
 
 msgid "Ask your hosting provider for either of the following:"
 msgstr "ホスティングプロバイダーに、次のいずれかを依頼してください。"
@@ -437,13 +410,6 @@ msgstr "セキュリティチェックに失敗しました。"
 
 msgid "Permission denied."
 msgstr "権限がありません。"
-
-msgid ""
-"There are no PDF files in the Media Library. Uploading a PDF over FTP or SSH "
-"does not add it — it has to go through Media > Add New."
-msgstr ""
-"メディアライブラリに PDF ファイルがありません。FTP や SSH でアップロードした"
-"だけでは登録されません —「メディア」>「新規追加」から追加する必要があります。"
 
 #, php-format
 msgid ""
@@ -633,10 +599,6 @@ msgstr ""
 "テストを実行できなかったため、これは実測ではなくバージョン番号からの推測で"
 "す。実行できなかった理由: %s"
 
-msgid "ImageMagick 6 — CMYK PDFs may produce a blank image (not tested)"
-msgstr ""
-"ImageMagick 6 — CMYK の PDF で画像が真っ白になる場合があります (未検査)"
-
 msgid "Page Selection"
 msgstr "ページ選択"
 
@@ -724,19 +686,6 @@ msgstr ""
 "添付ファイルはメディアライブラリに登録されていますが、実体のファイルがありま"
 "せん。PDF をアップロードし直してください。"
 
-msgid ""
-"Nothing was drawn. ImageMagick raised no error, so this is almost always the "
-"PDF renderer underneath it — Ghostscript — being too old for the file. "
-"Ghostscript 9.27 fails on PDFs that Ghostscript 10 handles, reporting "
-"\"Error reading a content stream\" and writing an empty page. Ask your "
-"hosting provider which version is installed and whether it can be updated."
-msgstr ""
-"何も描画されませんでした。ImageMagick はエラーを出していないので、その下で動"
-"く PDF レンダラ — Ghostscript — がこのファイルには古すぎる、という場合がほと"
-"んどです。Ghostscript 9.27は、Ghostscript 10なら扱える PDF で失敗し、「Error "
-"reading a content stream」と報告して空のページを書き出します。どのバージョン"
-"が入っているか、更新できるかを、ホスティング事業者に問い合わせてください。"
-
 msgid "The page was too large for ImageMagick to open."
 msgstr "ページが大きすぎて ImageMagick が開けませんでした。"
 
@@ -796,21 +745,6 @@ msgstr "サムネイル生成"
 msgid "You do not have permission to do this."
 msgstr "この操作を行う権限がありません。"
 
-msgid "Invalid attachment ID."
-msgstr "無効な添付ファイル ID です。"
-
-msgid "Thumbnail generated successfully."
-msgstr "サムネイルが正常に生成されました。"
-
-msgid ""
-"Your PDFs have been getting thumbnails for a week now. If it has been "
-"working out, would you leave a review? It is the main way other people find "
-"the plugin."
-msgstr ""
-"PDF からサムネイルを作りはじめて1週間になります。うまく動いているようでした"
-"ら、レビューを書いていただけませんか。ほかの方がこのプラグインを見つける、い"
-"ちばんの手立てです。"
-
 msgid "Write a review"
 msgstr "レビューを書く"
 
@@ -818,7 +752,7 @@ msgid "Already did"
 msgstr "もう書きました"
 
 msgid "No thanks"
-msgstr "今はやめておく"
+msgstr "遠慮しておく"
 
 msgid ""
 "Asked once. Whichever you choose — including closing this notice — it will "
@@ -904,16 +838,10 @@ msgstr "PDF をメディアライブラリから削除しました。"
 msgid "The PDF could not be deleted. Delete it in the Media Library."
 msgstr "PDF を削除できませんでした。メディアライブラリで削除してください。"
 
-msgid "This PDF has no thumbnail, so it cannot be shown as an image. Generate its thumbnail in the Media Library, then choose it again."
-msgstr "この PDF にはサムネイルが無いため、画像として表示できません。メディアライブラリでサムネイルを生成してから、もう一度選んでください。"
-
-msgid "This PDF has no thumbnail, so it cannot be shown as an image: automatic thumbnail generation is off. Generate its thumbnail in the Media Library, then choose it again."
-msgstr "この PDF にはサムネイルが無いため、画像として表示できません（サムネイルの自動生成がオフです）。メディアライブラリでサムネイルを生成してから、もう一度選んでください。"
-
 #. translators: %d: number of PDFs looked at so far
 #, php-format
 msgid "Scanning... %d PDFs so far"
-msgstr "スキャン中... ここまで %d 件の PDF"
+msgstr "スキャン中... ここまで%d件の PDF"
 
 #. translators: %s: PDF file name
 #, php-format
@@ -942,11 +870,73 @@ msgstr "エラー: %s"
 msgid "The image was rendered but could not be set as this PDF's featured image, so the previous thumbnail was kept."
 msgstr "画像は作成しましたが、この PDF のアイキャッチ画像に設定できなかったため、前のサムネイルをそのまま残しました。"
 
-#~ msgid "No CMYK profile found on this server."
-#~ msgstr "このサーバーに CMYK プロファイルが見つかりません。"
+msgid "ImageMagick 6 — CMYK PDFs may produce a blank image (not tested)"
+msgstr "ImageMagick 6 — CMYK の PDF で画像が真っ白になる場合があります (未確認)"
 
-#~ msgid "No sRGB profile found on this server."
-#~ msgstr "このサーバーに sRGB プロファイルが見つかりません。"
+msgid "Some ImageMagick 6 builds render CMYK PDFs through Ghostscript's bmpsep8 device, which produces a separation BMP that ImageMagick cannot read back. ImageMagick 7 does not have this problem."
+msgstr "一部の ImageMagick 6は、CMYK の PDF を Ghostscript の bmpsep8 デバイスで描画します。これは ImageMagick が読み戻せない分版 BMP を出力します。ImageMagick 7にはこの問題はありません。"
 
-#~ msgid "ImageMagick 6 — CMYK PDFs may produce a blank image"
-#~ msgstr "ImageMagick 6 — CMYK の PDF で画像が真っ白になる場合があります"
+msgid "This has no effect where ImageMagick calls Ghostscript as a library (%1$s in the output of %2$s); then only the upgrade helps."
+msgstr "ImageMagick が Ghostscript をライブラリとして呼び出す場合 (%2$s の出力に %1$s がある場合) は効果がなく、そのときはアップグレードだけが有効です。"
+
+msgid "WebP cannot be used on this server: WordPress before 5.8 does not accept WebP images, or ImageMagick here cannot write them. Thumbnails set to WebP fail to generate."
+msgstr "このサーバーでは WebP を使えません。5.8より前の WordPress は WebP 画像を受け付けないか、ここの ImageMagick が WebP を書き出せないためです。WebP に設定したサムネイルは生成に失敗します。"
+
+msgid "Where WordPress shows a file-type icon for a PDF, the generated thumbnail is shown instead. The Media Library's grid and list show a PDF's thumbnail whether or not this is on."
+msgstr "WordPress が PDF にファイル形式のアイコンを表示する場所で、代わりに生成したサムネイルを表示します。メディアライブラリのグリッドとリストでは、この設定に関係なく PDF のサムネイルを表示します。"
+
+msgid "This also decides what happens to the image when its PDF is deleted. Checked: the image is deleted with the PDF, unless something else uses it. Unchecked: the image is kept as an ordinary image."
+msgstr "PDF を削除したときに画像をどうするかも、この設定で決まります。オンにすると、ほかで使われていない限り、画像も PDF と一緒に削除します。オフにすると、画像は普通の画像として残ります。"
+
+msgid "These settings are used by \"Insert into post\" in the classic editor's Add Media window. The block editor does not use them."
+msgstr "これらの設定は、クラシックエディターの「メディアを追加」画面の「投稿に挿入」で使われます。ブロックエディターでは使われません。"
+
+msgid "This PDF has no thumbnail, so it cannot be shown as an image. In Media > Library, in list view, use \"Generate Thumbnail\" under the PDF, then choose it again."
+msgstr "この PDF にはサムネイルがないため、画像として表示できません。「メディア」>「ライブラリ」をリスト表示にし、PDF の下の「サムネイル生成」を使ってから、もう一度選んでください。"
+
+msgid "This PDF has no thumbnail, so it cannot be shown as an image: automatic thumbnail generation is off. In Media > Library, in list view, use \"Generate Thumbnail\" under the PDF, then choose it again."
+msgstr "この PDF にはサムネイルがないため、画像として表示できません (サムネイルの自動生成がオフです)。「メディア」>「ライブラリ」をリスト表示にし、PDF の下の「サムネイル生成」を使ってから、もう一度選んでください。"
+
+msgid "Transparent (PNG and WebP only)"
+msgstr "透明 (PNG と WebP のみ)"
+
+msgid "Example: the thumbnail, linking to the PDF"
+msgstr "例: PDF へリンクするサムネイル"
+
+msgid "When off, WordPress's own PDF preview is not kept either: a PDF uploaded then shows the PDF icon until its thumbnail is generated."
+msgstr "オフにすると、WordPress 自身の PDF プレビューも残しません。そのあいだにアップロードした PDF は、サムネイルを生成するまで PDF のアイコンで表示されます。"
+
+msgid "There are no PDF files in the Media Library. Uploading a PDF over FTP or SSH does not add it — it has to go through Media > Add Media File."
+msgstr "メディアライブラリに PDF ファイルがありません。FTP や SSH でアップロードした PDF は追加されません。「メディア」>「メディアファイルを追加」からアップロードしてください。"
+
+msgid "Medium"
+msgstr "中サイズ"
+
+msgid "Large"
+msgstr "大サイズ"
+
+msgid "Full Size"
+msgstr "フルサイズ"
+
+msgid "Thumbnail"
+msgstr "サムネイル"
+
+msgid "The only PDF in the Media Library is in the trash (%d). Restore it to generate its thumbnail."
+msgid_plural "All the PDFs in the Media Library are in the trash (%d). Restore them to generate their thumbnails."
+msgstr[0] "メディアライブラリの PDF はゴミ箱にあります (%d件)。サムネイルを生成するには、ゴミ箱から戻してください。"
+
+msgid "Your PDFs have been getting thumbnails from this plugin. If it has been working out, would you leave a review? It is the main way other people find the plugin."
+msgstr "このプラグインで PDF のサムネイルが作られています。うまく動いていれば、レビューを書いていただけませんか ? ほかの人がこのプラグインを見つける、いちばんの手がかりになります。"
+
+msgid "Nothing was drawn, and ImageMagick raised no error. This is almost always the PDF renderer underneath it, Ghostscript, being too old for the file: Ghostscript 9.27 and earlier fail on files that Ghostscript 10 draws, and write an empty page. The page was already tried again with transparency switched off, which works around the most common case, where this server allows it. Ask your hosting provider which Ghostscript version is installed and whether it can be updated. If the page really is blank, choose another page."
+msgstr "何も描画されず、ImageMagick もエラーを出しませんでした。ほとんどの場合、その下で PDF を描く Ghostscript がこのファイルには古すぎることが原因です。Ghostscript 9.27以前は、Ghostscript 10なら描けるファイルで失敗し、空のページを書き出します。このページは、サーバーが許す場合、もっとも多い原因を回避するために透明を無効にして描き直しています。インストールされている Ghostscript の版と更新できるかを、ホスティング会社に確認してください。ページが本当に白紙なら、別のページを選んでください。"
+
+msgid "Page %1$d was asked for (counting from 0), but this PDF has %2$d page."
+msgid_plural "Page %1$d was asked for (counting from 0), but this PDF has %2$d pages."
+msgstr[0] "%1$dページ目 (0から数えます) が指定されましたが、この PDF は%2$dページです。"
+
+msgid "Page Number on the Settings tab counts from 0 (0 is the first page). Choose a page this PDF has, then generate the thumbnail again."
+msgstr "「設定」タブの「ページ番号」は0から数えます (0が最初のページ)。この PDF にあるページを選んでから、サムネイルをもう一度生成してください。"
+
+msgid "The chosen page is not in this PDF."
+msgstr "指定したページは、この PDF にありません。"

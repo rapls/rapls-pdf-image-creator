@@ -204,6 +204,19 @@ check('a blank page is retried and recovered', $page->uniform, false);
 check('  ...and the server is remembered as needing it', get_transient('rapls_pic_gs_options'), 'yes');
 check('  ...and GS_OPTIONS is left unset afterwards', getenv('GS_OPTIONS'), false);
 
+// Review after 1.4.31: the retry adds its switch to what the site set, and
+// puts the site's value back.
+reset_state();
+Imagick::$blankWithoutGsOptions = true;
+Imagick::$gsOptionsSeen = [];
+putenv('GS_OPTIONS=-sFONTPATH=/srv/fonts');
+priv($engine, $ref, 'readPage', new Imagick(), '/tmp/none.pdf', 0, 150);
+$seenDuring = array_values(array_filter(Imagick::$gsOptionsSeen, function ($v) { return is_string($v) && false !== strpos($v, '-dNOTRANSPARENCY'); }));
+check('the retry keeps the site\'s own GS_OPTIONS beside its switch', [$seenDuring[0] ?? null, getenv('GS_OPTIONS')], ['-sFONTPATH=/srv/fonts -dNOTRANSPARENCY', '-sFONTPATH=/srv/fonts']);
+putenv('GS_OPTIONS');
+// (A page blank with the retry too is tested in test-pipeline.php, whose
+// stub models the whole-file route that case goes through.)
+
 reset_state();
 check(
     'no Ghostscript row until it has been needed',
@@ -251,6 +264,20 @@ check(
     in_array('rapls_pic_gs_options', ImagickEngine::probeTransients(), true),
     true
 );
+
+echo "\n--- review after 1.4.31: a failed PDF read check is kept briefly unless the reason lasts ---\n";
+$probeTtl = static function (?string $error) use ($engine, $ref): array {
+    $GLOBALS['transients'] = [];
+    $GLOBALS['transient_ttl'] = [];
+    Imagick::$blobError = $error;
+    $answer = priv($engine, $ref, 'probePdfRead');
+    Imagick::$blobError = null;
+    return [$answer['ok'], $GLOBALS['transient_ttl']['rapls_pic_pdf_read'] ?? null];
+};
+check('a read that works is kept twelve hours', $probeTtl(''), [true, 12 * HOUR_IN_SECONDS]);
+check('  ...one a policy refuses, twelve hours', $probeTtl('not authorized `PDF\' @ error/constitute.c/IsCoderAuthorized/426'), [false, 12 * HOUR_IN_SECONDS]);
+check('  ...no PDF support, twelve hours', $probeTtl("NoDecodeDelegateForThisImageFormat `PDF'"), [false, 12 * HOUR_IN_SECONDS]);
+check('  ...anything else (a full /tmp), ten minutes', $probeTtl('unable to open image `/tmp/magick-x\': No space left on device'), [false, ImagickEngine::PASSING_FAILURE_SECONDS]);
 
 printf("\n%d passed, %d failed\n", $pass, $fail);
 exit($fail === 0 ? 0 : 1);

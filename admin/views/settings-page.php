@@ -124,6 +124,11 @@ if (!defined('ABSPATH')) {
                                     <?php checked($config['format'], 'webp'); ?>>
                                 <?php esc_html_e('WebP', 'rapls-pdf-image-creator'); ?>
                             </label>
+                            <?php if (!\Rapls\PDFImageCreator\Admin::webpWorks()) : ?>
+                                <p class="description">
+                                    <?php esc_html_e('WebP cannot be used on this server: WordPress before 5.8 does not accept WebP images, or ImageMagick here cannot write them. Thumbnails set to WebP fail to generate.', 'rapls-pdf-image-creator'); ?>
+                                </p>
+                            <?php endif; ?>
                         </fieldset>
                     </td>
                 </tr>
@@ -147,7 +152,7 @@ if (!defined('ABSPATH')) {
                             <label>
                                 <input type="radio" name="rapls_pic_settings[bgcolor]" value="transparent"
                                     <?php checked($config['bgcolor'], 'transparent'); ?>>
-                                <?php esc_html_e('Transparent (PNG only)', 'rapls-pdf-image-creator'); ?>
+                                <?php esc_html_e('Transparent (PNG and WebP only)', 'rapls-pdf-image-creator'); ?>
                             </label>
                         </fieldset>
                         <p class="description">
@@ -182,6 +187,9 @@ if (!defined('ABSPATH')) {
                                 <?php checked(!empty($config['auto_generate'])); ?>>
                             <?php esc_html_e('Automatically generate thumbnail when PDF is uploaded', 'rapls-pdf-image-creator'); ?>
                         </label>
+                        <p class="description">
+                            <?php esc_html_e('When off, WordPress\'s own PDF preview is not kept either: a PDF uploaded then shows the PDF icon until its thumbnail is generated.', 'rapls-pdf-image-creator'); ?>
+                        </p>
                     </td>
                 </tr>
 
@@ -213,7 +221,7 @@ if (!defined('ABSPATH')) {
                             <?php esc_html_e('Display generated thumbnail instead of default PDF mime-type icon', 'rapls-pdf-image-creator'); ?>
                         </label>
                         <p class="description">
-                            <?php esc_html_e('Shows the generated thumbnail image as the PDF icon in the Media Library.', 'rapls-pdf-image-creator'); ?>
+                            <?php esc_html_e('Where WordPress shows a file-type icon for a PDF, the generated thumbnail is shown instead. The Media Library\'s grid and list show a PDF\'s thumbnail whether or not this is on.', 'rapls-pdf-image-creator'); ?>
                         </p>
                     </td>
                 </tr>
@@ -227,7 +235,7 @@ if (!defined('ABSPATH')) {
                             <?php esc_html_e('Hide generated thumbnail images in the Media Library', 'rapls-pdf-image-creator'); ?>
                         </label>
                         <p class="description">
-                            <?php esc_html_e('When unchecked and a PDF is deleted, the generated image will NOT be deleted together.', 'rapls-pdf-image-creator'); ?>
+                            <?php esc_html_e('This also decides what happens to the image when its PDF is deleted. Checked: the image is deleted with the PDF, unless something else uses it. Unchecked: the image is kept as an ordinary image.', 'rapls-pdf-image-creator'); ?>
                         </p>
                     </td>
                 </tr>
@@ -251,6 +259,7 @@ if (!defined('ABSPATH')) {
 
             <p class="description">
                 <?php esc_html_e('Configure how PDF thumbnails are inserted into content.', 'rapls-pdf-image-creator'); ?>
+                <?php esc_html_e('These settings are used by "Insert into post" in the classic editor\'s Add Media window. The block editor does not use them.', 'rapls-pdf-image-creator'); ?>
             </p>
 
             <table class="form-table">
@@ -290,12 +299,21 @@ if (!defined('ABSPATH')) {
                         <?php
                         $rapls_pic_image_sizes = get_intermediate_image_sizes();
                         $rapls_pic_image_sizes[] = 'full';
+                        // The names WordPress shows for its sizes, translated,
+                        // where it has them: ucfirst() of the slug read
+                        // "Medium_large" (review after 1.4.31).
+                        $rapls_pic_size_names = apply_filters('image_size_names_choose', [
+                            'thumbnail' => __('Thumbnail', 'rapls-pdf-image-creator'),
+                            'medium' => __('Medium', 'rapls-pdf-image-creator'),
+                            'large' => __('Large', 'rapls-pdf-image-creator'),
+                            'full' => __('Full Size', 'rapls-pdf-image-creator'),
+                        ]);
                         ?>
                         <select id="rapls_pic_insert_size" name="rapls_pic_settings[insert_size]">
                             <?php foreach ($rapls_pic_image_sizes as $rapls_pic_size) : ?>
                             <option value="<?php echo esc_attr($rapls_pic_size); ?>"
                                 <?php selected($config['insert_size'] ?? 'medium', $rapls_pic_size); ?>>
-                                <?php echo esc_html(ucfirst($rapls_pic_size)); ?>
+                                <?php echo esc_html(is_array($rapls_pic_size_names) && isset($rapls_pic_size_names[$rapls_pic_size]) ? (string) $rapls_pic_size_names[$rapls_pic_size] : $rapls_pic_size); ?>
                             </option>
                             <?php endforeach; ?>
                         </select>
@@ -345,8 +363,8 @@ if (!defined('ABSPATH')) {
                             <code>%ATTACHMENT_URL%</code> - <?php esc_html_e('URL to the attachment page', 'rapls-pdf-image-creator'); ?>
                         </p>
                         <p class="description">
-                            <?php esc_html_e('Example for Google Doc Embedder:', 'rapls-pdf-image-creator'); ?><br>
-                            <code>[gview file="%PDF_URL%"]</code>
+                            <?php esc_html_e('Example: the thumbnail, linking to the PDF', 'rapls-pdf-image-creator'); ?><br>
+                            <code>&lt;a href="%PDF_URL%"&gt;&lt;img src="%THUMBNAIL_URL%" alt="%TITLE%"&gt;&lt;/a&gt;</code>
                         </p>
                     </td>
                 </tr>
@@ -559,13 +577,13 @@ if (!defined('ABSPATH')) {
             </tbody>
         </table>
 
-        <?php if (isset($rapls_pic_imagick_engine['requirements']['cmyk_pdf'])) : ?>
+        <?php if (\Rapls\PDFImageCreator\Admin::showsCmykWarning($rapls_pic_imagick_engine['requirements']['cmyk_pdf'] ?? null)) : ?>
         <div class="notice notice-warning inline">
             <p>
                 <strong><?php esc_html_e('CMYK PDFs may generate a blank white thumbnail on this server.', 'rapls-pdf-image-creator'); ?></strong>
             </p>
             <p>
-                <?php esc_html_e('ImageMagick 6 renders CMYK PDFs through Ghostscript\'s bmpsep8 device, which produces a separation BMP that ImageMagick cannot read back. ImageMagick 7 does not have this problem.', 'rapls-pdf-image-creator'); ?>
+                <?php esc_html_e('Some ImageMagick 6 builds render CMYK PDFs through Ghostscript\'s bmpsep8 device, which produces a separation BMP that ImageMagick cannot read back. ImageMagick 7 does not have this problem.', 'rapls-pdf-image-creator'); ?>
             </p>
             <p>
                 <?php esc_html_e('Ask your hosting provider for either of the following:', 'rapls-pdf-image-creator'); ?>
@@ -581,6 +599,13 @@ if (!defined('ABSPATH')) {
                         '<code>ps:cmyk</code>',
                         '<code>bmpsep8</code>',
                         '<code>pamcmyk32</code>'
+                    );
+                    echo ' ';
+                    printf(
+                        /* translators: 1: gslib, 2: convert -list configure */
+                        esc_html__('This has no effect where ImageMagick calls Ghostscript as a library (%1$s in the output of %2$s); then only the upgrade helps.', 'rapls-pdf-image-creator'),
+                        '<code>gslib</code>',
+                        '<code>convert -list configure</code>'
                     );
                     ?>
                 </li>
@@ -607,7 +632,7 @@ if (!defined('ABSPATH')) {
             </button>
         </p>
 
-        <table class="widefat pic-stats-table" id="rapls-pic-stats-table">
+        <table class="widefat rapls-pic-stats-table" id="rapls-pic-stats-table">
             <tbody>
                 <tr>
                     <td><?php esc_html_e('Total PDFs:', 'rapls-pdf-image-creator'); ?></td>

@@ -213,10 +213,17 @@ final class ImagickEngine implements EngineInterface
             $result['error'] = $e->getMessage();
         }
 
+        // Twelve hours for an answer about the server -- it reads PDFs, or a
+        // policy or a missing coder stops it. Ten minutes for anything else:
+        // a full /tmp or a resource limit at the moment of the one check
+        // stopped every thumbnail for twelve hours (review after 1.4.31).
+        $code = $result['ok'] ? '' : \Rapls\PDFImageCreator\FailureCode::fromExceptionMessage($result['error']);
+        $lasting = $result['ok'] || in_array($code, [\Rapls\PDFImageCreator\FailureCode::PDF_BLOCKED_BY_POLICY, \Rapls\PDFImageCreator\FailureCode::PDF_UNSUPPORTED], true);
+
         set_transient(
             self::READ_PROBE_TRANSIENT,
             $result + ['version' => $version],
-            12 * HOUR_IN_SECONDS
+            $lasting ? 12 * HOUR_IN_SECONDS : self::PASSING_FAILURE_SECONDS
         );
 
         return $result;
@@ -351,7 +358,8 @@ final class ImagickEngine implements EngineInterface
         $found = null;
 
         foreach ($this->getPolicyFileCandidates() as $file) {
-            if (!is_readable($file)) {
+            // @: under open_basedir, a folder outside it warns (review after 1.4.31).
+            if (!@is_readable($file)) {
                 continue;
             }
 
@@ -421,7 +429,8 @@ final class ImagickEngine implements EngineInterface
         $device = null;
 
         foreach ($this->getDelegateFileCandidates() as $file) {
-            if (!is_readable($file)) {
+            // @: under open_basedir, a folder outside it warns (review after 1.4.31).
+            if (!@is_readable($file)) {
                 continue;
             }
 
@@ -530,8 +539,10 @@ final class ImagickEngine implements EngineInterface
                     }
                 }
             } catch (\Exception $e) {
-                // Older builds throw rather than return an empty set.
-                $dirs = [];
+                // Older builds throw rather than return an empty set. The
+                // folders found above stay: emptied here, the MAGICK_HOME and
+                // MAGICK_CONFIGURE_PATH ones went too, and the policy file's
+                // path was not shown (review after 1.4.31).
             }
         }
 
@@ -729,6 +740,13 @@ final class ImagickEngine implements EngineInterface
         ];
         $options = array_merge($defaults, $options);
 
+        // Whole numbers, whoever called: Imagick's parameters are ints, and a
+        // string or a float from a caller or a filter was a TypeError
+        // (review after 1.4.31).
+        foreach (['page', 'max_width', 'max_height', 'quality', 'resolution'] as $number) {
+            $options[$number] = is_numeric($options[$number]) ? (int) $options[$number] : $defaults[$number];
+        }
+
         // Validate PDF file
         if (!file_exists($pdfPath)) {
             return ConversionResult::failure(
@@ -921,21 +939,53 @@ final class ImagickEngine implements EngineInterface
                 $conversionTime
             );
 
-            return apply_filters('rapls_pdf_image_creator_imagick_result', $result, $pdfPath, $options);
+            $filtered = apply_filters('rapls_pdf_image_creator_imagick_result', $result, $pdfPath, $options);
+
+            // A listener answering anything else was a TypeError at this
+            // return, taking the upload with it (review after 1.4.31).
+            return $filtered instanceof ConversionResult ? $filtered : $result;
 
         } catch (\ImagickException $e) {
+            // A page past the end of the file: Ghostscript says so only on a
+            // stderr nobody sees, and ImageMagick's own words were "Failed to
+            // read the file" -- with a site-wide page set, every shorter PDF
+            // got no thumbnail and a message about ImageMagick (review after
+            // 1.4.31). Counted without drawing, and only when a page past the
+            // first was asked for.
+            $pages = (int) $options['page'] > 0 ? self::pagesIn($pdfPath) : null;
+
+            if (null !== $pages && $pages <= (int) $options['page']) {
+                return ConversionResult::failure(
+                    sprintf(
+                        /* translators: 1: the page asked for, counted from 0; 2: how many pages the PDF has */
+                        _n(
+                            'Page %1$d was asked for (counting from 0), but this PDF has %2$d page.',
+                            'Page %1$d was asked for (counting from 0), but this PDF has %2$d pages.',
+                            $pages,
+                            'rapls-pdf-image-creator'
+                        ),
+                        (int) $options['page'],
+                        $pages
+                    ),
+                    \Rapls\PDFImageCreator\FailureCode::PAGE_OUT_OF_RANGE
+                );
+            }
+
             return ConversionResult::failure(
                 sprintf(
                     /* translators: %s: error message */
                     __('Imagick error: %s', 'rapls-pdf-image-creator'),
                     $e->getMessage()
                 ),
-                \Rapls\PDFImageCreator\FailureCode::fromExceptionMessage($e->getMessage())
+                \Rapls\PDFImageCreator\FailureCode::fromExceptionMessage($e->getMessage(), true)
             );
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
+            // Not only Exception: a TypeError or an Error from the conversion
+            // or a listener is a failed conversion too, and escaping, it took
+            // the upload request down (review after 1.4.31).
             return ConversionResult::failure(
                 $e->getMessage(),
-                \Rapls\PDFImageCreator\FailureCode::fromExceptionMessage($e->getMessage())
+                \Rapls\PDFImageCreator\FailureCode::fromExceptionMessage($e->getMessage(), true)
             );
         }
     }
@@ -944,6 +994,29 @@ final class ImagickEngine implements EngineInterface
      * Transient remembering that this build cannot be asked for a single page
      */
     private const PAGE_SUFFIX_TRANSIENT = 'rapls_pic_page_suffix';
+
+    /**
+     * How many pages the PDF has, counted without drawing, or null when it cannot be told
+     */
+    private static function pagesIn(string $pdfPath): ?int
+    {
+        try {
+            $count = new \Imagick();
+            $count->pingImage($pdfPath);
+            $pages = (int) $count->getNumberImages();
+            $count->clear();
+
+            return $pages > 0 ? $pages : null;
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    /** How long a PDF read check that failed for no lasting reason is kept (probePdfRead()). */
+    public const PASSING_FAILURE_SECONDS = 600;
+
+    /** The longest document the whole-file retry reads (readPageDirect()). */
+    public const WHOLE_READ_MAX_PAGES = 20;
 
     /**
      * Transient remembering whether Ghostscript here needed a nudge
@@ -1034,17 +1107,21 @@ final class ImagickEngine implements EngineInterface
      * file at all.
      *
      * Kept because the behaviour stands on its own — if one route returns
-     * nothing and another returns something, take the something — and because
-     * the cost is bounded: it runs only after a flat result and the answer is
-     * cached per server. But nothing here is known to be load-bearing. If it
-     * ever gets in the way, delete it; do not defend it on the strength of the
-     * measurement above.
+     * nothing and another returns something, take the something. But nothing
+     * here is known to be load-bearing. If it ever gets in the way, delete
+     * it; do not defend it on the strength of the measurement above.
      *
      * The retry renders every page, which on a long document is expensive.
-     * Two things keep that in check: it only happens when the first read came
-     * back as one flat colour, and the answer is remembered, so a server that
-     * needs the second route stops paying for the first one and a server that
-     * does not never tries it twice.
+     * What bounds it:
+     *
+     * - Until the server is measured, it runs only after a flat result.
+     * - The answer is remembered for a week. "no" (the suffix works, or the
+     *   retry could not be done) stops it. "yes" (the suffix gave a flat page
+     *   and the whole file did not) sends every conversion to the whole file
+     *   for that week -- it did say "only after a flat result", which stopped
+     *   being true once "yes" was kept (review after 1.4.31).
+     * - A document of more than WHOLE_READ_MAX_PAGES pages is never read
+     *   whole: the page is read on its own, as it is without this.
      *
      * @param \Imagick $imagick    Fresh instance with the resolution set.
      * @param string   $pdfPath    Absolute path.
@@ -1078,11 +1155,16 @@ final class ImagickEngine implements EngineInterface
         $whole = $this->readWholePage($pdfPath, $page, $resolution);
 
         if (null === $whole) {
-            // The retry failed or the page does not exist. Keep what we have;
-            // a blank thumbnail beats no thumbnail, and the caller's other
-            // checks still apply.
+            // The retry failed, the page does not exist, or the document is
+            // too long to read whole. Keep what we have; a blank thumbnail
+            // beats no thumbnail, and the caller's other checks still apply.
             if ('yes' === $suffixBroken) {
                 $imagick->readImage($pdfPath . '[' . $page . ']');
+            } else {
+                // Not measured, and could not be: remembered as "do not
+                // retry", or every flat page tried the whole file again
+                // (review after 1.4.31).
+                set_transient(self::PAGE_SUFFIX_TRANSIENT, 'no', WEEK_IN_SECONDS);
             }
 
             return $imagick;
@@ -1118,6 +1200,16 @@ final class ImagickEngine implements EngineInterface
     private function readWholePage(string $pdfPath, int $page, int $resolution): ?\Imagick
     {
         try {
+            // Counted first, without drawing: past the limit it is not read.
+            $count = new \Imagick();
+            $count->pingImage($pdfPath);
+            $pages = (int) $count->getNumberImages();
+            $count->clear();
+
+            if ($pages < 1 || $pages > self::WHOLE_READ_MAX_PAGES) {
+                return null;
+            }
+
             $all = new \Imagick();
             $all->setResolution($resolution, $resolution);
             $all->readImage($pdfPath);
@@ -1209,7 +1301,13 @@ final class ImagickEngine implements EngineInterface
         $one = null;
 
         try {
-            putenv('GS_OPTIONS=' . $flags);
+            // Added to what the site set, not in its place: a value set on
+            // purpose -- a font path, a device option -- went missing from
+            // the retry (review after 1.4.31). In a threaded server the
+            // environment is the process's, shared by every thread for the
+            // length of this read; PHP's usual servers run one request a
+            // process.
+            putenv('GS_OPTIONS=' . trim((is_string($previous) ? $previous : '') . ' ' . $flags));
             $one = $this->readAnyRoute($pdfPath, $page, $resolution);
         } catch (\Throwable $e) {
             $one = null;
@@ -1230,8 +1328,11 @@ final class ImagickEngine implements EngineInterface
 
         if ($this->looksEmpty($one)) {
             $one->clear();
-            set_transient(self::GS_OPTIONS_TRANSIENT, 'no', WEEK_IN_SECONDS);
 
+            // Nothing is learnt about the server from a page that is blank
+            // either way, and "no" written over a "yes" took the Status tab's
+            // "Needed a workaround" away from a server that does need it
+            // (review after 1.4.31). Only "yes" is read.
             return null;
         }
 
@@ -1351,9 +1452,13 @@ final class ImagickEngine implements EngineInterface
             }
 
             $rgb = $pixel->getColor();
+            // Transparent is white here: the page is flattened onto white,
+            // and an unpainted page under a transparent colour other than
+            // white was not taken for blank (review after 1.4.31).
+            $alpha = defined('\Imagick::COLOR_ALPHA') && method_exists($pixel, 'getColorValue') ? (float) $pixel->getColorValue(\Imagick::COLOR_ALPHA) : 1.0;
             $probe->clear();
 
-            return $rgb['r'] > 250 && $rgb['g'] > 250 && $rgb['b'] > 250;
+            return $alpha < 0.01 || ($rgb['r'] > 250 && $rgb['g'] > 250 && $rgb['b'] > 250);
         } catch (\Throwable $e) {
             return false;
         }
@@ -1377,17 +1482,41 @@ final class ImagickEngine implements EngineInterface
                 return false;
             }
 
-            $range = $imagick->getImageChannelRange(\Imagick::CHANNEL_ALL);
+            // Transparency apart from colour. An unpainted page read through
+            // pngalpha is transparent white, and on ImageMagick 7 its range
+            // over every channel at once is 0 to 65535 -- colour 65535,
+            // alpha 0 -- so it never read as one colour, and a blank page was
+            // kept as a thumbnail with none of the retries below (review
+            // after 1.4.31; measured on 7.1.1-15). Uniform transparency and
+            // uniform colour is one flat colour, whichever way a version
+            // stores the alpha.
+            if (defined('\Imagick::CHANNEL_ALPHA') && method_exists($imagick, 'getImageAlphaChannel') && $imagick->getImageAlphaChannel()) {
+                if (!self::oneValue($imagick->getImageChannelRange(\Imagick::CHANNEL_ALPHA))) {
+                    return false;
+                }
 
-            if (!isset($range['minima'], $range['maxima'])) {
-                return false;
+                return self::oneValue($imagick->getImageChannelRange(\Imagick::CHANNEL_ALL & ~\Imagick::CHANNEL_ALPHA));
             }
 
-            return abs((float) $range['maxima'] - (float) $range['minima']) < 1e-9;
+            return self::oneValue($imagick->getImageChannelRange(\Imagick::CHANNEL_ALL));
         } catch (\Throwable $e) {
             // Cannot tell. Say no, so nothing is re-read on a guess.
             return false;
         }
+    }
+
+    /**
+     * Whether a channel range is a single value
+     *
+     * @param mixed $range getImageChannelRange()'s answer.
+     */
+    private static function oneValue($range): bool
+    {
+        if (!is_array($range) || !isset($range['minima'], $range['maxima'])) {
+            return false;
+        }
+
+        return abs((float) $range['maxima'] - (float) $range['minima']) < 1e-9;
     }
 
     /**

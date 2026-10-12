@@ -20,11 +20,12 @@ function apply_filters($tag, $value, ...$rest) {
     return $value;
 }
 function get_transient($k) { return $GLOBALS['transients'][$k] ?? false; }
-function set_transient($k, $v, $t = 0) { $GLOBALS['transients'][$k] = $v; return true; }
+function set_transient($k, $v, $t = 0) { $GLOBALS['transients'][$k] = $v; $GLOBALS['transient_ttl'][$k] = $t; return true; }
 function delete_transient($k) { unset($GLOBALS['transients'][$k]); return true; }
 function get_option($k, $d = false) { return $GLOBALS['options'][$k] ?? $d; }
 function update_option($k, $v, $a = null) { $GLOBALS['options'][$k] = $v; return true; }
 function __($s, $d = null) { return $s; }
+if (!function_exists('_n')) { function _n($one, $many, $n, $d = null) { return 1 === (int) $n ? $one : $many; } }
 function _x($s, $c, $d = null) { return $s; }
 function esc_html($s) { return $s; }
 function wp_mkdir_p($d) { return @mkdir($d, 0777, true) || is_dir($d); }
@@ -32,6 +33,14 @@ function wp_mkdir_p($d) { return @mkdir($d, 0777, true) || is_dir($d); }
 /** Records every call so we can assert on the pipeline order. */
 class Imagick
 {
+    /** Older builds throw from getConfigureOptions() instead of answering. */
+    public static $configureThrows = false;
+    public static function getConfigureOptions($pattern = '*') {
+        if (self::$configureThrows) {
+            throw new ImagickException('not supported by this build');
+        }
+        return [];
+    }
     const COLORSPACE_CMYK = 12;
     const COLORSPACE_SRGB = 13;
     const RENDERINGINTENT_RELATIVE = 3;
@@ -63,11 +72,14 @@ class Imagick
 
     public function __construct($colorspace = self::COLORSPACE_CMYK) { $this->colorspace = $colorspace; }
     public function setResolution($x, $y) { self::$log[] = "setResolution($x)"; }
+    /** GS_OPTIONS as each read saw it. */
+    public static $gsOptionsSeen = [];
     public function readImage($p) {
         self::$log[] = 'readImage';
+        self::$gsOptionsSeen[] = getenv('GS_OPTIONS');
         if (self::$blankWithoutGsOptions) {
             $gs = getenv('GS_OPTIONS');
-            $this->uniform = (false === $gs || '' === $gs);
+            $this->uniform = false === $gs || '' === $gs || false === strpos($gs, '-dNOTRANSPARENCY');
         }
         return true;
     }
@@ -79,7 +91,11 @@ class Imagick
             : ['minima' => 0.0, 'maxima' => 65535.0];
     }
     public static function getVersion() { return ['versionString' => self::$versionString]; }
-    public static function queryFormats($p = '*') { return ['PDF']; }
+    /** Formats this ImageMagick reports; a test adds WEBP. */
+    public static $formats = ['PDF'];
+    public static function queryFormats($p = '*') {
+        return '*' === $p ? self::$formats : array_values(array_filter(self::$formats, function ($f) use ($p) { return strtoupper($f) === strtoupper($p); }));
+    }
     public function getImageColorspace() { return $this->colorspace; }
     public function setImageColorspace($cs) { self::$log[] = "setImageColorspace($cs)"; $this->colorspace = $cs; }
     public function transformImageColorspace($cs) { self::$log[] = "transformImageColorspace($cs)"; $this->colorspace = $cs; }
@@ -95,6 +111,20 @@ class Imagick
     public function clear() { self::$log[] = 'clear'; }
     public function setImageAlphaChannel($a) { self::$log[] = "setImageAlphaChannel($a)"; }
     public function stripImage() { self::$log[] = 'stripImage'; $this->profiles = []; }
+
+    /**
+     * The in-memory test PDFs: read, or refused with this message
+     *
+     * Null by default: as before this stub had the method, it cannot run at
+     * all (an Error, which the CMYK check takes as "not tested"). A test sets
+     * the message ImageMagick would give, or '' to read (review after 1.4.31).
+     */
+    public static $blobError = null;
+    public function readImageBlob($blob, $name = null) {
+        if (null === self::$blobError) { throw new Error('readImageBlob cannot render in this stub'); }
+        if ('' === self::$blobError) { return true; }
+        throw new ImagickException(self::$blobError);
+    }
 }
 
 class ImagickException extends Exception {}

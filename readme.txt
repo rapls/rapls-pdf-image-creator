@@ -5,20 +5,20 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.1
-Stable tag: 1.4.31
+Stable tag: 1.4.32
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
 Turns PDFs into images. Refuses to save a blank thumbnail, works around a Ghostscript fault that makes one, and tells you what to ask your host.
 
- == Description ==
+== Description ==
 
- Rapls PDF Image Creator automatically generates thumbnail images when you upload PDF files to your WordPress Media Library. The plugin uses ImageMagick (Imagick PHP extension) to convert the first page of a PDF into an image.
+Rapls PDF Image Creator automatically generates thumbnail images when you upload PDF files to your WordPress Media Library. The plugin uses ImageMagick (Imagick PHP extension) to convert the first page of a PDF into an image.
 
 👉 **Setup guide & troubleshooting:** [How to fix CMYK black thumbnails and PDF/X issues](https://raplsworks.com/rapls-pdf-image-creator-guide/)
 
- = Why this one =
+= Why this one =
 
 On a server with an older Ghostscript, a PDF page can come back completely white -- and Ghostscript does not report it as an error. Anything that hands the page over and stores whatever comes back saves that white image, including WordPress's own PDF preview. It looks like a thumbnail. It looks like the job worked.
 
@@ -26,12 +26,12 @@ Measured on a live shared host running Ghostscript 9.27, in a single upload: the
 
 * **It looks at what came back.** A page that renders as flat white is refused, not stored. WordPress shows its PDF icon and the Status tab says why, which is more use than a white square
 * **It works around the cause.** Ghostscript 9.27 and earlier fail on an image inside a transparency group -- the kind of file PowerPoint and Illustrator produce. Retried with transparency switched off, the same page went from 11,018 bytes of white to 624,109 bytes of picture. Only ever as a retry: a page that rendered the first time is never touched
-* **Every check is a measurement.** Whether this server can read a PDF, render CMYK, or select a page other than the first is answered by doing it, not by reading a version number. The Status tab names the Ghostscript device your ImageMagick uses
+* **Every check is a measurement.** Whether this server can read a PDF, render CMYK, or select a page other than the first is answered by doing it, not by reading a version number. On ImageMagick 6 the Status tab names the Ghostscript device your ImageMagick uses for CMYK PDFs
 * **It tells you what to ask your host.** "No PDF support", "the page is too large", "the uploads folder is not writable" and "the file is missing" are four problems with four different answers, and they no longer look the same
 * **Real colour management, without the weight.** CMYK is converted through ICC profiles rather than the arithmetic shortcut that turns greens fluorescent. The bundled sRGB profile is 3 KB, not the 64 KB kind that ends up embedded in every registered size
 * **Nothing starts a process.** No exec(), no shell. It works on locked-down shared hosting
 
- = Key Features =
+= Key Features =
 
 * **Automatic Generation** - Thumbnails are created instantly when PDFs are uploaded
 * **Featured Image Support** - Generated thumbnails are automatically set as the PDF's featured image
@@ -52,11 +52,13 @@ Measured on a live shared host running Ghostscript 9.27, in a single upload: the
 
 When you upload `my-document.pdf`, the plugin creates:
 
-* my-document-pdf.jpg (Full size cover image)
-* my-document-pdf-1024x768.jpg (Large)
-* my-document-pdf-300x225.jpg (Medium)
-* my-document-pdf-150x150.jpg (Thumbnail)
+* my-document-pdf-thumbnail.jpg (Full size cover image)
+* my-document-pdf-thumbnail-1024x768.jpg (Large)
+* my-document-pdf-thumbnail-300x225.jpg (Medium)
+* my-document-pdf-thumbnail-150x150.jpg (Thumbnail)
 * Additional sizes based on your theme settings
+
+A thumbnail made again ("Regenerate Thumbnail", or Bulk Generate with "Include PDFs that already have thumbnails (regenerate)") gets a new name with a suffix, such as `my-document-pdf-thumbnail-6512a3f0.jpg`, so browsers do not keep showing the old image. The extension follows the output format you choose.
 
 = Shortcodes =
 
@@ -124,13 +126,13 @@ For detailed troubleshooting including common server setup issues, see the [setu
 
 = My thumbnail is a completely blank white image. What is wrong? =
 
-Check Settings > Rapls PDF Image Creator > Status. If it reports ImageMagick 6, that is the cause.
+Check Settings > Rapls PDF Image Creator > Status. If the CMYK PDF Rendering row says "Broken on this server (tested)", that is the cause. If it says the test could not be run, it may be.
 
 ImageMagick 6 can render a PDF it judges to be CMYK through Ghostscript's `bmpsep8` device, which writes a separation BMP that ImageMagick's own BMP reader cannot decode. Depending on the exact ImageMagick and Ghostscript versions, the read either fails outright or returns an empty raster — which becomes a blank white thumbnail. ImageMagick 7 uses a different device and is unaffected.
 
 Not every ImageMagick 6 build is affected: on Xserver's 6.9.13-25 a CMYK page renders correctly. Since 1.3.2 the Status tab renders a test page and reports what this server actually does, rather than warning on the version number.
 
-The plugin cannot work around this, because ImageMagick picks the device from the PDF's own content and no Imagick API call overrides it. Ask your hosting provider to upgrade to ImageMagick 7, or to change the `ps:cmyk` delegate in `delegates.xml` from `bmpsep8` to `pamcmyk32`.
+The plugin cannot work around this, because ImageMagick picks the device from the PDF's own content and no Imagick API call overrides it. Ask your hosting provider to upgrade to ImageMagick 7, or to change the `ps:cmyk` delegate in `delegates.xml` from `bmpsep8` to `pamcmyk32`. The second has no effect where ImageMagick calls Ghostscript as a library (`gslib` in the output of `convert -list configure`); then only the upgrade helps.
 
 RGB PDFs are not affected, which is why only some of your PDFs fail.
 
@@ -173,7 +175,7 @@ The plugin tells these apart for you, so you do not have to guess which request 
 
 = What image formats are supported? =
 
-JPEG, PNG, and WebP. Configure your preferred format in the Image Settings tab.
+JPEG, PNG, and WebP. Choose one under Image Settings on the Settings tab. WebP needs WordPress 5.8 or later and an ImageMagick that can write it; the setting says so when this server cannot.
 
 = Will thumbnails be deleted when I uninstall the plugin? =
 
@@ -195,7 +197,7 @@ Without code, you can set the page for the whole site in Settings > Rapls PDF Im
 
 = How do I customize the insert output? =
 
-Go to Settings > Rapls PDF Image Creator > Insert Settings. Choose from Image only, Title link, or Custom HTML with placeholders like `{thumbnail}`, `{pdf_url}`, `{pdf_title}`.
+In Settings > Rapls PDF Image Creator, under Insert Settings, choose Thumbnail Image, Title (text link only) or Custom HTML. A custom template can use `%PDF_URL%`, `%THUMBNAIL_URL%`, `%TITLE%`, `%ID%` and `%ATTACHMENT_URL%`. These settings apply to "Insert into post" in the classic editor's Add Media window; the block editor does not use them.
 
 = Does it need Ghostscript? =
 
@@ -315,52 +317,39 @@ No other profile is bundled. CMYK profiles are read from the host when one is
 present and are never redistributed.
 
 == Changelog ==
-= 1.4.31 =
-* Fixed: in the classic editor's "Add Media" window, an image-only view that another plugin adds -- a logo or banner picker, say -- no longer lists PDFs. Only WordPress's own featured image and gallery views do, as in the block editor
+= 1.4.32 =
+Choosing a PDF as an image
+* Changed: PDFs with a thumbnail are offered in WordPress's own image pickers only -- the image, gallery and Post Featured Image blocks, the block editor's featured image, and the classic editor's "Set featured image" and the featured image and gallery views of "Add Media". Other plugins' image pickers, and core pickers that also take other media such as Cover and Media & Text, are no longer given PDFs
+* Fixed: a PDF is offered only when it has a thumbnail; one whose thumbnail could not be made, or was deleted from the Media Library, is not
+* Changed: a PDF dropped or pasted into the block editor is no longer turned into an image block. WordPress's image block cannot upload a PDF, so the upload failed; it now becomes a File block, as without this plugin. To show a PDF as an image, choose it in the image block's Media Library tab
+* Changed: with Auto Generate off, the image block's upload tab says beforehand that a PDF uploaded there gets no thumbnail, and one uploaded there by mistake can be deleted again from the notice that says so
+* Changed: in the REST API, a generated thumbnail's source_url and link are its own, as WordPress defines them; the PDF is given in rapls_pic_source_pdf_id and rapls_pic_source_pdf_url. Each size's URL is now built from the image's own URL, so it follows a CDN or offload plugin that rewrote it
+* Fixed: an image that another plugin attached to a PDF is no longer taken for this plugin's thumbnail
+* Fixed: hiding generated images applies only to the Media Library's own list, and no longer changes other plugins' queries or search conditions
 
-= 1.4.30 =
-* Changed: PDFs with a thumbnail are offered in WordPress's own image pickers only -- the image, gallery and Post Featured Image blocks, the block editor's featured image, and the classic editor's "Set featured image" and "Add Media". Other plugins' image pickers are no longer given PDFs, which they may not be able to show, nor this plugin's upload message or delete button. Core pickers that also take other media, such as Cover and Media & Text, offer images only, as before this plugin. This replaces 1.4.21's "any picker that takes images"
-* Changed: the upload message and the "Delete the uploaded PDF" button belong to the image block's own picker alone
+Bulk Generate
+* Fixed: the Media Library is read 200 PDFs per request, for the scan, the statistics and finding the next PDF, so large libraries no longer run out of memory or time. The statistics are read only when the Status tab is opened, and no longer on every visit to the Media Library
+* Changed: Stop says it stops after the current PDF, and Continue carries on from the next one. Stop pressed while the next PDF is being looked for no longer starts drawing it
+* Changed: the settings tabs and the progress are announced to screen readers, and the tabs move with the arrow keys, Home and End
+* Fixed: a library whose PDFs are all in the trash says so, instead of suggesting another plugin is filtering the list
 
-= 1.4.29 =
-* Fixed: the "Delete the uploaded PDF" button in the image block's notice is offered only for a PDF uploaded since that media window was last opened, never for one uploaded on the same page for another block or another plugin
+Making the thumbnail
+* Fixed: a blank page drawn as transparent is now recognised as blank, so the retry for blank pages runs for it too, and a page that is blank is reported as such
+* New: a page number past the end of the PDF fails with its own reason, which says how many pages the file has, and is not retried
+* Fixed: an error from ImageMagick while drawing a page is reported as a drawing failure, not as a server that cannot render PDFs
+* Changed: the whole-document retry for a blank first page is tried only on documents of up to 20 pages, and a failed attempt is remembered instead of repeated
+* Fixed: numbers that a filter hands back as text are made whole numbers, and an error raised during conversion is a failed conversion, not a broken upload
+* Fixed: the list of functions a host disables is read the way PHP reads it, so the blank-page retry is no longer turned off by a name PHP does not disable
+* Fixed: an image that an add-on hands over to be finished is no longer read again as a PDF
+* Fixed: GS_OPTIONS that the site already sets are kept, with -dNOTRANSPARENCY added to them for the retry
 
-= 1.4.28 =
-* Changed: with Auto Generate off, the upload tab of an image block's media window says beforehand that a PDF uploaded there gets no thumbnail and cannot be used in the block, and that PDFs which already have one can be chosen in the Media Library tab
-* Changed: with Auto Generate off, a PDF uploaded in that window and then chosen for the image block can be deleted again straight from the notice that says it has no thumbnail. Only a PDF uploaded on that page is offered, never the block's own
-
-= 1.4.27 =
-* Fixed: Bulk Generate's Stop, pressed while the next PDF is being looked for, no longer starts drawing the PDF that is found; Continue looks for it again. A run that reaches the end meanwhile says Complete
-* Fixed: an image block no longer takes a PDF that has no thumbnail -- one uploaded in the media window while Auto Generate is off, or one whose thumbnail could not be made. The editor says why. PDFs with thumbnails can still be chosen, with Auto Generate on or off, and galleries are unchanged
-* Changed: the settings tabs and Bulk Generate's progress are announced to screen readers: the tabs say which one is chosen and move with the arrow keys, Home and End, and the progress bar, status line and log are read out as they change
-* Changed: two pieces of unused code are gone, one of which ran the upload_dir filter once more for every thumbnail generated
-
-= 1.4.26 =
-* Fixed: Bulk Generate no longer reads the whole Media Library at once. Scanning, the statistics and finding the next PDF each read 200 PDFs per request, and the browser no longer holds the list of every PDF, so large libraries can be scanned and generated without running out of memory or time
-* Changed: Bulk Generate's Stop button says it stops after the current PDF, which the server has already started on; that PDF's result is still counted. After stopping, Continue carries on from the next PDF, and a new scan starts from the beginning. A PDF whose request fails is counted as failed and the run goes on to the next one, as before
-* Fixed: the generated and failed counts are reset on screen when a new run starts
-* Fixed: the thumbnail, clickable thumbnail and download link shortcodes keep several classes in their class attribute: class="alignleft shadow" was turned into "alignleftshadow"
-
-= 1.4.25 =
-* Fixed: the list of functions a host disables is read the way PHP reads it, split on spaces as well as commas and with each name taken as written. A list such as "exec putenv" was read as one name, and "PUTENV", which PHP does not disable, turned off the retry that recovers blank pages on hosts that need -dNOTRANSPARENCY
-
-= 1.4.24 =
-* Fixed: when an add-on hands over a page it has already drawn as an image to be finished as a thumbnail, it is no longer read again by the routes meant for PDFs. On a page of a single colour those two extra reads cost time, and what they found was saved as this server's answer about how Ghostscript renders PDFs, which could take away the Status tab's note that this host needs -dNOTRANSPARENCY
-
-= 1.4.23 =
-* Fixed: dropping a PDF into the block editor together with a file that is neither an image nor a PDF -- a Word document, a ZIP -- no longer makes every file an image block. The image block takes the files only when all of them are images or PDFs
-* Changed: in the REST API, a generated thumbnail's source_url and link are now its own, as WordPress defines them, instead of the PDF's; the block editor reads source_url as the image to show. The PDF is still given in rapls_pic_source_pdf_id and rapls_pic_source_pdf_url. "Copy URL" in the Media Library still gives the PDF's URL
-* Changed: the block editor script now declares the WordPress packages it uses itself
-
-= 1.4.22 =
-* Fixed: with "Auto Generate" off, a PDF dropped into the block editor is no longer made into an image block. No thumbnail is made for it on upload, so the block had no image to show
-* Fixed: a PDF whose generated thumbnail has been deleted from the Media Library is no longer offered when choosing an image. The record of the thumbnail stayed behind, and that was enough to offer it
-* Fixed: hiding generated images now applies only to the Media Library's own list. Every attachment query in the admin was affected before, including other plugins' own pickers and tools
-
-= 1.4.21 =
-* Fixed: when choosing an image -- in the image block, or any picker that takes images -- a PDF is now offered only if it has a thumbnail. A PDF with none was offered too, and picked, it gave the picker a PDF with no image to show
-* Fixed: hiding generated images from the Media Library no longer widens another plugin's own search conditions. Added to a query whose conditions were joined with OR, it became one more alternative instead of a further condition
-* Fixed: an image that another plugin attached to a PDF is no longer taken for this plugin's thumbnail. Only images carrying this plugin's own marks are, and the Media Library and the REST API now show such an image's own URL instead of the PDF's
+Settings and Status
+* Changed: the CMYK warning on the Status tab is shown only when this server's own test did not render CMYK correctly
+* Changed: where this server or this WordPress cannot make WebP thumbnails, the WebP setting says so
+* Fixed: placeholders in a Custom HTML template are escaped, so a title with a quote in it no longer breaks the markup
+* Fixed: the thumbnail, clickable thumbnail and download link shortcodes keep several classes in their class attribute
+* Changed: clearer wording on the settings screen and in the readme, and the Media Library column's marks are read out to screen readers
+* Removed: an unused AJAX endpoint for regenerating a thumbnail, and unused code
 
 = 1.4.20 =
 * Fixed: deleting the plugin from a multisite network now cleans up every site, each by its own "Keep Images on Uninstall" setting. Before, only the site it was deleted from was cleaned up, and the other sites kept the plugin's settings, its markers on PDFs and images, and -- with that setting off -- the generated images
@@ -604,38 +593,8 @@ present and are never redistributed.
 
 == Upgrade Notice ==
 
-= 1.4.31 =
-Another plugin's image picker inside "Add Media" no longer lists PDFs.
-
-= 1.4.30 =
-PDFs are offered in WordPress's own image pickers only (image, gallery and featured image); other plugins' image pickers are left as they are.
-
-= 1.4.29 =
-The image block offers to delete only a PDF uploaded in its own media window.
-
-= 1.4.28 =
-With Auto Generate off, the image block's upload tab says a PDF uploaded there gets no thumbnail, and one uploaded by mistake can be deleted from the notice.
-
-= 1.4.27 =
-Stop no longer starts a new PDF, image blocks no longer take PDFs without a thumbnail, and the settings screen is clearer to screen readers.
-
-= 1.4.26 =
-Bulk Generate reads large Media Libraries a page at a time, Stop waits for the current PDF, and shortcodes keep several classes.
-
-= 1.4.25 =
-Disabled functions are read as PHP reads them, so the blank-page retry is no longer turned off by a name PHP does not disable.
-
-= 1.4.24 =
-An image handed over by an add-on to be finished is no longer read as a PDF, so this server's measured Ghostscript settings are kept.
-
-= 1.4.23 =
-A generated thumbnail's REST source_url is now its own image's URL; the PDF is in rapls_pic_source_pdf_url.
-
-= 1.4.22 =
-Image pickers and the block editor treat a PDF as an image only when it has a thumbnail, and the plugin no longer changes other plugins' attachment queries.
-
-= 1.4.21 =
-Image pickers offer a PDF only when it has a thumbnail, and the plugin no longer changes other plugins' Media Library searches.
+= 1.4.32 =
+PDFs are offered only in WordPress's own image pickers, Bulk Generate handles large libraries, and blank and out-of-range pages are reported clearly.
 
 = 1.4.20 =
 Includes the 1.4.12 security fix. Deleting the plugin from a multisite network now cleans up every site.

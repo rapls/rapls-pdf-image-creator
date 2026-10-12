@@ -12,50 +12,12 @@
     const { addFilter } = wp.hooks;
     const { createHigherOrderComponent } = wp.compose;
 
-    /**
-     * Filter the image block to accept PDFs with thumbnails
-     */
-    addFilter(
-        'blocks.registerBlockType',
-        'pic/image-block-pdf-support',
-        function(settings, name) {
-            if (name !== 'core/image') {
-                return settings;
-            }
-
-            // Extend allowed mime types to include PDF
-            const originalTransforms = settings.transforms;
-            if (originalTransforms && originalTransforms.from) {
-                originalTransforms.from.forEach(function(transform) {
-                    if (transform.type === 'files' && transform.isMatch) {
-                        const originalIsMatch = transform.isMatch;
-                        transform.isMatch = function(files) {
-                            // Check if any file is a PDF -- taken as an image
-                            // only when it will get a thumbnail on upload.
-                            // With Auto Generate off it never does (R67-02).
-                            const autoGenerate = !window.raplsPicBlockEditor || !!window.raplsPicBlockEditor.autoGenerate;
-                            const list = Array.from(files);
-                            const hasPdf = list.some(function(file) {
-                                return file.type === 'application/pdf';
-                            });
-                            // And every file is an image or a PDF, as core asks
-                            // every file to be an image: a PDF dropped with a
-                            // DOCX made both into image blocks (R68-01).
-                            const allImagesOrPdfs = list.every(function(file) {
-                                return file.type.indexOf('image/') === 0 || file.type === 'application/pdf';
-                            });
-                            if (hasPdf && autoGenerate && allImagesOrPdfs) {
-                                return true;
-                            }
-                            return originalIsMatch(files);
-                        };
-                    }
-                });
-            }
-
-            return settings;
-        }
-    );
+    // No transform from dropped PDFs into the image block. It took them,
+    // and the image block then uploads only images -- core's mediaUpload
+    // with allowedTypes ["image"] -- so the drop ended in "this file type is
+    // not supported" and the PDF was not uploaded at all. Without it,
+    // WordPress makes a File block and uploads the PDF, which gets its
+    // thumbnail like any other upload (review after 1.4.31).
 
     /**
      * A PDF the image block can show: one with a thumbnail

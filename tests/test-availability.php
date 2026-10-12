@@ -389,5 +389,18 @@ $reqs = $engine->getRequirements();
 check('extension row present', $reqs['extension']['status'], false);
 check('no pdf_support row without the extension', isset($reqs['pdf_support']), false);
 
+// Verification of the change: a build that throws from getConfigureOptions()
+// keeps the folders found before it (MAGICK_CONFIGURE_PATH), so the policy
+// file there is still found.
+$envWas = getenv('MAGICK_CONFIGURE_PATH');
+putenv('MAGICK_CONFIGURE_PATH=/rapls-test/conf-a');
+Imagick::$configureThrows = true;
+$dirsOf = new ReflectionMethod(ImagickEngine::class, 'getConfigDirectories');
+if (PHP_VERSION_ID < 80100) { $dirsOf->setAccessible(true); }
+$dirsAfterThrow = $dirsOf->invoke(new ImagickEngine());
+Imagick::$configureThrows = false;
+false === $envWas ? putenv('MAGICK_CONFIGURE_PATH') : putenv('MAGICK_CONFIGURE_PATH=' . $envWas);
+check('a build that throws from getConfigureOptions() keeps MAGICK_CONFIGURE_PATH', in_array('/rapls-test/conf-a', $dirsAfterThrow, true), true);
+
 printf("\n%d passed, %d failed\n", $pass, $fail);
 exit($fail === 0 ? 0 : 1);

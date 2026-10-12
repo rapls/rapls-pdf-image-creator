@@ -68,7 +68,18 @@ final class Generator
          *
          * @param EngineInterface[] $engines Available engines
          */
-        $this->engines = apply_filters('rapls_pdf_image_creator_engines', $this->engines);
+        $filtered = apply_filters('rapls_pdf_image_creator_engines', $this->engines);
+
+        // Engines only: a listener answering something that is not a list
+        // was a TypeError on this property, and an entry that is not an
+        // engine a fatal at the first isAvailable() (review after 1.4.31).
+        // Not a list, the plugin's own stay; a list keeps its engines, none
+        // if a listener means none.
+        if (is_array($filtered)) {
+            $this->engines = array_filter($filtered, static function ($engine): bool {
+                return $engine instanceof EngineInterface;
+            });
+        }
     }
 
     /**
@@ -392,14 +403,19 @@ final class Generator
         // listener on rapls_pdf_image_creator_before_resize can tell which
         // attachment it is looking at -- the engine signature is (path, path,
         // options) and carries no attachment anywhere else.
+        //
+        // The numbers are made whole numbers: a filter answering "800" (a
+        // post meta value) or 512.0 (a width times a half) reached Imagick's
+        // int parameters as a TypeError, which nothing caught, and the upload
+        // request died (review after 1.4.31).
         $options = [
             'attachment_id' => $pdfId,
             'source_path' => $pdfPath,
-            'page' => apply_filters('rapls_pdf_image_creator_thumbnail_page', $this->settings->getPage(), $pdfId),
-            'max_width' => apply_filters('rapls_pdf_image_creator_thumbnail_max_width', $this->settings->getMaxWidth(), $pdfId),
-            'max_height' => apply_filters('rapls_pdf_image_creator_thumbnail_max_height', $this->settings->getMaxHeight(), $pdfId),
-            'resolution' => apply_filters('rapls_pdf_image_creator_thumbnail_resolution', $this->settings->getResolution(), $pdfId),
-            'quality' => apply_filters('rapls_pdf_image_creator_thumbnail_quality', $this->settings->getQuality(), $pdfId),
+            'page' => (int) apply_filters('rapls_pdf_image_creator_thumbnail_page', $this->settings->getPage(), $pdfId),
+            'max_width' => (int) apply_filters('rapls_pdf_image_creator_thumbnail_max_width', $this->settings->getMaxWidth(), $pdfId),
+            'max_height' => (int) apply_filters('rapls_pdf_image_creator_thumbnail_max_height', $this->settings->getMaxHeight(), $pdfId),
+            'resolution' => (int) apply_filters('rapls_pdf_image_creator_thumbnail_resolution', $this->settings->getResolution(), $pdfId),
+            'quality' => (int) apply_filters('rapls_pdf_image_creator_thumbnail_quality', $this->settings->getQuality(), $pdfId),
             'format' => $format,
             'bgcolor' => apply_filters('rapls_pdf_image_creator_thumbnail_bgcolor', $this->settings->getBgColor(), $pdfId),
         ];
@@ -442,6 +458,24 @@ final class Generator
                 FailureCode::WRITE_FAILED,
                 __('The image was rendered but could not be added to the Media Library.', 'rapls-pdf-image-creator')
             );
+        }
+
+        // Asked to fill a gap, and another request -- the upload hook and Bulk
+        // Generate, at once -- has filled it while this one drew: theirs
+        // stands, and this image goes. Written over it, theirs stayed in the
+        // Media Library as nobody's, with this plugin's marks, so hidden
+        // (review after 1.4.31). Read from the database, not this request's
+        // cache, which still holds the empty answer from the start.
+        if (!$force) {
+            wp_cache_delete($pdfId, 'post_meta');
+            $meanwhile = $this->getThumbnailId($pdfId);
+
+            if (null !== $meanwhile && $meanwhile !== $thumbnailId) {
+                $this->discardNewThumbnail($thumbnailId, $pdfId, 'was not needed: another request made one first');
+                $this->outcomes[$pdfId] = ['ok' => true, 'thumbnail_id' => $meanwhile, 'code' => '', 'message' => ''];
+
+                return $meanwhile;
+            }
         }
 
         // Store thumbnail ID in PDF meta, and read it back: not stored, the

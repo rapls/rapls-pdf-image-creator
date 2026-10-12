@@ -147,7 +147,7 @@ final class ReviewPrompt
             <p>
                 <strong><?php esc_html_e('Rapls PDF Image Creator', 'rapls-pdf-image-creator'); ?></strong>
                 &mdash;
-                <?php esc_html_e('Your PDFs have been getting thumbnails for a week now. If it has been working out, would you leave a review? It is the main way other people find the plugin.', 'rapls-pdf-image-creator'); ?>
+                <?php esc_html_e('Your PDFs have been getting thumbnails from this plugin. If it has been working out, would you leave a review? It is the main way other people find the plugin.', 'rapls-pdf-image-creator'); ?>
             </p>
             <p>
                 <a class="button button-primary" href="<?php echo esc_url($this->settleUrl('go')); ?>" target="_blank" rel="noopener noreferrer">

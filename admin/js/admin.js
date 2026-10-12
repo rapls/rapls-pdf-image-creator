@@ -62,9 +62,17 @@
         },
 
         activateTab: function(tabName) {
+            // Compared, not put into a selector: the name comes from the
+            // address, and a quote in it ("#tab-a\"b") made jQuery throw and
+            // stopped every script after this one (review after 1.4.31).
+            const name = String(tabName);
+            const $tab = $('.rapls-pic-tabs .nav-tab').filter(function() {
+                return String($(this).data('tab')) === name;
+            });
+
             // A name no tab has -- "#tab-foo" in the address -- changes
             // nothing: unselecting every tab left none the Tab key could reach.
-            if (!$('.rapls-pic-tabs .nav-tab[data-tab="' + tabName + '"]').length) {
+            if (!$tab.length) {
                 return;
             }
 
@@ -72,14 +80,16 @@
             // (Codex review of 1.4.26, 4): the chosen one is selected and is
             // the one the Tab key lands on.
             $('.rapls-pic-tabs .nav-tab').removeClass('nav-tab-active').attr('aria-selected', 'false').attr('tabindex', '-1');
-            $('.rapls-pic-tabs .nav-tab[data-tab="' + tabName + '"]').addClass('nav-tab-active').attr('aria-selected', 'true').removeAttr('tabindex');
+            $tab.addClass('nav-tab-active').attr('aria-selected', 'true').removeAttr('tabindex');
 
             // Update content
             $('.rapls-pic-tab-content').removeClass('active');
-            $('#tab-' + tabName).addClass('active');
+            $(document.getElementById('tab-' + name)).addClass('active');
 
             // Update URL hash
-            window.location.hash = 'tab-' + tabName;
+            window.location.hash = 'tab-' + name;
+
+            $(document).trigger('rapls-pic-tab', [name]);
         }
     };
 
@@ -416,12 +426,34 @@
      * Statistics refresh, a page of the library at a time
      */
     const Statistics = {
+        loaded: false,
+
         init: function() {
+            // Only on the screen that shows them, and only once the Status
+            // tab is open: this script also loads on the Media Library, and
+            // every visit there read the whole library 200 PDFs at a time --
+            // an author got a 403 on each (review after 1.4.31).
+            if (!$('#rapls-pic-refresh-stats').length) {
+                return;
+            }
+
             $('#rapls-pic-refresh-stats').on('click', this.refresh.bind(this));
-            this.refresh();
+
+            if ($('#tab-status').hasClass('active')) {
+                this.refresh();
+
+                return;
+            }
+
+            $(document).on('rapls-pic-tab', function(e, name) {
+                if ('status' === name && !Statistics.loaded) {
+                    Statistics.refresh();
+                }
+            });
         },
 
         refresh: function() {
+            this.loaded = true;
             const $button = $('#rapls-pic-refresh-stats');
             $button.prop('disabled', true);
 
@@ -498,54 +530,6 @@
     };
 
     /**
-     * Media Library enhancements
-     */
-    const MediaLibrary = {
-        init: function() {
-            // Add click handler for regenerate links via AJAX
-            $(document).on('click', '.rapls-pic-regenerate-ajax', this.regenerate.bind(this));
-        },
-
-        regenerate: function(e) {
-            e.preventDefault();
-
-            const $link = $(e.currentTarget);
-            const attachmentId = $link.data('attachment-id');
-
-            if ($link.hasClass('processing')) {
-                return;
-            }
-
-            $link.addClass('processing').text(raplsPicAdmin.i18n.processing);
-
-            $.ajax({
-                url: raplsPicAdmin.ajaxUrl,
-                type: 'POST',
-                data: {
-                    action: 'rapls_pic_regenerate_thumbnail',
-                    nonce: raplsPicAdmin.nonce,
-                    attachment_id: attachmentId,
-                    force: 1
-                },
-                success: function(response) {
-                    if (response.success) {
-                        $link.removeClass('processing').text('✓');
-                        // Refresh the page after a short delay
-                        setTimeout(function() {
-                            location.reload();
-                        }, 1000);
-                    } else {
-                        $link.removeClass('processing').text('✗ ' + response.data.message);
-                    }
-                },
-                error: function() {
-                    $link.removeClass('processing').text('✗ ' + raplsPicAdmin.i18n.errorShort);
-                }
-            });
-        }
-    };
-
-    /**
      * Initialize on document ready
      */
     $(document).ready(function() {
@@ -557,7 +541,6 @@
         RangeSlider.init();
         BulkProcessor.init();
         Statistics.init();
-        MediaLibrary.init();
         InsertSettings.init();
     });
 

@@ -1,5 +1,9 @@
 /**
- * Which dropped files the image block takes (R67-02, R68-01).
+ * The block editor: no transform for dropped PDFs, and the pickers.
+ *
+ * Review after 1.4.31: the image block took dropped PDFs (R67-02, R68-01),
+ * then uploaded only images, so the PDF was refused and never uploaded.
+ * The transform is gone; WordPress makes a File block.
  *
  *   node tests/test-block-editor.js
  *
@@ -35,14 +39,12 @@ const wp = {
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'admin', 'js', 'block-editor.js'), 'utf8');
 
-function isMatchWith(autoGenerate) {
+function loadWith(autoGenerate) {
     const window = { raplsPicBlockEditor: { autoGenerate } };
+    registerFilter = null;
     vm.runInNewContext(source, { wp, window });
 
-    const core = { type: 'files', isMatch: (files) => files.every((f) => 0 === f.type.indexOf('image/')) };
-    registerFilter({ transforms: { from: [core] } }, 'core/image');
-
-    return core.isMatch;
+    return registerFilter;
 }
 
 const pdf = { type: 'application/pdf' };
@@ -59,16 +61,9 @@ function check(label, got, want) {
     console.log(`${ok ? 'ok  ' : 'FAIL'} ${label.padEnd(50)} got=${got} want=${want}`);
 }
 
-const on = isMatchWith(true);
-check('PDF, auto generate on', on([pdf]), true);
-check('PDF + JPEG', on([pdf, jpeg]), true);
-check('PDF + DOCX: not the image block (R68-01)', on([pdf, docx]), false);
-check('PDF + ZIP: not the image block (R68-01)', on([pdf, zip]), false);
-check('JPEG + PNG: core decides, as before', on([jpeg, png]), true);
-
-const off = isMatchWith(false);
-check('PDF, auto generate off (R67-02)', off([pdf]), false);
-check('JPEG, auto generate off: core decides', off([jpeg]), true);
+check('no transform is added to the image block, auto generate on (review after 1.4.31)', loadWith(true), null);
+check('  ...nor off', loadWith(false), null);
+check('  ...and the source does not touch the block type', source.includes("'blocks.registerBlockType'"), false);
 
 // The block editor as the pickers see it: a context set by editor.BlockEdit for
 // the image and gallery blocks, and a frame class that MediaUpload builds as it

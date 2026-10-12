@@ -204,6 +204,13 @@ namespace {
     [, $data] = $scan(false);
     check('Rows the query did not see: the note says something filters it', false !== strpos($data['note'], 'The database has 2 PDF attachment(s) (inherit=2)'), true);
 
+    // Verification of the change: every PDF in the trash is said so, not
+    // blamed on another plugin.
+    $library(0, 0);
+    $GLOBALS['statuses'] = ['trash', 'trash'];
+    [, $data] = $scan(false);
+    check('Every PDF in the trash: the note says so, and blames no plugin', [false !== strpos($data['note'], 'All the PDFs in the Media Library are in the trash (2)'), false !== strpos($data['note'], 'The database has')], [true, false]);
+
     $library(5, 0);
     $GLOBALS['caps'] = [];
     check('Scan: refused without manage_options', $call([$bulk, 'ajaxScan'], []), [false, ['message' => 'Permission denied.']]);

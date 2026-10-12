@@ -25,6 +25,7 @@ function delete_transient($k) { unset($GLOBALS['transients'][$k]); return true; 
 function get_option($k, $d = false) { return $GLOBALS['options'][$k] ?? $d; }
 function update_option($k, $v, $a = null) { $GLOBALS['options'][$k] = $v; return true; }
 function __($s, $d = null) { return $s; }
+if (!function_exists('_n')) { function _n($one, $many, $n, $d = null) { return 1 === (int) $n ? $one : $many; } }
 function wp_mkdir_p($d) { return @mkdir($d, 0777, true) || is_dir($d); }
 
 class ImagickException extends Exception {}
@@ -40,6 +41,9 @@ class ImagickPixel {
         $this->c = strtolower($c);
     }
     public function getColor() { return $this->rgb; }
+    /** Alpha of a sampled pixel, 0 transparent to 1 opaque, as ImagickPixel normalises it. */
+    public $alpha = 1.0;
+    public function getColorValue($which) { return Imagick::COLOR_ALPHA === $which ? $this->alpha : 0.0; }
     public function __toString() { return $this->c; }
 }
 
@@ -54,9 +58,19 @@ class Imagick
     const COMPRESSION_JPEG = 8;
     const FILTER_LANCZOS = 22;
     const CHANNEL_ALL = 134217727;
+    const CHANNEL_ALPHA = 8;
+    const COLOR_ALPHA = 18;
 
     public static $log = [];
     public static $readColorspace = self::COLORSPACE_CMYK;
+
+    /**
+     * ImageMagick 7 reading through pngalpha: the raster has an alpha
+     * channel, and an unpainted page is transparent colour -- alpha 0
+     * everywhere -- so its range over every channel at once is 0 to 65535
+     * (measured on 7.1.1-15, review after 1.4.31).
+     */
+    public static $alphaRead = false;
 
     /**
      * Which reads come back as one flat colour, keyed by the path handed in.
@@ -80,22 +94,41 @@ class Imagick
     public $w = 2000, $h = 3000;
 
     public function setResolution($x, $y) { self::$log[] = "setResolution($x)"; }
+    /** When set, a suffixed read of a page past $pageCount throws, as Ghostscript's "FirstPage > LastPage" does. */
+    public static $throwPastEnd = false;
     public function readImage($p) {
-        $suffixed = (bool) preg_match('/\[\d+\]$/', $p);
+        $suffixed = (bool) preg_match('/\[(\d+)\]$/', $p, $asked);
+        if ($suffixed && self::$throwPastEnd && (int) $asked[1] >= self::$pageCount) {
+            self::$log[] = 'readImage[n]';
+            throw new ImagickException('Failed to read the file');
+        }
         self::$log[] = 'readImage' . ($suffixed ? '[n]' : '(whole)');
         $this->colorspace = self::$readColorspace;
         $this->flat = self::$emptyFor[$suffixed ? 'suffix' : 'whole'];
     }
     public function getImageChannelRange($channel) {
+        if (self::$alphaRead) {
+            if (self::CHANNEL_ALL === $channel) {
+                return ['minima' => 0.0, 'maxima' => 65535.0];
+            }
+            if (self::CHANNEL_ALPHA === $channel) {
+                return $this->flat ? ['minima' => 0.0, 'maxima' => 0.0] : ['minima' => 0.0, 'maxima' => 65535.0];
+            }
+        }
         return $this->flat ? ['minima' => 65535.0, 'maxima' => 65535.0] : ['minima' => 0.0, 'maxima' => 65535.0];
     }
+    public function getImageAlphaChannel() { return self::$alphaRead; }
     /** The colour a flat page reports. White is the failure; ink is a page. */
     public static $flatColor = ['r' => 255, 'g' => 255, 'b' => 255];
     public function getImagePixelColor($x, $y) {
         self::$log[] = 'getImagePixelColor';
-        return new ImagickPixel($this->flat ? self::$flatColor : ['r' => 12, 'g' => 34, 'b' => 56]);
+        $pixel = new ImagickPixel($this->flat ? self::$flatColor : ['r' => 12, 'g' => 34, 'b' => 56]);
+        $pixel->alpha = self::$alphaRead && $this->flat ? 0.0 : 1.0;
+        return $pixel;
     }
     public function getNumberImages() { return self::$pageCount; }
+    /** Counts the pages without drawing (readWholePage(), review after 1.4.31). */
+    public function pingImage($p) { self::$log[] = 'pingImage'; return true; }
     public function setIteratorIndex($i) { self::$log[] = "setIteratorIndex($i)"; return true; }
     public function getImage() { self::$log[] = 'getImage'; $n = clone $this; return $n; }
     public function getImageColorspace() { return $this->colorspace; }
@@ -205,6 +238,29 @@ Imagick::$flatColor = ['r' => 255, 'g' => 255, 'b' => 255];
 check('an all-white page is refused', $r->isSuccess(), false);
 check('  ...with a code that names the cause', $r->getCode(), 'blank_render');
 check('  ...and nothing is written', in_array('writeImage', $log, true), false);
+// Review after 1.4.31: a page blank with the Ghostscript retry too says
+// nothing about the server, and "no" written over a "yes" took the Status
+// tab's "Needed a workaround" away. Nothing is recorded.
+[$r] = run(['format' => 'jpeg'], Imagick::COLORSPACE_CMYK, true, function () {
+    set_transient('rapls_pic_page_suffix', 'yes', 604800);
+    set_transient('rapls_pic_gs_options', 'yes', 604800);
+});
+check('  ...and the Ghostscript retry, blank too, does not take "needed a workaround" away', [$r->getCode(), $GLOBALS['transients']['rapls_pic_gs_options'] ?? null], ['blank_render', 'yes']);
+
+// Review after 1.4.31: on ImageMagick 7 the page reads with an alpha channel,
+// and a blank one is transparent everywhere, so its range over every channel
+// at once is not one value. It was kept as a thumbnail. Transparent black
+// under it is still white once flattened.
+Imagick::$alphaRead = true;
+Imagick::$flatColor = ['r' => 0, 'g' => 0, 'b' => 0];
+[$r, $log] = run(['format' => 'jpeg']);
+check('an unpainted page read with an alpha channel (ImageMagick 7) is refused as blank', [$r->isSuccess(), $r->getCode(), in_array('writeImage', $log, true)], [false, 'blank_render', false]);
+Imagick::$emptyFor = ['suffix' => false, 'whole' => false];
+[$r, $log] = run(['format' => 'jpeg']);
+check('  ...a page with content read the same way is kept', [$r->isSuccess(), in_array('writeImage', $log, true)], [true, true]);
+Imagick::$alphaRead = false;
+Imagick::$emptyFor = ['suffix' => true, 'whole' => true];
+Imagick::$flatColor = ['r' => 255, 'g' => 255, 'b' => 255];
 
 // A page of solid ink is one colour and is a real page.
 Imagick::$flatColor = ['r' => 0, 'g' => 163, 'b' => 218];
@@ -282,6 +338,21 @@ Imagick::$emptyFor = ['suffix' => true, 'whole' => false];
 });
 check('a known-broken suffix is skipped', in_array('readImage[n]', $log, true), false);
 check('  ...and the whole file is read instead', in_array('readImage(whole)', $log, true), true);
+
+// Review after 1.4.31: a long document is never read whole, and a retry that
+// could not be done is remembered, so it is not tried on every flat page.
+$pagesWas = Imagick::$pageCount;
+Imagick::$pageCount = ImagickEngine::WHOLE_READ_MAX_PAGES + 1;
+Imagick::$emptyFor = ['suffix' => true, 'whole' => false];
+Imagick::$flatColor = ['r' => 0, 'g' => 163, 'b' => 218];
+[$r, $log] = run(['format' => 'jpeg'], Imagick::COLORSPACE_CMYK, true, function () {
+    set_transient('rapls_pic_page_suffix', 'yes', 604800);
+});
+check('a document longer than the limit is not read whole, even where the suffix is known broken', [in_array('readImage(whole)', $log, true), in_array('readImage[n]', $log, true)], [false, true]);
+[$r, $log] = run(['format' => 'jpeg']);
+check('  ...and where nothing is known, the page stays as read and "do not retry" is remembered', [in_array('readImage(whole)', $log, true), $GLOBALS['transients']['rapls_pic_page_suffix'] ?? null], [false, 'no']);
+Imagick::$pageCount = $pagesWas;
+Imagick::$flatColor = ['r' => 255, 'g' => 255, 'b' => 255];
 
 // Asking for a page the file does not have must not lose the thumbnail.
 // Solid ink here rather than white, so the fallback is what is under test and
@@ -455,6 +526,46 @@ check('max dimensions above the raster do not upscale', array_values(array_filte
 echo "\n=== failure paths ===\n";
 $r = (new ImagickEngine())->convert('/no/such.pdf', RAPLS_PIC_TEST_TMP . '/out.img', []);
 check('missing PDF reports failure', $r->isSuccess(), false);
+
+echo "\n=== Review after 1.4.31: numbers that are not ints, and errors that are not Exceptions ===\n";
+
+// A filter answering "800" (a post meta value) or 512.0 reached Imagick's int
+// parameters as a TypeError that nothing caught, and the upload died.
+Imagick::$emptyFor = ['suffix' => false, 'whole' => false];
+[$r, $log] = run(['format' => 'jpeg', 'max_width' => '800', 'max_height' => 512.0, 'quality' => '85', 'resolution' => '150', 'page' => '0']);
+check('options given as strings and floats are made whole numbers', [$r->isSuccess(), in_array('quality(85)', $log, true), (bool) preg_grep('/^resizeImage\(\d+,\d+\)$/', $log)], [true, true, true]);
+[$r] = run(['format' => 'jpeg', 'max_width' => 'wide']);
+check('  ...a value that is not a number falls back to the default', $r->isSuccess(), true);
+
+// An Error from a listener is a failed conversion, not a fatal.
+[$r] = run(['format' => 'jpeg'], Imagick::COLORSPACE_CMYK, true, function () {
+    add_filter('rapls_pdf_image_creator_before_resize', function () { throw new \Error('a listener broke'); });
+});
+check('an Error during the conversion is a failure, not a fatal', [$r->isSuccess(), false !== strpos((string) $r->getError(), 'a listener broke')], [false, true]);
+[$r] = run(['format' => 'jpeg'], Imagick::COLORSPACE_CMYK, true, function () {
+    add_filter('rapls_pdf_image_creator_imagick_result', function () { return 'not a result'; });
+});
+check('a result listener answering something else leaves the result as it was', [$r instanceof \Rapls\PDFImageCreator\Engine\ConversionResult, $r->isSuccess()], [true, true]);
+
+echo "\n=== Review after 1.4.31: a page past the end of the PDF says so ===\n";
+Imagick::$emptyFor = ['suffix' => false, 'whole' => false];
+Imagick::$throwPastEnd = true;
+$pagesWas = Imagick::$pageCount;
+Imagick::$pageCount = 2;
+[$r] = run(['format' => 'jpeg', 'page' => 3]);
+check('a page past the end is page_out_of_range, with both numbers', [$r->getCode(), false !== strpos((string) $r->getError(), 'Page 3 was asked for (counting from 0), but this PDF has 2 pages.')], ['page_out_of_range', true]);
+check('  ...a permanent failure', \Rapls\PDFImageCreator\FailureCode::isPermanent('page_out_of_range'), true);
+[$r] = run(['format' => 'jpeg', 'page' => 1]);
+check('  ...a page the file has is drawn as before', $r->isSuccess(), true);
+// Verification of the change: the page equal to the count is past the end too
+// (pages count from 0), and one page is "1 page".
+[$r] = run(['format' => 'jpeg', 'page' => 2]);
+$atCount = $r->getCode();
+Imagick::$pageCount = 1;
+[$r] = run(['format' => 'jpeg', 'page' => 1]);
+check('  ...the page equal to the count is past the end; a one-page PDF has "1 page"', [$atCount, $r->getCode(), false !== strpos((string) $r->getError(), 'but this PDF has 1 page.')], ['page_out_of_range', 'page_out_of_range', true]);
+Imagick::$throwPastEnd = false;
+Imagick::$pageCount = $pagesWas;
 
 printf("\n%d passed, %d failed\n", $pass, $fail);
 exit($fail === 0 ? 0 : 1);

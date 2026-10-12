@@ -118,7 +118,21 @@ final class BulkProcessor
 
             if (0 === $todo) {
                 if (0 === $rows['total']) {
-                    $note = __('There are no PDF files in the Media Library. Uploading a PDF over FTP or SSH does not add it — it has to go through Media > Add New.', 'rapls-pdf-image-creator');
+                    $note = __('There are no PDF files in the Media Library. Uploading a PDF over FTP or SSH does not add it — it has to go through Media > Add Media File.', 'rapls-pdf-image-creator');
+                } elseif (0 === $stats['total'] && $rows['trash'] === $rows['total']) {
+                    // Every one is in the trash (MEDIA_TRASH): the scan
+                    // rightly leaves them out, and blaming another plugin for
+                    // it sent people looking for one (review after 1.4.31).
+                    $note = sprintf(
+                        /* translators: %d: number of PDFs in the trash */
+                        _n(
+                            'The only PDF in the Media Library is in the trash (%d). Restore it to generate its thumbnail.',
+                            'All the PDFs in the Media Library are in the trash (%d). Restore them to generate their thumbnails.',
+                            $rows['total'],
+                            'rapls-pdf-image-creator'
+                        ),
+                        $rows['total']
+                    );
                 } elseif (0 === $stats['total']) {
                     // The rows are there and the query did not see them.
                     $note = sprintf(
@@ -354,6 +368,7 @@ final class BulkProcessor
 
         $total = 0;
         $inherit = 0;
+        $trash = 0;
         $parts = [];
 
         foreach ((array) $rows as $row) {
@@ -364,12 +379,17 @@ final class BulkProcessor
                 $inherit = $n;
             }
 
+            if ('trash' === $row->post_status) {
+                $trash = $n;
+            }
+
             $parts[] = $row->post_status . '=' . $n;
         }
 
         return [
             'total' => $total,
             'inherit' => $inherit,
+            'trash' => $trash,
             'statuses' => implode(', ', $parts),
         ];
     }
