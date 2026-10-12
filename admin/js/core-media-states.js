@@ -26,8 +26,16 @@
 
     // featured-image: "Set featured image", in either editor, and the tab in
     // "Add Media". gallery and gallery-library: making a gallery and adding
-    // to one, in "Add Media" and the gallery block.
-    const CORE_STATES = ['featured-image', 'gallery', 'gallery-library'];
+    // to one -- in the block editor only, for the gallery block. The classic
+    // editor's "Create Gallery" makes a [gallery] shortcode, which WordPress
+    // fills with images alone: a PDF chosen there vanished from the post
+    // without a word (review of 1.4.32). So does the Classic block's "Add
+    // Media" inside the block editor: its frame is the classic one, known
+    // by its "insert" state, which the gallery block's frame does not have
+    // (review after 1.4.32).
+    const blockEditor = !!(window.document && window.document.body && window.document.body.classList
+        && window.document.body.classList.contains('block-editor-page'));
+    const CORE_STATES = blockEditor ? ['featured-image', 'gallery', 'gallery-library'] : ['featured-image'];
 
     const Library = wp.media.controller.Library;
     const originalInitialize = Library.prototype.initialize;
@@ -39,8 +47,26 @@
         const id = this.id || ('function' === typeof this.get ? this.get('id') : '');
         const library = 'function' === typeof this.get ? this.get('library') : null;
 
-        if (CORE_STATES.indexOf(id) !== -1 && library && library.props && 'image' === library.props.get('type')) {
+        if (CORE_STATES.indexOf(id) === -1 || !library || !library.props || 'image' !== library.props.get('type')) {
+            return result;
+        }
+
+        const mark = function() {
             library.props.set('type', ['image', 'application/pdf', PICKER_MARK]);
+        };
+
+        // A gallery state waits for its frame, which core gives it as the
+        // state is added ('ready'), before anything is shown.
+        if ('featured-image' === id || 'function' !== typeof this.once) {
+            mark();
+        } else {
+            this.once('ready', function() {
+                const states = this.frame && this.frame.states;
+
+                if (!states || 'function' !== typeof states.get || !states.get('insert')) {
+                    mark();
+                }
+            }, this);
         }
 
         return result;

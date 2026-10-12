@@ -252,7 +252,13 @@ final class ColorProfile
                 continue;
             }
 
-            $matches = @glob($candidate, GLOB_NOSORT);
+            // The part before the wildcard taken as it is written: a "[" or
+            // "?" in a folder name began a pattern there, and nothing
+            // matched. The built-in candidates have none; a folder given
+            // any other way can (review after 1.4.32).
+            $at = (int) strpos($candidate, '*');
+            $pattern = str_replace(['[', '?'], ['[[]', '[?]'], substr($candidate, 0, $at)) . substr($candidate, $at);
+            $matches = @glob($pattern, GLOB_NOSORT);
 
             if (!is_array($matches) || [] === $matches) {
                 continue;
@@ -368,7 +374,8 @@ final class ColorProfile
 
         // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- WP_Filesystem mangles binary reads; nothing is written.
         $data = file_get_contents($real);
-        if (false === $data || strlen($data) < self::MIN_PROFILE_SIZE) {
+        // The size was checked above; this only catches a read that failed.
+        if (false === $data) {
             return false;
         }
 

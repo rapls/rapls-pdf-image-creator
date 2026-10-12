@@ -188,6 +188,24 @@ final class Plugin
     }
 
     /**
+     * The shortcode's id, when it names a PDF; 0 otherwise
+     *
+     * Any post ID was taken: the thumbnail lookup falls back to a post's
+     * featured image and the alt text is its title, so a Contributor could
+     * preview [rapls_pdf_thumbnail id=N] in a draft of their own and read the
+     * featured image and title of someone else's private post or draft
+     * (review of 1.4.32). These shortcodes are for PDFs.
+     *
+     * @param mixed $id
+     */
+    public static function pdfId($id): int
+    {
+        $id = absint($id);
+
+        return $id && 'application/pdf' === get_post_mime_type($id) ? $id : 0;
+    }
+
+    /**
      * Register shortcodes
      */
     private function registerShortcodes(): void
@@ -200,7 +218,7 @@ final class Plugin
                 'class' => '',
             ], $atts, 'rapls_pdf_thumbnail');
 
-            $id = absint($atts['id']);
+            $id = self::pdfId($atts['id']);
             if (!$id) {
                 return '';
             }
@@ -217,7 +235,7 @@ final class Plugin
                 'size' => 'thumbnail',
             ], $atts, 'rapls_pdf_thumbnail_url');
 
-            $id = absint($atts['id']);
+            $id = self::pdfId($atts['id']);
             if (!$id) {
                 return '';
             }
@@ -234,7 +252,7 @@ final class Plugin
                 'target' => '_blank',
             ], $atts, 'rapls_pdf_clickable_thumbnail');
 
-            $id = absint($atts['id']);
+            $id = self::pdfId($atts['id']);
             if (!$id) {
                 return '';
             }
@@ -270,7 +288,7 @@ final class Plugin
                 'class' => 'rapls-pic-download-link',
             ], $atts, 'rapls_pdf_download_link');
 
-            $id = absint($atts['id']);
+            $id = self::pdfId($atts['id']);
             if (!$id) {
                 return '';
             }

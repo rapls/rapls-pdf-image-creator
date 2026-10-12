@@ -152,6 +152,7 @@ final class ReviewPrompt
             <p>
                 <a class="button button-primary" href="<?php echo esc_url($this->settleUrl('go')); ?>" target="_blank" rel="noopener noreferrer">
                     <?php esc_html_e('Write a review', 'rapls-pdf-image-creator'); ?>
+                    <span class="screen-reader-text"><?php esc_html_e('(opens in a new tab)', 'rapls-pdf-image-creator'); ?></span>
                 </a>
                 <a class="button" href="<?php echo esc_url($this->settleUrl('did')); ?>">
                     <?php esc_html_e('Already did', 'rapls-pdf-image-creator'); ?>
@@ -200,6 +201,13 @@ final class ReviewPrompt
         }
 
         if (!$this->usedForAWeek()) {
+            return false;
+        }
+
+        // Not while this server cannot make thumbnails: the Status tab is
+        // red then, and a request for a review beside it reads as not having
+        // noticed (review of 1.4.32).
+        if (false !== get_option(Generator::UNAVAILABLE_OPTION, false)) {
             return false;
         }
 

@@ -247,6 +247,48 @@ final class Generator
         return wp_get_attachment_image($thumbnailId, $size, false, $attr);
     }
 
+    /** The file this request reserved and has not yet added to the Media Library. */
+    private static ?string $held = null;
+
+    /** Whether the shutdown clean-up is registered (once a request). */
+    private static bool $holding = false;
+
+    /**
+     * Remember the reserved file until it is in the Media Library; null lets it go
+     *
+     * A request that dies from max_execution_time while drawing -- a large
+     * page at 600 dpi on a shared host -- runs no catch and no finally, and
+     * left the reserved file behind, empty or half written: every later
+     * attempt then took a "-1", "-2" beside it (review of 1.4.32). Shutdown
+     * functions still run after that fatal error.
+     */
+    private static function holdUntilAdded(?string $path): void
+    {
+        self::$held = $path;
+
+        if (null === $path || self::$holding) {
+            return;
+        }
+
+        self::$holding = true;
+        register_shutdown_function([self::class, 'releaseHeld']);
+    }
+
+    /**
+     * At shutdown: delete the reserved file a request did not get to add
+     *
+     * @internal Public only for register_shutdown_function().
+     */
+    public static function releaseHeld(): void
+    {
+        $path = self::$held;
+        self::$held = null;
+
+        if (null !== $path && is_file($path)) {
+            wp_delete_file($path);
+        }
+    }
+
     /**
      * Generate thumbnail for a PDF
      *
@@ -371,6 +413,7 @@ final class Generator
             if (false !== $handle) {
                 fclose($handle);
                 $reserved = true;
+                self::holdUntilAdded($outputPath);
                 break;
             }
 
@@ -426,6 +469,7 @@ final class Generator
             if ($reserved) {
                 wp_delete_file($outputPath);
             }
+            self::holdUntilAdded(null);
 
             throw $e;
         }
@@ -436,6 +480,7 @@ final class Generator
             if ($reserved) {
                 wp_delete_file($outputPath);
             }
+            self::holdUntilAdded(null);
 
             return $this->fail(
                 $pdfId,
@@ -447,6 +492,8 @@ final class Generator
 
         // Create attachment for thumbnail
         $thumbnailId = $this->createThumbnailAttachment($pdfId, $outputPath, $outputFilename);
+        // In the Media Library, or cleaned up by createThumbnailAttachment().
+        self::holdUntilAdded(null);
 
         if (!$thumbnailId) {
             // createThumbnailAttachment() has already cleaned up what it made
@@ -821,6 +868,14 @@ final class Generator
             'post_status' => 'inherit',
             'post_parent' => $pdfId,
         ];
+
+        // Let go before the insert, not after: core adds the row and then
+        // runs add_attachment, save_post and wp_insert_post, where offload
+        // and optimiser plugins listen. One that throws or times out there,
+        // or in the metadata below, left an attachment in the Media Library
+        // whose file shutdown then deleted (review after 1.4.32). An insert
+        // that returns no attachment deletes the file itself, below.
+        self::holdUntilAdded(null);
 
         // Insert attachment
         $attachmentId = wp_insert_attachment($attachment, $filePath, $pdfId);

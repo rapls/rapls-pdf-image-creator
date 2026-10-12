@@ -203,6 +203,9 @@ $page = priv($engine, $ref, 'readPage', new Imagick(), '/tmp/none.pdf', 0, 150);
 check('a blank page is retried and recovered', $page->uniform, false);
 check('  ...and the server is remembered as needing it', get_transient('rapls_pic_gs_options'), 'yes');
 check('  ...and GS_OPTIONS is left unset afterwards', getenv('GS_OPTIONS'), false);
+// Review of 1.4.32: read from the process's own environment (a FastCGI
+// parameter of the same name is not this process's, and was written into it).
+check('  ...GS_OPTIONS is read from the process environment only', substr_count((string) file_get_contents(RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/ImagickEngine.php'), "getenv('GS_OPTIONS', true)"), 1);
 
 // Review after 1.4.31: the retry adds its switch to what the site set, and
 // puts the site's value back.
@@ -215,6 +218,23 @@ $seenDuring = array_values(array_filter(Imagick::$gsOptionsSeen, function ($v) {
 check('the retry keeps the site\'s own GS_OPTIONS beside its switch', [$seenDuring[0] ?? null, getenv('GS_OPTIONS')], ['-sFONTPATH=/srv/fonts -dNOTRANSPARENCY', '-sFONTPATH=/srv/fonts']);
 putenv('GS_OPTIONS');
 // (A page blank with the retry too is tested in test-pipeline.php, whose
+// Review after 1.4.32: a request that dies inside the retry's read --
+// max_execution_time -- runs no finally. The switch is still taken out of the
+// worker's environment at shutdown, and the site's own value put back.
+$dying = sys_get_temp_dir() . '/rapls-pic-gs-dies-' . getmypid() . '.php';
+file_put_contents($dying, '<?php require ' . var_export(__DIR__ . '/harness.php', true) . ';'
+    . ' require ' . var_export(RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/EngineInterface.php', true) . ';'
+    . ' require ' . var_export(RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/ConversionResult.php', true) . ';'
+    . ' require ' . var_export(RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/ImagickEngine.php', true) . ';'
+    . ' putenv("GS_OPTIONS=-sFONTPATH=/srv/fonts"); Imagick::$blankWithoutGsOptions = true;'
+    . ' $GLOBALS["die_on_switch"] = true;'
+    . ' $m = new ReflectionMethod(Rapls\\PDFImageCreator\\Engine\\ImagickEngine::class, "readPage"); if (PHP_VERSION_ID < 80100) { $m->setAccessible(true); }'
+    . ' $m->invoke(new Rapls\\PDFImageCreator\\Engine\\ImagickEngine(), new Imagick(), "/tmp/none.pdf", 0, 150);'
+    . ' echo "survived";');
+$out = [];
+exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($dying) . ' 2>&1', $out);
+@unlink($dying);
+check('a request that dies inside the retry leaves the site\'s GS_OPTIONS, without the switch', implode("\n", $out), "died with -sFONTPATH=/srv/fonts -dNOTRANSPARENCY\nafter: -sFONTPATH=/srv/fonts");
 // stub models the whole-file route that case goes through.)
 
 reset_state();
@@ -278,6 +298,82 @@ check('a read that works is kept twelve hours', $probeTtl(''), [true, 12 * HOUR_
 check('  ...one a policy refuses, twelve hours', $probeTtl('not authorized `PDF\' @ error/constitute.c/IsCoderAuthorized/426'), [false, 12 * HOUR_IN_SECONDS]);
 check('  ...no PDF support, twelve hours', $probeTtl("NoDecodeDelegateForThisImageFormat `PDF'"), [false, 12 * HOUR_IN_SECONDS]);
 check('  ...anything else (a full /tmp), ten minutes', $probeTtl('unable to open image `/tmp/magick-x\': No space left on device'), [false, ImagickEngine::PASSING_FAILURE_SECONDS]);
+// Review of 1.4.32: Ghostscript run but failing (exit 1, or killed: 9) is this
+// moment's; not found (127, 32512) is the server's.
+check('  ...Ghostscript run but failing or killed, ten minutes; not found, twelve hours', [
+    $probeTtl("FailedToExecuteCommand `'gs' -sstdout=%stderr ...' (256) @ error/ghostscript-private.h/InvokeGhostscriptDelegate/120")[1],
+    $probeTtl("FailedToExecuteCommand `'gs' -sstdout=%stderr ...' (9) @ error/ghostscript-private.h/InvokeGhostscriptDelegate/120")[1],
+    $probeTtl("FailedToExecuteCommand `'gs' -sstdout=%stderr ...' (32512) @ error/ghostscript-private.h/InvokeGhostscriptDelegate/120")[1],
+    $probeTtl("UnableToOpenConfigureFile `delegates.xml' @ warning/configure.c/GetConfigureOptions/722")[1],
+], [ImagickEngine::PASSING_FAILURE_SECONDS, ImagickEngine::PASSING_FAILURE_SECONDS, 12 * HOUR_IN_SECONDS, ImagickEngine::PASSING_FAILURE_SECONDS]);
+
+echo "\n--- Review of 1.4.32: the checks' own rules ---\n";
+// A page still flat with -dNOTRANSPARENCY is not counted as the switch
+// working: nothing is remembered as "this server needs it".
+// (With the suffix known to need the whole-file route, the retry reads the
+// whole file too, and hands back what it drew, flat or not.)
+reset_state();
+Imagick::$alwaysBlank = true;
+set_transient('rapls_pic_page_suffix', 'yes', 600);
+priv($engine, $ref, 'readPage', new Imagick(), '/tmp/none.pdf', 0, 150);
+check('a page flat with the switch too: the server is not remembered as needing it', get_transient('rapls_pic_gs_options'), false);
+// A cached read check from another ImageMagick version is not used.
+reset_state();
+set_transient('rapls_pic_pdf_read', ['ok' => false, 'error' => 'old', 'version' => 'ImageMagick 6.9.0'], 600);
+Imagick::$blobError = '';
+$fresh = priv($engine, $ref, 'probePdfRead');
+Imagick::$blobError = null;
+check('a cached read check from another ImageMagick is measured again', $fresh['ok'], true);
+// The CMYK check: an empty raster, and a black page, are failures, not "not tested".
+reset_state();
+Imagick::$blobError = '';
+Imagick::$blobSize = [0, 0];
+$empty = priv($engine, $ref, 'probeCmykRender');
+reset_state();
+Imagick::$blobError = '';
+Imagick::$blobColours = [['r' => 3, 'g' => 2, 'b' => 4]];
+$black = priv($engine, $ref, 'probeCmykRender');
+reset_state();
+Imagick::$blobError = '';
+$cyan = priv($engine, $ref, 'probeCmykRender');
+Imagick::$blobError = null;
+check('the CMYK check: an empty raster or a black page fails, cyan passes', [$empty['ok'], $black['ok'], $cyan['ok']], [false, false, true]);
+// The page selection check: one page back from a two-page file fails; two
+// different pages pass.
+reset_state();
+Imagick::$blobError = '';
+Imagick::$blobPages = 1;
+Imagick::$blobColours = [['r' => 255, 'g' => 255, 'b' => 255], ['r' => 0, 'g' => 0, 'b' => 0]];
+$merged = priv($engine, $ref, 'probePageSelection');
+reset_state();
+Imagick::$blobError = '';
+Imagick::$blobPages = 2;
+Imagick::$blobColours = [['r' => 255, 'g' => 255, 'b' => 255], ['r' => 0, 'g' => 0, 'b' => 0]];
+$two = priv($engine, $ref, 'probePageSelection');
+Imagick::$blobError = null;
+check('the page check: one page back fails, two different pages pass', [$merged['ok'], $two['ok']], [false, true]);
+// A policy refusal with no policy file found shows what ImageMagick said.
+reset_state();
+$refused = priv($engine, $ref, 'statusFromProbe', ['ok' => false, 'error' => "NotAuthorized `PDF' @ error/constitute.c/IsCoderAuthorized/454"]);
+check('a policy refusal with no file found carries ImageMagick\'s words', [$refused['code'], $refused['detail']], ['pdf_blocked_by_policy', "NotAuthorized `PDF' @ error/constitute.c/IsCoderAuthorized/454"]);
+// Review after 1.4.32: Ghostscript run and exiting 1 is cached for ten
+// minutes as a passing failure, and the status says the same -- not "no PDF
+// support" for those ten minutes.
+$exited = priv($engine, $ref, 'statusFromProbe', ['ok' => false, 'error' => "FailedToExecuteCommand `'gs' -dSAFER ...' (1) @ error/delegate.c/ExternalDelegateCommand/516"]);
+$missing = priv($engine, $ref, 'statusFromProbe', ['ok' => false, 'error' => "FailedToExecuteCommand `'gs' -dSAFER ...' (127) @ error/delegate.c/ExternalDelegateCommand/516"]);
+check('Ghostscript exiting 1 in the check is "unable to check", not "no PDF support"; not found still is', [$exited['code'], $missing['code']], ['error', 'pdf_unsupported']);
+// putenv on the host's disable_functions turns the retry off, asked in a
+// PHP that has it there.
+$child = sys_get_temp_dir() . '/rapls-pic-canset-' . getmypid() . '.php';
+file_put_contents($child, '<?php define("ABSPATH", "/"); function __($s, $d = null) { return $s; } require ' . var_export(RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/EngineInterface.php', true) . '; require ' . var_export(RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/ColorProfile.php', true) . '; require ' . var_export(RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/ImagickEngine.php', true) . '; $m = new ReflectionMethod(Rapls\\PDFImageCreator\\Engine\\ImagickEngine::class, "canSetEnvironment"); if (PHP_VERSION_ID < 80100) { $m->setAccessible(true); } echo $m->invoke(new Rapls\\PDFImageCreator\\Engine\\ImagickEngine()) ? "yes" : "no";');
+$asked = [];
+foreach (['putenv', 'exec'] as $list) {
+    $out = [];
+    exec(escapeshellarg(PHP_BINARY) . ' -n -d ' . escapeshellarg('disable_functions=' . $list) . ' ' . escapeshellarg($child) . ' 2>&1', $out);
+    $asked[$list] = implode('', $out);
+}
+@unlink($child);
+check('putenv disabled on the host: the retry is not tried; otherwise it is', $asked, ['putenv' => 'no', 'exec' => 'yes']);
 
 printf("\n%d passed, %d failed\n", $pass, $fail);
 exit($fail === 0 ? 0 : 1);

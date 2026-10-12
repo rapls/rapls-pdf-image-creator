@@ -18,7 +18,8 @@ namespace Rapls\PDFImageCreator;
  * different answers, and a sentence in Japanese cannot be compared, counted or
  * branched on.
  *
- * Four of these codes are the same strings ImagickEngine::getAvailabilityStatus()
+ * Three of these codes (NO_EXTENSION, PDF_BLOCKED_BY_POLICY, PDF_UNSUPPORTED),
+ * and ERROR, are the same strings ImagickEngine::getAvailabilityStatus()
  * already used, on purpose. The distinction that matters most to someone stuck
  * -- ask the host to install Imagick, or ask the host to allow PDFs -- was
  * already made there, and making it twice under two names would be how the two
@@ -104,12 +105,28 @@ final class FailureCode
                 return self::RENDER_ERROR;
             }
 
-            if (preg_match('/FailedToExecuteCommand/i', $message) && !preg_match('/\((?:127|32512)\)/', $message)) {
+            if (self::ranAndFailed($message)) {
+                return self::RENDER_ERROR;
+            }
+
+            // ImageMagick 6's own words for Ghostscript failing on one file
+            // ("Postscript delegate failed `x.pdf'"), and a library a page
+            // needed that this build lacks -- a font, a colour engine. The
+            // server reads PDFs; this one did not draw (review after 1.4.32).
+            if (preg_match('/delegate\s*failed/i', $message) && !preg_match('/\((?:127|32512)\)/', $message)) {
+                return self::RENDER_ERROR;
+            }
+
+            if (preg_match('/delegate\s*library\s*support\s*not\s*built[^(]*\((?:freetype|fontconfig|lcms2?)\)/i', $message)) {
                 return self::RENDER_ERROR;
             }
         }
 
-        if (preg_match('/no decode delegate|FailedToExecuteCommand|delegate/i', $message)) {
+        // The phrases ImageMagick uses, not the bare word: "delegate" alone
+        // matched a warning about a missing delegates.xml that a build
+        // reports with any failed read, and a broken PDF became "no PDF
+        // support", for good (review of 1.4.32).
+        if (preg_match('/no\s*decode\s*delegate|delegate\s*library\s*support\s*not\s*built|delegate\s*failed|FailedToExecuteCommand/i', $message)) {
             return self::PDF_UNSUPPORTED;
         }
 
@@ -125,6 +142,34 @@ final class FailureCode
         }
 
         return self::RENDER_ERROR;
+    }
+
+    /**
+     * Read a code out of the availability check's exception message.
+     *
+     * Ghostscript found and run, but exiting 1 or killed by a signal (an
+     * out-of-memory kill, a CPU limit), is this moment's, not the server's:
+     * the check is tried again in ten minutes rather than reporting "no PDF
+     * support" (review of 1.4.32). Everything else is read as a server
+     * answer -- including "delegate failed", which for the check's own blank
+     * page is not one file's trouble. One reading, for the cache and for the
+     * status alike, so the two cannot disagree (review after 1.4.32).
+     */
+    public static function fromProbeMessage(string $message): string
+    {
+        if (!preg_match('/not\s*authoriz|security policy/i', $message) && self::ranAndFailed($message)) {
+            return self::RENDER_ERROR;
+        }
+
+        return self::fromExceptionMessage($message);
+    }
+
+    /**
+     * Ghostscript was started and failed, rather than not found (the shell's 127)
+     */
+    private static function ranAndFailed(string $message): bool
+    {
+        return 1 === preg_match('/FailedToExecuteCommand/i', $message) && !preg_match('/\((?:127|32512)\)/', $message);
     }
 
     /**

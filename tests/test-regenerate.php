@@ -19,6 +19,8 @@ namespace {
     file_put_contents($abs . 'wp-admin/includes/image.php', "<?php\n");
     define('ABSPATH', $abs);
     $uploads = $abs . 'uploads';
+    // For glob(): a "[" in the temporary folder's name begins a character class.
+    $uploadsGlob = str_replace(['[', '?'], ['[[]', '[?]'], $uploads);
     mkdir($uploads);
 
     $GLOBALS['meta'] = [];
@@ -37,6 +39,7 @@ namespace {
     function do_action($tag, ...$args) { if (isset($GLOBALS['actions'][$tag])) { ($GLOBALS['actions'][$tag])(...$args); } }
     function get_option($key, $default = false) { return $GLOBALS['options'][$key] ?? $default; }
     function update_option($key, $value, $autoload = null) {
+        $GLOBALS['option_writes'][] = $key;
         // As core: false when nothing changes, and when the write fails.
         if (($GLOBALS['options'][$key] ?? null) === $value || !empty($GLOBALS['option_write_fails'])) { return false; }
         $GLOBALS['options'][$key] = $value;
@@ -63,10 +66,17 @@ namespace {
     function wp_check_filetype($name) { $ext = strtolower(pathinfo((string) $name, PATHINFO_EXTENSION)); return ['ext' => $ext, 'type' => ['jpg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp'][$ext] ?? false]; }
     function is_wp_error($thing) { return false; }
     function wp_insert_attachment($data, $file, $parent) {
+        if (!empty($GLOBALS['insert_fails'])) {
+            return 0;
+        }
         $id = $GLOBALS['next_id']++;
         $GLOBALS['posts'][$id] = (object) ['ID' => $id, 'post_type' => 'attachment', 'post_mime_type' => $data['post_mime_type']];
         // An update_attached_file filter that names another file (R58-02).
         $GLOBALS['files'][$id] = $GLOBALS['attach_elsewhere'] ?? $file;
+        // A listener on add_attachment or save_post that throws, after the row is in.
+        if (!empty($GLOBALS['insert_listener_dies'])) {
+            throw new \RuntimeException('a listener died');
+        }
         return $id;
     }
     function update_attached_file($id, $file) {
@@ -74,7 +84,12 @@ namespace {
         $GLOBALS['files'][(int) $id] = $file;
         return true;
     }
-    function wp_generate_attachment_metadata($id, $file) { return !empty($GLOBALS['no_metadata']) ? false : ['file' => basename($file), 'sizes' => []]; }
+    function wp_generate_attachment_metadata($id, $file) {
+        if (!empty($GLOBALS['metadata_dies'])) {
+            throw new \RuntimeException('a listener died');
+        }
+        return !empty($GLOBALS['no_metadata']) ? false : ['file' => basename($file), 'sizes' => []];
+    }
     function wp_update_attachment_metadata($id, $meta) {
         if (!empty($GLOBALS['fail_attachment_meta'])) { return false; }
         $GLOBALS['attachment_meta'][(int) $id] = $meta;
@@ -101,7 +116,7 @@ namespace {
         $key = $args ? $cap . ':' . $args[0] : $cap;
         return !empty($GLOBALS['caps'][$key]);
     }
-    function check_ajax_referer($action = -1, $q = false, $die = true) { return true; }
+    function check_ajax_referer($action = -1, $q = false, $die = true) { $GLOBALS['nonce_asked'][] = [$action, $q]; return empty($GLOBALS['nonce_fails']); }
     function absint($v) { return abs((int) $v); }
     final class JsonSent extends \Exception {
         public $success; public $data; public $status;
@@ -112,6 +127,7 @@ namespace {
     // second, different answer.
     function rapls_test_json($success, $d, $s) {
         $GLOBALS['json'] = $GLOBALS['json'] ?? [$success, $s];
+        $GLOBALS['json_message'] = $GLOBALS['json_message'] ?? (is_array($d) ? ($d['message'] ?? null) : null);
         throw new JsonSent($success, $d, $s);
     }
     function wp_send_json_error($d = null, $s = null) { rapls_test_json(false, $d, $s); }
@@ -334,12 +350,59 @@ namespace {
     $pdf(200);
     $generator->generate(200, true);
     check('the engine draws into a file this request already created', $engine->sawReserved, true);
+    // Review of 1.4.32: a request that dies while drawing (max_execution_time)
+    // runs no catch; the shutdown clean-up deletes the reserved file. One that
+    // got as far as the Media Library keeps its image.
+    $pdf(205);
+    $reservedSeen = null;
+    $engine->during = static function () use (&$reservedSeen, $uploadsGlob): void {
+        $files = glob($uploadsGlob . '/doc-205-pdf-thumbnail*');
+        \Rapls\PDFImageCreator\Generator::releaseHeld();
+        $reservedSeen = [count($files), count(glob($uploadsGlob . '/doc-205-pdf-thumbnail*'))];
+    };
+    $generator->generate(205, true);
+    $engine->during = null;
+    $pdf(206);
+    $kept = $generator->generate(206, true);
+    \Rapls\PDFImageCreator\Generator::releaseHeld();
+    check('a request that dies while drawing leaves no reserved file; one that finished keeps its image', [$reservedSeen, is_int($kept) && is_file($GLOBALS['files'][$kept] ?? '')], [[1, 0], true]);
     $pdf(210, 211);
     $engine->renders = false;
-    $leftBefore = glob($uploads . '/doc-210-pdf-thumbnail*');
+    $leftBefore = glob($uploadsGlob . '/doc-210-pdf-thumbnail*');
     $generator->generate(210, true);
     $engine->renders = true;
-    check('  ...and a failed render leaves no empty file behind', glob($uploads . '/doc-210-pdf-thumbnail*'), $leftBefore);
+    check('  ...and a failed render leaves no empty file behind', glob($uploadsGlob . '/doc-210-pdf-thumbnail*'), $leftBefore);
+    // Review after 1.4.32: a request that dies after the attachment is in the
+    // Media Library -- making sub-sizes, or in a listener on the metadata --
+    // leaves that attachment its file. Bulk Generate catches the error and
+    // carries on, so shutdown still runs releaseHeld().
+    $pdf(212);
+    $idsBefore = $GLOBALS['next_id'];
+    $GLOBALS['metadata_dies'] = true;
+    try {
+        $generator->generate(212, true);
+    } catch (\RuntimeException $e) {
+    }
+    $GLOBALS['metadata_dies'] = false;
+    \Rapls\PDFImageCreator\Generator::releaseHeld();
+    $afterMetadata = is_file((string) ($GLOBALS['files'][$idsBefore] ?? ''));
+    $pdf(213);
+    $idsBefore = $GLOBALS['next_id'];
+    $GLOBALS['insert_listener_dies'] = true;
+    try {
+        $generator->generate(213, true);
+    } catch (\RuntimeException $e) {
+    }
+    $GLOBALS['insert_listener_dies'] = false;
+    \Rapls\PDFImageCreator\Generator::releaseHeld();
+    // The hold is let go before the insert, so an insert that makes nothing
+    // deletes the drawn file itself.
+    $pdf(214);
+    $GLOBALS['insert_fails'] = true;
+    $noInsert = $generator->generate(214, true);
+    $GLOBALS['insert_fails'] = false;
+    $insertLeft = glob($uploadsGlob . '/doc-214-pdf-thumbnail*');
+    check('  ...and one that dies after the attachment was added leaves the attachment its file -- in the metadata, or in a listener on the insert; an insert that makes nothing leaves no file', [$afterMetadata, is_file((string) ($GLOBALS['files'][$idsBefore] ?? '')), $noInsert, $insertLeft], [true, true, null, []]);
 
     echo "\n--- R58-01: a new attachment that cannot be deleted keeps its file ---\n";
 
@@ -383,11 +446,11 @@ namespace {
 
     $pdf(250, 251);
     $engine->throws = true;
-    $leftBefore = glob($uploads . '/doc-250-pdf-thumbnail*');
+    $leftBefore = glob($uploadsGlob . '/doc-250-pdf-thumbnail*');
     $caught = null;
     try { $generator->generate(250, true); } catch (\RuntimeException $e) { $caught = $e->getMessage(); }
     $engine->throws = false;
-    check('engine throws: passed on, and no empty file left', [$caught, glob($uploads . '/doc-250-pdf-thumbnail*')], ['engine boom', $leftBefore]);
+    check('engine throws: passed on, and no empty file left', [$caught, glob($uploadsGlob . '/doc-250-pdf-thumbnail*')], ['engine boom', $leftBefore]);
     $pdf(260, 261);
     $GLOBALS['actions']['rapls_pdf_image_creator_after_generate'] = static function () { throw new \RuntimeException('after hook boom'); };
     $threw = null;
@@ -520,6 +583,69 @@ namespace {
     check('Media Library: no AJAX regenerate endpoint is left to answer', [method_exists($library, 'ajaxRegenerateThumbnail'), false !== strpos($librarySource, "wp_ajax_rapls_pic_regenerate_thumbnail")], [false, false]);
     check('Bulk Generate: refused without manage_options', $call([$bulk, 'ajaxGenerate'], ['pdf_id' => 80, 'force' => 1]), [false, 403]);
     check('Bulk Scan: refused without manage_options', $call([$bulk, 'ajaxScan'], []), [false, 403]);
+
+    // Review of 1.4.32: every Bulk route checks the page's nonce (field
+    // "nonce", action rapls_pic_admin) before anything else, admin or not.
+    $GLOBALS['caps'] = ['manage_options' => true, 'edit_post:80' => true];
+    $GLOBALS['nonce_fails'] = true;
+    $GLOBALS['nonce_asked'] = [];
+    $refusedRoutes = [];
+    foreach (['ajaxScan' => [], 'ajaxNext' => ['after' => 0], 'ajaxGenerate' => ['pdf_id' => 80, 'force' => 1], 'ajaxStatus' => []] as $route => $post) {
+        $GLOBALS['deleted'] = [];
+        $GLOBALS['json_message'] = null;
+        $refusedRoutes[$route] = [$call([$bulk, $route], $post)[0], $GLOBALS['json_message'], $GLOBALS['deleted']];
+    }
+    $GLOBALS['nonce_fails'] = false;
+    check('Bulk: a stale or missing nonce is refused on every route, and nothing is done', [$refusedRoutes, array_unique(array_map('json_encode', $GLOBALS['nonce_asked']))], [array_fill_keys(['ajaxScan', 'ajaxNext', 'ajaxGenerate', 'ajaxStatus'], [false, 'Security check failed.', []]), ['["rapls_pic_admin","nonce"]']]);
+
+    // Review of 1.4.32: the Media Library's "Regenerate Thumbnail" row action --
+    // its nonce for this PDF, edit_post on it, and back to the list as it was.
+    if (!function_exists('sanitize_text_field')) { function sanitize_text_field($v) { return trim((string) $v); } }
+    if (!function_exists('wp_unslash')) { function wp_unslash($v) { return $v; } }
+    if (!function_exists('esc_html__')) { function esc_html__($s, $d = null) { return $s; } }
+    if (!function_exists('wp_verify_nonce')) { function wp_verify_nonce($n, $a) { return 'ok:' . $a === $n; } }
+    final class RegenStopped extends \Exception {}
+    if (!function_exists('wp_die')) { function wp_die($m = '') { throw new RegenStopped('died: ' . $m); } }
+    if (!function_exists('wp_safe_redirect')) { function wp_safe_redirect($u, $s = 302) { throw new RegenStopped('to: ' . $u); } }
+    if (!function_exists('admin_url')) { function admin_url($p = '') { return 'https://example.test/wp-admin/' . $p; } }
+    if (!function_exists('add_query_arg')) { function add_query_arg($k, $v, $u) { return $u . (false === strpos($u, '?') ? '?' : '&') . $k . '=' . $v; } }
+    if (!function_exists('remove_query_arg')) { function remove_query_arg($keys, $u) { foreach ((array) $keys as $k) { $u = (string) preg_replace('/([?&])' . preg_quote($k, '/') . '=[^&]*&?/', '$1', $u); } return rtrim($u, '?&'); } }
+    if (!function_exists('wp_get_referer')) { function wp_get_referer() { return $GLOBALS['referer'] ?? false; } }
+    $rowAction = static function (int $id, string $nonce, ?string $referer = null) use ($library): string {
+        $_GET = ['action' => 'rapls_pic_regenerate', 'attachment_id' => (string) $id, '_wpnonce' => $nonce];
+        $GLOBALS['referer'] = $referer;
+        try {
+            $library->handleRegenerateAction();
+        } catch (RegenStopped $e) {
+            return $e->getMessage();
+        } finally {
+            $_GET = [];
+            unset($GLOBALS['referer']);
+        }
+        return 'carried on';
+    };
+    $pdf(95, 96);
+    $GLOBALS['caps'] = ['edit_post:95' => true];
+    $wrongNonce = $rowAction(95, 'ok:rapls_pic_regenerate_94');
+    $GLOBALS['caps'] = [];
+    $noCapability = $rowAction(95, 'ok:rapls_pic_regenerate_95');
+    check('the row action: another PDF\'s nonce stops it, and so does no edit_post on this one', [$wrongNonce, $noCapability], ['died: Security check failed.', 'died: You do not have permission to do this.']);
+    $GLOBALS['caps'] = ['edit_post:95' => true];
+    check('  ...back to the list it came from, its page and search kept, an old notice argument dropped', [
+        $rowAction(95, 'ok:rapls_pic_regenerate_95', 'https://example.test/wp-admin/upload.php?mode=list&paged=3&s=report&rapls_pic_error=1'),
+        $rowAction(95, 'ok:rapls_pic_regenerate_95', 'https://evil.example/elsewhere'),
+    ], [
+        'to: https://example.test/wp-admin/upload.php?mode=list&paged=3&s=report&rapls_pic_generated=1',
+        'to: https://example.test/wp-admin/upload.php?rapls_pic_generated=1',
+    ]);
+    // Review after 1.4.32: a failure carries this attempt's code, for the
+    // notice to say in its own words.
+    if (!function_exists('sanitize_key')) { function sanitize_key($v) { return strtolower(preg_replace('/[^a-z0-9_\-]/i', '', (string) $v)); } }
+    $engine->renders = false;
+    $failedTo = $rowAction(95, 'ok:rapls_pic_regenerate_95', 'https://example.test/wp-admin/upload.php?paged=2');
+    $engine->renders = true;
+    check('  ...a failure goes back with its code', $failedTo, 'to: https://example.test/wp-admin/upload.php?paged=2&rapls_pic_error=' . ($generator->outcomeFor(95)['code'] ?? 'none'));
+    check('  ...which is a code, not 1', in_array($generator->outcomeFor(95)['code'] ?? '', ['', '1'], true), false);
     $GLOBALS['caps'] = ['manage_options' => true, 'edit_post:80' => true];
     check('Bulk Generate: an admin may regenerate a PDF they may edit', $call([$bulk, 'ajaxGenerate'], ['pdf_id' => 80, 'force' => 1]), [true, null]);
     check('Bulk Generate: ...but not one edit_post refuses', $call([$bulk, 'ajaxGenerate'], ['pdf_id' => 90, 'force' => 1]), [false, 403]);
@@ -554,6 +680,56 @@ namespace {
         unset($GLOBALS['filters']['rapls_pdf_image_creator_thumbnail_' . $key]);
     }
     check('numbers from the option filters reach the engine as integers', array_map(static function ($key) use ($engine) { return $engine->options[$key] ?? null; }, array_keys($numberTags)), [2, 800, 600, 150, 85]);
+
+    // Review of 1.4.32: the generator's own rules, each of which a mutant
+    // could remove without a test noticing.
+    $G = \Rapls\PDFImageCreator\Generator::class;
+    // A first thumbnail keeps the plain name; a forced one takes a time suffix,
+    // so browsers holding the old image do not keep showing it.
+    $pdf(600);
+    $first = $generator->generate(600, false);
+    $again = $generator->generate(600, true);
+    check('a first thumbnail has the plain name; a regenerated one a name of its own', [
+        basename((string) ($GLOBALS['files'][$first] ?? '')),
+        (bool) preg_match('/^doc-600-pdf-thumbnail-[0-9a-f]{7,}\.jpg$/', basename((string) ($GLOBALS['files'][$again] ?? ''))),
+    ], ['doc-600-pdf-thumbnail.jpg', true]);
+    // A file already under the name -- another request's, half made -- is
+    // not drawn into: the name is taken by creating it, not by opening it.
+    $pdf(601);
+    file_put_contents($uploads . '/doc-601-pdf-thumbnail.jpg', 'someone else\'s');
+    $beside = $generator->generate(601, false);
+    check('  ...a name already there is left alone, and the next one taken', [basename((string) ($GLOBALS['files'][$beside] ?? '')), file_get_contents($uploads . '/doc-601-pdf-thumbnail.jpg')], ['doc-601-pdf-thumbnail-1.jpg', 'someone else\'s']);
+    // A format the engine does not know becomes JPEG, name and all.
+    $GLOBALS['filters']['rapls_pdf_image_creator_thumbnail_format'] = static function () { return 'GIF'; };
+    $pdf(602);
+    $gif = $generator->generate(602, false);
+    unset($GLOBALS['filters']['rapls_pdf_image_creator_thumbnail_format']);
+    check('  ...a format the engine does not know is JPEG', [$engine->format, pathinfo((string) ($GLOBALS['files'][$gif] ?? ''), PATHINFO_EXTENSION)], ['jpeg', 'jpg']);
+    // A success clears the last failure the Status tab shows; asking for
+    // something that is not a PDF records none.
+    $GLOBALS['options'][$G::LAST_FAILURE_OPTION] = ['code' => 'render_error'];
+    $pdf(603);
+    $generator->generate(603, false);
+    $clearedOnSuccess = isset($GLOBALS['options'][$G::LAST_FAILURE_OPTION]);
+    $GLOBALS['mimes'][604] = 'image/jpeg';
+    $GLOBALS['posts'][604] = (object) ['ID' => 604, 'post_type' => 'attachment'];
+    $generator->generate(604, true);
+    check('  ...a success clears the last failure; asking for a non-PDF records none', [$clearedOnSuccess, isset($GLOBALS['options'][$G::LAST_FAILURE_OPTION])], [false, false]);
+    // A thumbnail record naming an image that is gone is removed when read.
+    $GLOBALS['meta'][605][$G::THUMBNAIL_META_KEY] = 99999;
+    $generator->getThumbnailId(605);
+    check('  ...a record naming a deleted image is removed', isset($GLOBALS['meta'][605][$G::THUMBNAIL_META_KEY]), false);
+    // With no engine, "unavailable" is written once, not on every PDF of a run.
+    $enginesProp = new ReflectionProperty($G, 'engines');
+    if (PHP_VERSION_ID < 80100) { $enginesProp->setAccessible(true); }
+    $enginesWere = $enginesProp->getValue($generator);
+    $enginesProp->setValue($generator, []);
+    $GLOBALS['option_writes'] = [];
+    $pdf(606);
+    $generator->generate(606, false);
+    $generator->generate(606, false);
+    $enginesProp->setValue($generator, $enginesWere);
+    check('  ...with no engine, "unavailable" is written once', count(array_keys($GLOBALS['option_writes'], $G::UNAVAILABLE_OPTION, true)), 1);
 
     // Review after 1.4.31: an engines listener answering something that is
     // not a list leaves the plugin's own; a list keeps only its engines.

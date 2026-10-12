@@ -90,9 +90,12 @@ final class Inserter
         $insertLink = $this->settings->getInsertLink();
 
         // Get PDF data
-        $pdfUrl = wp_get_attachment_url($pdfId);
-        $pdfTitle = get_the_title($pdfId);
-        $attachmentUrl = get_attachment_link($pdfId);
+        // Cast: either can be false (a file gone, a permalink filter), and
+        // false reached string parameters below -- a TypeError in this
+        // strict file (review of 1.4.32).
+        $pdfUrl = (string) wp_get_attachment_url($pdfId);
+        $pdfTitle = (string) get_the_title($pdfId);
+        $attachmentUrl = (string) get_attachment_link($pdfId);
 
         // Get thumbnail data
         $thumbnailId = $this->generator->getThumbnailId($pdfId);

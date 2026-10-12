@@ -15,8 +15,8 @@ $GLOBALS['blog'] = 1;
 $GLOBALS['switches'] = [];
 // Per site: options, postmeta rows [post_id, key, value], and what was deleted.
 $GLOBALS['sites'] = [
-    1 => ['options' => ['rapls_pic_settings' => ['keep_on_uninstall' => false], 'rapls_pic_version' => '1.4.19'], 'meta' => [[10, '_rapls_pic_thumbnail_id', '11'], [11, '_rapls_pic_is_thumbnail', '1'], [11, '_rapls_pic_source_pdf', '10']], 'deleted' => []],
-    2 => ['options' => ['rapls_pic_settings' => ['keep_on_uninstall' => true], 'rapls_pic_version' => '1.4.19'], 'meta' => [[20, '_rapls_pic_thumbnail_id', '21'], [21, '_rapls_pic_is_thumbnail', '1'], [21, '_rapls_pic_source_pdf', '20']], 'deleted' => []],
+    1 => ['options' => ['rapls_pic_settings' => ['keep_on_uninstall' => false], 'rapls_pic_version' => '1.4.19', 'rapls_pic_last_failure' => ['code' => 'render_error']], 'meta' => [[10, '_rapls_pic_thumbnail_id', '11'], [11, '_rapls_pic_is_thumbnail', '1'], [11, '_rapls_pic_source_pdf', '10']], 'deleted' => []],
+    2 => ['options' => ['rapls_pic_settings' => ['keep_on_uninstall' => true], 'rapls_pic_version' => '1.4.19', 'rapls_pic_last_failure' => ['code' => 'render_error']], 'meta' => [[20, '_rapls_pic_thumbnail_id', '21'], [21, '_rapls_pic_is_thumbnail', '1'], [21, '_rapls_pic_source_pdf', '20']], 'deleted' => []],
 ];
 $GLOBALS['user_meta_deleted'] = [];
 

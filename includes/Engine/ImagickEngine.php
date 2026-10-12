@@ -35,14 +35,6 @@ final class ImagickEngine implements EngineInterface
     }
 
     /**
-     * Get the colour profile resolver
-     */
-    public function getColorProfile(): ColorProfile
-    {
-        return $this->colorProfile;
-    }
-
-    /**
      * {@inheritdoc}
      */
     public function getName(): string
@@ -146,16 +138,28 @@ final class ImagickEngine implements EngineInterface
         // policy.xml denying the PDF coder still leaves PDF in queryFormats
         // while readImage throws NotAuthorized. Asking it is therefore not an
         // answer; the only way to know is to hand ImageMagick a PDF.
-        $probe = $this->probePdfRead();
+        return $this->statusFromProbe($this->probePdfRead());
+    }
 
+    /**
+     * What a read check's answer means for this server
+     *
+     * Apart from getAvailabilityStatus() so that it can be tested where the
+     * Imagick extension is not loaded (review of 1.4.32).
+     *
+     * @param array{ok: bool, error: string} $probe probePdfRead()'s answer.
+     */
+    private function statusFromProbe(array $probe): array
+    {
         if ($probe['ok']) {
             return $this->statusFor('ok');
         }
 
-        // Same classifier the conversion path uses, so that "why can this
-        // server not render PDFs" and "why did this render fail" cannot start
-        // disagreeing with each other.
-        $code = \Rapls\PDFImageCreator\FailureCode::fromExceptionMessage($probe['error']);
+        // The same reading probePdfRead() caches by: read differently here,
+        // a Ghostscript exit of 1 was cached for ten minutes as a passing
+        // failure and shown for those ten minutes as "no PDF support"
+        // (review after 1.4.32).
+        $code = \Rapls\PDFImageCreator\FailureCode::fromProbeMessage($probe['error']);
 
         if (\Rapls\PDFImageCreator\FailureCode::PDF_BLOCKED_BY_POLICY === $code) {
             $policyFile = $this->findPdfPolicyBlock();
@@ -173,7 +177,7 @@ final class ImagickEngine implements EngineInterface
             return $this->statusFor('pdf_unsupported', $probe['error']);
         }
 
-        return $this->statusFor('error', $probe['error']);
+        return $this->statusFor('pdf_read_failed', $probe['error']);
     }
 
     /**
@@ -217,7 +221,11 @@ final class ImagickEngine implements EngineInterface
         // policy or a missing coder stops it. Ten minutes for anything else:
         // a full /tmp or a resource limit at the moment of the one check
         // stopped every thumbnail for twelve hours (review after 1.4.31).
-        $code = $result['ok'] ? '' : \Rapls\PDFImageCreator\FailureCode::fromExceptionMessage($result['error']);
+        // Ghostscript found and run, but exiting 1 or killed by a signal, is
+        // this moment's, not the server's -- taken as "no PDF support", it
+        // too stopped every thumbnail for twelve hours (review of 1.4.32).
+        // Not found (127) still lasts. See FailureCode::fromProbeMessage().
+        $code = $result['ok'] ? '' : \Rapls\PDFImageCreator\FailureCode::fromProbeMessage($result['error']);
         $lasting = $result['ok'] || in_array($code, [\Rapls\PDFImageCreator\FailureCode::PDF_BLOCKED_BY_POLICY, \Rapls\PDFImageCreator\FailureCode::PDF_UNSUPPORTED], true);
 
         set_transient(
@@ -319,6 +327,16 @@ final class ImagickEngine implements EngineInterface
                 $label = __('PDF support missing', 'rapls-pdf-image-creator');
                 $summary = __('ImageMagick is installed, but it reports no PDF support. Usually the PDF delegate is absent from the build; a security policy elsewhere on the server can also cause this.', 'rapls-pdf-image-creator');
                 $action = __('Ask your hosting provider to enable PDF support in ImageMagick, and to confirm that policy.xml does not deny the PDF coder.', 'rapls-pdf-image-creator');
+                break;
+
+            case 'pdf_read_failed':
+                // The read check failed for a reason of the moment, not a
+                // policy or missing support: "could not be asked which
+                // formats" was not what happened (review of 1.4.32).
+                $code = 'error';
+                $label = __('Unable to check', 'rapls-pdf-image-creator');
+                $summary = __('ImageMagick could not read the small test PDF this plugin uses to check the server. It is tried again in ten minutes.', 'rapls-pdf-image-creator');
+                $action = __('If this stays, ask your hosting provider to check ImageMagick and Ghostscript, with the message below.', 'rapls-pdf-image-creator');
                 break;
 
             default:
@@ -604,7 +622,7 @@ final class ImagickEngine implements EngineInterface
                 continue;
             }
             $granted = strtolower(trim($rights[1]));
-            if ('none' !== $granted && false !== strpos($granted, 'read')) {
+            if (false !== strpos($granted, 'read')) {
                 continue;
             }
 
@@ -659,7 +677,7 @@ final class ImagickEngine implements EngineInterface
     {
         $requirements = [
             'extension' => [
-                'name' => 'Imagick Extension',
+                'name' => __('Imagick Extension', 'rapls-pdf-image-creator'),
                 'status' => extension_loaded('imagick'),
                 'message' => extension_loaded('imagick')
                     ? __('Installed', 'rapls-pdf-image-creator')
@@ -671,7 +689,7 @@ final class ImagickEngine implements EngineInterface
             try {
                 $version = \Imagick::getVersion();
                 $requirements['version'] = [
-                    'name' => 'ImageMagick Version',
+                    'name' => __('ImageMagick Version', 'rapls-pdf-image-creator'),
                     'status' => true,
                     'message' => $version['versionString'] ?? __('Unknown', 'rapls-pdf-image-creator'),
                 ];
@@ -681,7 +699,7 @@ final class ImagickEngine implements EngineInterface
                 // their host with different requests.
                 $availability = $this->getAvailabilityStatus();
                 $requirements['pdf_support'] = [
-                    'name' => 'PDF Support',
+                    'name' => __('PDF Support', 'rapls-pdf-image-creator'),
                     'status' => 'ok' === $availability['code'],
                     'message' => 'ok' === $availability['code']
                         ? __('Available', 'rapls-pdf-image-creator')
@@ -711,7 +729,7 @@ final class ImagickEngine implements EngineInterface
                 }
             } catch (\Exception $e) {
                 $requirements['error'] = [
-                    'name' => 'Error',
+                    'name' => __('Error', 'rapls-pdf-image-creator'),
                     'status' => false,
                     'message' => $e->getMessage(),
                 ];
@@ -950,9 +968,19 @@ final class ImagickEngine implements EngineInterface
             // stderr nobody sees, and ImageMagick's own words were "Failed to
             // read the file" -- with a site-wide page set, every shorter PDF
             // got no thumbnail and a message about ImageMagick (review after
-            // 1.4.31). Counted without drawing, and only when a page past the
-            // first was asked for.
+            // 1.4.31). Counted only when a page past the first was asked for
+            // (pagesIn()).
             $pages = (int) $options['page'] > 0 ? self::pagesIn($pdfPath) : null;
+
+            // The file's own figure can understate a damaged file whose
+            // pages Ghostscript finds by walking the tree: confirmed by
+            // ImageMagick before a page is called missing, and only then --
+            // the short document the site-wide page is past costs little to
+            // ping (review after 1.4.32).
+            if (null !== $pages && $pages <= (int) $options['page']) {
+                $pinged = self::pagesPinged($pdfPath);
+                $pages = null !== $pinged ? $pinged : $pages;
+            }
 
             if (null !== $pages && $pages <= (int) $options['page']) {
                 return ConversionResult::failure(
@@ -996,9 +1024,26 @@ final class ImagickEngine implements EngineInterface
     private const PAGE_SUFFIX_TRANSIENT = 'rapls_pic_page_suffix';
 
     /**
-     * How many pages the PDF has, counted without drawing, or null when it cannot be told
+     * How many pages the PDF has, or null when it cannot be told
+     *
+     * From the file's own page tree where it can be read there, and only
+     * otherwise by pingImage() -- which is not free: ImageMagick has
+     * Ghostscript run through the whole document to answer it (measured, IM
+     * 7.1.1 and gs 10.04: 2.7 s for a 100-page document, against 0.13 s to
+     * draw one page; review of 1.4.32).
      */
     private static function pagesIn(string $pdfPath): ?int
+    {
+        $pages = self::pagesFromBytes($pdfPath);
+
+        return null !== $pages ? $pages : self::pagesPinged($pdfPath);
+    }
+
+    /**
+     * How many pages ImageMagick finds, by pingImage() -- a Ghostscript pass
+     * over the whole document
+     */
+    private static function pagesPinged(string $pdfPath): ?int
     {
         try {
             $count = new \Imagick();
@@ -1012,11 +1057,132 @@ final class ImagickEngine implements EngineInterface
         }
     }
 
+    /** The most page-tree dictionaries read from one file's bytes (pagesFromBytes()). */
+    private const PAGE_TREE_MAX_NODES = 10000;
+
+    /** The largest file whose page tree is looked for in its bytes. */
+    private const PAGE_TREE_MAX_BYTES = 33554432;
+
+    /**
+     * The page count the file's page tree states, read from its bytes
+     *
+     * The largest /Count among the /Type /Pages dictionaries: the root's,
+     * and, in a file saved over itself, never less than the newest root's.
+     * Null when the tree cannot be read plainly -- in object streams (a
+     * compressed tree), in a dictionary with another inside it, past
+     * PAGE_TREE_MAX_BYTES -- and the caller asks ImageMagick instead.
+     * A damaged file can state fewer pages than Ghostscript finds by
+     * walking the tree, so a page this calls missing is confirmed by
+     * ImageMagick before it is said to be. A document over the whole-read
+     * limit is not read whole on this figure alone either: the pixels are
+     * bounded too, and a file that understates its pages that far is one
+     * Ghostscript is repairing as it reads.
+     */
+    public static function pagesFromBytes(string $pdfPath): ?int
+    {
+        $size = @filesize($pdfPath);
+
+        if (!is_int($size) || $size < 1 || $size > self::PAGE_TREE_MAX_BYTES || !self::memoryFor($size)) {
+            return null;
+        }
+
+        $bytes = @file_get_contents($pdfPath);
+
+        if (!is_string($bytes) || false !== strpos($bytes, '/ObjStm')) {
+            return null;
+        }
+
+        $largest = 0;
+        $seen = 0;
+        $from = 0;
+        $spans = 0;
+        $length = strlen($bytes);
+
+        // One match at a time, not all of them collected first: half a
+        // million page-tree dictionaries in an 11 MB file made the list of
+        // matches alone run past a 128 MB limit, a fatal error no catch
+        // reaches (review after 1.4.32). A real document has a page tree of
+        // some hundreds of nodes at most; one with more is left to
+        // ImageMagick.
+        while (1 === preg_match('#/Type\s*/Pages(?![A-Za-z0-9])#', $bytes, $match, PREG_OFFSET_CAPTURE, $from)) {
+            if (++$seen > self::PAGE_TREE_MAX_NODES) {
+                return null;
+            }
+
+            $at = (int) $match[0][1];
+            $from = $at + strlen($match[0][0]);
+
+            // Searched back from the match in place: a copy of everything
+            // before it, per match, held up to 32 MB again each time and
+            // took 1.5 s over 2,000 page-tree nodes (review after 1.4.32).
+            $open = $at > 1 ? strrpos($bytes, '<<', $at - 2 - strlen($bytes)) : false;
+            $close = strpos($bytes, '>>', $at);
+
+            if (false === $open || false === $close) {
+                return null;
+            }
+
+            // The dictionaries read, together, are within the file once
+            // over: in a real file they do not overlap. Ten thousand matches
+            // inside one dictionary the size of the file were each searched
+            // and copied whole -- 75 s of CPU for a 32 MB file (review after
+            // 1.4.32).
+            $spans += $close - $open;
+
+            if ($spans > $length) {
+                return null;
+            }
+
+            $dictionary = substr($bytes, $open + 2, $close - $open - 2);
+
+            if (false !== strpos($dictionary, '<<') || !preg_match('#/Count\s+(\d+)#', $dictionary, $count)) {
+                return null;
+            }
+
+            $largest = max($largest, (int) $count[1]);
+        }
+
+        if (0 === $seen || preg_last_error() !== PREG_NO_ERROR) {
+            return null;
+        }
+
+        return $largest > 0 ? $largest : null;
+    }
+
+    /**
+     * Whether a file this size can be read into memory with room to spare
+     *
+     * Twice its size, for the file and the work on it: on a 64 MB limit, a
+     * 32 MB file read whole was a fatal error no catch reaches, in a request
+     * that ImageMagick could have answered by its own route.
+     */
+    private static function memoryFor(int $size): bool
+    {
+        $limit = (string) ini_get('memory_limit');
+
+        if ('' === $limit || '-1' === $limit) {
+            return true;
+        }
+
+        if (function_exists('wp_convert_hr_to_bytes')) {
+            $bytes = (int) wp_convert_hr_to_bytes($limit);
+        } else {
+            $bytes = (int) $limit;
+            $unit = strtolower(substr($limit, -1));
+            $bytes *= 'g' === $unit ? 1073741824 : ('m' === $unit ? 1048576 : ('k' === $unit ? 1024 : 1));
+        }
+
+        return $bytes <= 0 || $bytes - memory_get_usage() > 2 * $size + 8388608;
+    }
+
     /** How long a PDF read check that failed for no lasting reason is kept (probePdfRead()). */
     public const PASSING_FAILURE_SECONDS = 600;
 
     /** The longest document the whole-file retry reads (readPageDirect()). */
     public const WHOLE_READ_MAX_PAGES = 20;
+
+    /** The most pixels the whole-file retry draws, all pages together. */
+    public const WHOLE_READ_MAX_PIXELS = 50000000;
 
     /**
      * Transient remembering whether Ghostscript here needed a nudge
@@ -1152,7 +1318,8 @@ final class ImagickEngine implements EngineInterface
 
         // Either the suffix is known to be unreliable here, or it just handed
         // back a flat colour.
-        $whole = $this->readWholePage($pdfPath, $page, $resolution);
+        $tooLarge = false;
+        $whole = $this->readWholePage($pdfPath, $page, $resolution, $tooLarge);
 
         if (null === $whole) {
             // The retry failed, the page does not exist, or the document is
@@ -1163,8 +1330,12 @@ final class ImagickEngine implements EngineInterface
             } else {
                 // Not measured, and could not be: remembered as "do not
                 // retry", or every flat page tried the whole file again
-                // (review after 1.4.31).
-                set_transient(self::PAGE_SUFFIX_TRANSIENT, 'no', WEEK_IN_SECONDS);
+                // (review after 1.4.31). For an hour only when this document
+                // was too large to try: that is about the document, and for
+                // a week it kept every shorter one from being measured --
+                // six A4 pages at 300 dpi are past the limit (review after
+                // 1.4.32).
+                set_transient(self::PAGE_SUFFIX_TRANSIENT, 'no', $tooLarge ? HOUR_IN_SECONDS : WEEK_IN_SECONDS);
             }
 
             return $imagick;
@@ -1195,18 +1366,40 @@ final class ImagickEngine implements EngineInterface
     /**
      * Read every page and hand back the one asked for
      *
+     * @param bool $tooLarge Set to true when it was not read for its length or size.
      * @return \Imagick|null Null when it could not be read.
      */
-    private function readWholePage(string $pdfPath, int $page, int $resolution): ?\Imagick
+    private function readWholePage(string $pdfPath, int $page, int $resolution, bool &$tooLarge = false): ?\Imagick
     {
         try {
-            // Counted first, without drawing: past the limit it is not read.
-            $count = new \Imagick();
-            $count->pingImage($pdfPath);
-            $pages = (int) $count->getNumberImages();
-            $count->clear();
+            // Counted first: past the limit it is not read (pagesIn(), from
+            // the file's bytes where it can).
+            $pages = (int) self::pagesIn($pdfPath);
 
-            if ($pages < 1 || $pages > self::WHOLE_READ_MAX_PAGES) {
+            if ($pages > self::WHOLE_READ_MAX_PAGES) {
+                $tooLarge = true;
+
+                return null;
+            }
+
+            if ($pages < 1) {
+                return null;
+            }
+
+            // And within WHOLE_READ_MAX_PIXELS for them all: twenty A4 pages
+            // at 600 dpi are about 700 megapixels, held at once (review of
+            // 1.4.32). The size is the largest page's (ImageMagick 7 reports
+            // that for any page), so this errs towards not reading.
+            $size = new \Imagick();
+            $size->setResolution(72, 72);
+            $size->pingImage($pdfPath . '[' . $page . ']');
+            $scale = $resolution / 72;
+            $pixels = $size->getImageWidth() * $scale * $size->getImageHeight() * $scale * $pages;
+            $size->clear();
+
+            if ($pixels > self::WHOLE_READ_MAX_PIXELS) {
+                $tooLarge = true;
+
                 return null;
             }
 
@@ -1229,6 +1422,39 @@ final class ImagickEngine implements EngineInterface
             // Out of memory on a long document, or anything else. The first
             // read is still in hand.
             return null;
+        }
+    }
+
+    /** GS_OPTIONS as it was before the retry set it; null when it was unset. */
+    private static ?string $gsOptionsBefore = null;
+
+    /** Whether the retry's GS_OPTIONS is in the environment now. */
+    private static bool $gsOptionsSet = false;
+
+    /** Whether restoreGsOptions() is registered for shutdown (once a request). */
+    private static bool $gsOptionsGuarded = false;
+
+    /**
+     * Put GS_OPTIONS back as it was before the retry, if the retry set it
+     *
+     * Restore rather than clear: this environment outlives the request in a
+     * persistent worker, and something else may be relying on a value the
+     * site set deliberately.
+     *
+     * @internal Public only for register_shutdown_function().
+     */
+    public static function restoreGsOptions(): void
+    {
+        if (!self::$gsOptionsSet) {
+            return;
+        }
+
+        self::$gsOptionsSet = false;
+
+        if (null !== self::$gsOptionsBefore) {
+            putenv('GS_OPTIONS=' . self::$gsOptionsBefore);
+        } else {
+            putenv('GS_OPTIONS');
         }
     }
 
@@ -1297,7 +1523,11 @@ final class ImagickEngine implements EngineInterface
             return null;
         }
 
-        $previous = getenv('GS_OPTIONS');
+        // The process's own environment, not the server's request variables:
+        // under FPM a value given only as a FastCGI parameter was read here
+        // and then written into the worker's environment as "the previous
+        // one", where it stayed for every later request (review of 1.4.32).
+        $previous = getenv('GS_OPTIONS', true);
         $one = null;
 
         try {
@@ -1307,19 +1537,25 @@ final class ImagickEngine implements EngineInterface
             // environment is the process's, shared by every thread for the
             // length of this read; PHP's usual servers run one request a
             // process.
+            self::$gsOptionsBefore = is_string($previous) && '' !== $previous ? $previous : null;
+            self::$gsOptionsSet = true;
+
+            // A request that dies inside the read -- max_execution_time on a
+            // long render -- runs no finally, and the switch stayed in this
+            // worker's environment for every request after it, making a
+            // workaround the first attempt for every PDF (review after
+            // 1.4.32). Shutdown functions still run after that fatal error.
+            if (!self::$gsOptionsGuarded) {
+                self::$gsOptionsGuarded = true;
+                register_shutdown_function([self::class, 'restoreGsOptions']);
+            }
+
             putenv('GS_OPTIONS=' . trim((is_string($previous) ? $previous : '') . ' ' . $flags));
             $one = $this->readAnyRoute($pdfPath, $page, $resolution);
         } catch (\Throwable $e) {
             $one = null;
         } finally {
-            // Restore rather than clear: this environment outlives the
-            // request in a persistent worker, and something else may be
-            // relying on a value the site set deliberately.
-            if (is_string($previous) && '' !== $previous) {
-                putenv('GS_OPTIONS=' . $previous);
-            } else {
-                putenv('GS_OPTIONS');
-            }
+            self::restoreGsOptions();
         }
 
         if (null === $one) {
@@ -1579,7 +1815,7 @@ final class ImagickEngine implements EngineInterface
                 'name' => __('CMYK PDF Rendering', 'rapls-pdf-image-creator'),
                 'status' => false,
                 'message' => __('Broken on this server (tested)', 'rapls-pdf-image-creator'),
-                'detail' => __('A CMYK test page came back blank. Ask your hosting provider to update ImageMagick to version 7, or to change the ps:cmyk delegate from bmpsep8 to pamcmyk32. RGB PDFs are not affected.', 'rapls-pdf-image-creator') . $deviceNote,
+                'detail' => __('A CMYK test page came back blank. Ask your hosting provider to update ImageMagick to version 7. Changing the ps:cmyk delegate from bmpsep8 to pamcmyk32 helps only where ImageMagick runs Ghostscript as a program; where it calls Ghostscript as a library, editing delegates.xml has no effect. RGB PDFs are not affected.', 'rapls-pdf-image-creator') . $deviceNote,
             ];
         }
 

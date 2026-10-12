@@ -107,6 +107,7 @@ if (!defined('ABSPATH')) {
                     <th scope="row"><?php esc_html_e('Output Format', 'rapls-pdf-image-creator'); ?></th>
                     <td>
                         <fieldset>
+                            <legend class="screen-reader-text"><?php esc_html_e('Output Format', 'rapls-pdf-image-creator'); ?></legend>
                             <label>
                                 <input type="radio" name="rapls_pic_settings[format]" value="jpeg"
                                     <?php checked($config['format'], 'jpeg'); ?>>
@@ -137,6 +138,7 @@ if (!defined('ABSPATH')) {
                     <th scope="row"><?php esc_html_e('Background Color', 'rapls-pdf-image-creator'); ?></th>
                     <td>
                         <fieldset>
+                            <legend class="screen-reader-text"><?php esc_html_e('Background Color', 'rapls-pdf-image-creator'); ?></legend>
                             <label>
                                 <input type="radio" name="rapls_pic_settings[bgcolor]" value="white"
                                     <?php checked($config['bgcolor'], 'white'); ?>>
@@ -267,6 +269,7 @@ if (!defined('ABSPATH')) {
                     <th scope="row"><?php esc_html_e('Default Insert Type', 'rapls-pdf-image-creator'); ?></th>
                     <td>
                         <fieldset>
+                            <legend class="screen-reader-text"><?php esc_html_e('Default Insert Type', 'rapls-pdf-image-creator'); ?></legend>
                             <label>
                                 <input type="radio" name="rapls_pic_settings[insert_type]" value="image"
                                     <?php checked($config['insert_type'] ?? 'image', 'image'); ?>>
@@ -327,6 +330,7 @@ if (!defined('ABSPATH')) {
                     <th scope="row"><?php esc_html_e('Link To', 'rapls-pdf-image-creator'); ?></th>
                     <td>
                         <fieldset>
+                            <legend class="screen-reader-text"><?php esc_html_e('Link To', 'rapls-pdf-image-creator'); ?></legend>
                             <label>
                                 <input type="radio" name="rapls_pic_settings[insert_link]" value="file"
                                     <?php checked($config['insert_link'] ?? 'file', 'file'); ?>>
@@ -405,6 +409,7 @@ if (!defined('ABSPATH')) {
                 <?php esc_html_e('Stop after the current PDF', 'rapls-pdf-image-creator'); ?>
             </button>
         </p>
+        <p id="rapls-pic-bulk-message" role="status" aria-live="polite"></p>
 
         <div id="rapls-pic-bulk-results" style="display: none;">
             <h3><?php esc_html_e('Scan Results', 'rapls-pdf-image-creator'); ?></h3>
@@ -630,6 +635,7 @@ if (!defined('ABSPATH')) {
             <button type="button" id="rapls-pic-refresh-stats" class="button button-secondary">
                 <?php esc_html_e('Refresh Statistics', 'rapls-pdf-image-creator'); ?>
             </button>
+            <span id="rapls-pic-stats-error" class="rapls-pic-stats-error" role="status"></span>
         </p>
 
         <table class="widefat rapls-pic-stats-table" id="rapls-pic-stats-table">
@@ -657,10 +663,12 @@ if (!defined('ABSPATH')) {
                 <a href="https://buymeacoffee.com/rapls" target="_blank" rel="noopener noreferrer" class="rapls-pic-bmc-button">
                     <span class="rapls-pic-bmc-icon">☕</span>
                     <?php esc_html_e('Buy me a coffee', 'rapls-pdf-image-creator'); ?>
+                    <span class="screen-reader-text"><?php esc_html_e('(opens in a new tab)', 'rapls-pdf-image-creator'); ?></span>
                 </a>
                 <a href="https://wordpress.org/support/plugin/rapls-pdf-image-creator/reviews/#new-post" target="_blank" rel="noopener noreferrer" class="rapls-pic-review-button">
                     <span class="rapls-pic-review-icon">★</span>
                     <?php esc_html_e('Leave a review', 'rapls-pdf-image-creator'); ?>
+                    <span class="screen-reader-text"><?php esc_html_e('(opens in a new tab)', 'rapls-pdf-image-creator'); ?></span>
                 </a>
             </div>
             <p class="rapls-pic-review-note"><?php esc_html_e('Your reviews help other users discover this plugin. Thank you!', 'rapls-pdf-image-creator'); ?></p>

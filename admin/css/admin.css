@@ -189,42 +189,43 @@
 }
 
 .rapls-pic-log-content .log-success {
-    color: #00a32a;
+    color: #007017;
 }
 
 .rapls-pic-log-content .log-error {
-    color: #d63638;
+    color: #b32d2e;
 }
 
 .rapls-pic-log-content .log-info {
-    color: #72aee6;
+    /* WordPress's own link blue: #72aee6 was 2.2:1 on the log's grey (review of 1.4.32). */
+    color: #2271b1;
 }
 
 /* Buttons */
-#pic-bulk-start,
-#pic-bulk-stop {
+#rapls-pic-bulk-start,
+#rapls-pic-bulk-stop {
     margin-left: 5px;
 }
 
-#pic-bulk-stop {
+#rapls-pic-bulk-stop {
     background: #d63638;
     border-color: #d63638;
     color: #fff;
 }
 
-#pic-bulk-stop:hover {
+#rapls-pic-bulk-stop:hover {
     background: #b32d2e;
     border-color: #b32d2e;
 }
 
-#pic-bulk-stop:disabled {
+#rapls-pic-bulk-stop:disabled {
     background: #dcdcde !important;
     border-color: #dcdcde !important;
     color: #a7aaad !important;
 }
 
 /* Bulk Status Message */
-#pic-bulk-status {
+#rapls-pic-bulk-status {
     font-weight: 600;
     margin: 10px 0;
 }
@@ -320,7 +321,7 @@
 .rapls-pic-review-note {
     margin-top: 12px;
     font-size: 12px;
-    color: #787c82 !important;
+    color: #646970 !important;
 }
 
 /* Responsive */

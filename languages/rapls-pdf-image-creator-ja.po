@@ -7,7 +7,7 @@ msgstr ""
 "Project-Id-Version: Rapls PDF Image Creator 1.4.32\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-09-11 08:48+0900\n"
-"PO-Revision-Date: 2024-01-01 00:00+0000\n"
+"PO-Revision-Date: 2026-10-12 21:30+0900\n"
 "Last-Translator: \n"
 "Language-Team: Japanese\n"
 "Language: ja\n"
@@ -173,8 +173,8 @@ msgid ""
 "\"Title\" inserts only a text link to the PDF. \"Custom HTML\" allows using "
 "document viewer plugins."
 msgstr ""
-"「タイトル」は PDF へのテキストリンクのみを挿入します。「カスタム HTML」はド"
-"キュメントビュープラグインの使用を可能にします。"
+"「タイトル」は PDF へのテキストリンクのみを挿入します。「カスタム HTML」では、ド"
+"キュメントビューアーのプラグインを使えます。"
 
 msgid "Default Insert Size"
 msgstr "デフォルト挿入サイズ"
@@ -308,7 +308,7 @@ msgstr ""
 "す。"
 
 msgid "Ask your hosting provider for either of the following:"
-msgstr "ホスティングプロバイダーに、次のいずれかを依頼してください。"
+msgstr "ホスティング事業者に、次のいずれかを依頼してください。"
 
 msgid "Upgrade ImageMagick to version 7."
 msgstr "ImageMagick をバージョン7に更新する。"
@@ -437,7 +437,7 @@ msgid "Scan again, including these"
 msgstr "これらを含めて再スキャン"
 
 msgid "An error occurred while scanning for PDFs."
-msgstr "PDF の検索中にエラーが発生しました。"
+msgstr "PDF のスキャン中にエラーが発生しました。"
 
 msgid "Invalid PDF ID."
 msgstr "無効な PDF ID です。"
@@ -579,14 +579,8 @@ msgstr ""
 msgid "Broken on this server (tested)"
 msgstr "このサーバーでは動作しません (実測)"
 
-msgid ""
-"A CMYK test page came back blank. Ask your hosting provider to update "
-"ImageMagick to version 7, or to change the ps:cmyk delegate from bmpsep8 to "
-"pamcmyk32. RGB PDFs are not affected."
-msgstr ""
-"CMYK のテストページが真っ白で返りました。ImageMagick をバージョン7に更新する"
-"か、ps:cmyk デリゲートを bmpsep8 から pamcmyk32 に変更するよう、ホスティング"
-"事業者に依頼してください。RGB の PDF には影響しません。"
+msgid "A CMYK test page came back blank. Ask your hosting provider to update ImageMagick to version 7. Changing the ps:cmyk delegate from bmpsep8 to pamcmyk32 helps only where ImageMagick runs Ghostscript as a program; where it calls Ghostscript as a library, editing delegates.xml has no effect. RGB PDFs are not affected."
+msgstr "CMYK のテストページが真っ白で返りました。ImageMagick をバージョン7に更新するよう、ホスティング事業者に依頼してください。ps:cmyk デリゲートを bmpsep8 から pamcmyk32 に変更して効くのは、ImageMagick が Ghostscript をプログラムとして起動している場合だけです。ライブラリとして呼び出している場合、delegates.xml を編集しても変わりません。RGB の PDF には影響しません。"
 
 msgid "RGB PDFs are not affected."
 msgstr "RGB の PDF には影響しません。"
@@ -929,7 +923,7 @@ msgid "Your PDFs have been getting thumbnails from this plugin. If it has been w
 msgstr "このプラグインで PDF のサムネイルが作られています。うまく動いていれば、レビューを書いていただけませんか ? ほかの人がこのプラグインを見つける、いちばんの手がかりになります。"
 
 msgid "Nothing was drawn, and ImageMagick raised no error. This is almost always the PDF renderer underneath it, Ghostscript, being too old for the file: Ghostscript 9.27 and earlier fail on files that Ghostscript 10 draws, and write an empty page. The page was already tried again with transparency switched off, which works around the most common case, where this server allows it. Ask your hosting provider which Ghostscript version is installed and whether it can be updated. If the page really is blank, choose another page."
-msgstr "何も描画されず、ImageMagick もエラーを出しませんでした。ほとんどの場合、その下で PDF を描く Ghostscript がこのファイルには古すぎることが原因です。Ghostscript 9.27以前は、Ghostscript 10なら描けるファイルで失敗し、空のページを書き出します。このページは、サーバーが許す場合、もっとも多い原因を回避するために透明を無効にして描き直しています。インストールされている Ghostscript の版と更新できるかを、ホスティング会社に確認してください。ページが本当に白紙なら、別のページを選んでください。"
+msgstr "何も描画されず、ImageMagick もエラーを出しませんでした。ほとんどの場合、その下で PDF を描く Ghostscript がこのファイルには古すぎることが原因です。Ghostscript 9.27以前は、Ghostscript 10なら描けるファイルで失敗し、空のページを書き出します。このページは、サーバーが許す場合、もっとも多い原因を回避するために透明を無効にして描き直しています。インストールされている Ghostscript の版と更新できるかを、ホスティング事業者に確認してください。ページが本当に白紙なら、別のページを選んでください。"
 
 msgid "Page %1$d was asked for (counting from 0), but this PDF has %2$d page."
 msgid_plural "Page %1$d was asked for (counting from 0), but this PDF has %2$d pages."
@@ -940,3 +934,37 @@ msgstr "「設定」タブの「ページ番号」は0から数えます (0が�
 
 msgid "The chosen page is not in this PDF."
 msgstr "指定したページは、この PDF にありません。"
+
+msgid "(opens in a new tab)"
+msgstr "(新しいタブで開きます)"
+
+msgid "If this stays, ask your hosting provider to check ImageMagick and Ghostscript, with the message below."
+msgstr "このままの場合は、下のメッセージを添えて、ImageMagick と Ghostscript を確認するようホスティング事業者に依頼してください。"
+
+msgid "ImageMagick Version"
+msgstr "ImageMagick のバージョン"
+
+msgid "ImageMagick could not read the small test PDF this plugin uses to check the server. It is tried again in ten minutes."
+msgstr "このプラグインがサーバーの確認に使う小さなテスト用 PDF を、ImageMagick が読み込めませんでした。10分後にもう一度確認します。"
+
+msgid "This server cannot make PDF thumbnails at the moment."
+msgstr "このサーバーでは、いまは PDF のサムネイルを作れません。"
+
+msgid "Imagick Extension"
+msgstr "Imagick 拡張機能"
+
+#, php-format
+msgid "No PDF here is an ordinary Media Library item (%s). Bulk Generate handles those only; a PDF with any other status — private, in the trash, or one another plugin gave it — is left out until it is an ordinary item again."
+msgstr "メディアライブラリの通常の項目になっている PDF がありません (%s)。一括生成が扱うのは通常の項目だけです。ほかの状態の PDF（非公開、ゴミ箱の中、ほかのプラグインが状態を付けたもの）は、通常の項目に戻るまで対象になりません。"
+
+msgid "PDF Support"
+msgstr "PDF 対応"
+
+msgid "See the Status tab"
+msgstr "「ステータス」タブを見る"
+
+msgid "The choice changed: scan again before starting."
+msgstr "選択が変わりました。開始する前にもう一度スキャンしてください。"
+
+msgid "The statistics could not be read. Try again."
+msgstr "統計を読み込めませんでした。もう一度お試しください。"

@@ -50,6 +50,7 @@ namespace {
     function wp_using_ext_object_cache() { return !empty($GLOBALS['ext_cache']); }
     function wp_cache_delete($key, $group = '') { ++$GLOBALS['evicted']; return true; }
     function add_shortcode($tag, $cb) { $GLOBALS['shortcodes'][$tag] = $cb; }
+    if (!function_exists('get_post_mime_type')) { function get_post_mime_type($id) { return $GLOBALS['mime_of'][(int) $id] ?? false; } }
     function shortcode_atts($pairs, $atts, $tag = '') { return array_merge($pairs, array_intersect_key((array) $atts, $pairs)); }
     function wp_get_attachment_image($id, $size, $icon, $attr) { return '<img class="' . $attr['class'] . '">'; }
     function wp_get_attachment_url($id) { return 'https://example.test/doc.pdf'; }
@@ -204,6 +205,17 @@ namespace {
     [, $data] = $scan(false);
     check('Rows the query did not see: the note says something filters it', false !== strpos($data['note'], 'The database has 2 PDF attachment(s) (inherit=2)'), true);
 
+    // Review of 1.4.32: PDFs that are none of them ordinary items (private, or
+    // private and trashed) are said to be so, not blamed on another plugin.
+    $library(0, 0);
+    $GLOBALS['statuses'] = ['private', 'trash'];
+    [, $data] = $scan(false);
+    check('Only private and trashed PDFs: the note says the scan takes ordinary items only', [false !== strpos($data['note'], 'No PDF here is an ordinary Media Library item'), false !== strpos($data['note'], 'pre_get_posts')], [true, false]);
+    $library(0, 0);
+    $GLOBALS['statuses'] = ['inherit', 'private'];
+    [, $data] = $scan(false);
+    check('  ...ordinary items the query did not see still point at a filter', false !== strpos($data['note'], 'pre_get_posts'), true);
+
     // Verification of the change: every PDF in the trash is said so, not
     // blamed on another plugin.
     $library(0, 0);
@@ -267,10 +279,35 @@ namespace {
     $register->invoke($plugin);
     $GLOBALS['meta'][7]['_rapls_pic_thumbnail_id'] = 70;
     $GLOBALS['posts'][70] = (object) ['ID' => 70];
+    $GLOBALS['mime_of'][7] = 'application/pdf';
     $atts = ['id' => 7, 'class' => 'alignleft shadow'];
     check('[rapls_pdf_thumbnail class="alignleft shadow"]', ($GLOBALS['shortcodes']['rapls_pdf_thumbnail'])($atts), '<img class="alignleft shadow">');
     check('[rapls_pdf_clickable_thumbnail class="alignleft shadow"]', false !== strpos(($GLOBALS['shortcodes']['rapls_pdf_clickable_thumbnail'])($atts), '<img class="alignleft shadow">'), true);
     check('[rapls_pdf_download_link class="alignleft shadow x\"y"]', false !== strpos(($GLOBALS['shortcodes']['rapls_pdf_download_link'])(['id' => 7, 'class' => 'alignleft shadow x"y']), '<a href="https://example.test/doc.pdf" class="alignleft shadow xy" download>'), true);
+
+    // Review of 1.4.32: the scan asks for ordinary Media Library items
+    // ("inherit"), marked as the plugin's own query so that the "hide
+    // generated images" setting does not hide anything from it.
+    $GLOBALS['queries'] = [];
+    $library(3, 0);
+    $scan(false);
+    $lastQuery = end($GLOBALS['queries']);
+    check('the scan asks for inherit-status PDFs, marked as its own query', [$lastQuery['post_status'] ?? null, $lastQuery['rapls_pic_internal'] ?? null], ['inherit', true]);
+
+    // Review of 1.4.32: only a PDF's id is taken. A post's -- private, a
+    // draft -- gave its featured image and its title to whoever wrote the
+    // shortcode.
+    $GLOBALS['mime_of'][8] = false;
+    $GLOBALS['meta'][8]['_thumbnail_id'] = 70;
+    $GLOBALS['mime_of'][9] = 'image/jpeg';
+    $GLOBALS['meta'][9]['_rapls_pic_thumbnail_id'] = 70;
+    check('the shortcodes say nothing about a post or an image that is not a PDF', [
+        ($GLOBALS['shortcodes']['rapls_pdf_thumbnail'])(['id' => 8]),
+        ($GLOBALS['shortcodes']['rapls_pdf_thumbnail_url'])(['id' => 8]),
+        ($GLOBALS['shortcodes']['rapls_pdf_clickable_thumbnail'])(['id' => 8]),
+        ($GLOBALS['shortcodes']['rapls_pdf_download_link'])(['id' => 8]),
+        ($GLOBALS['shortcodes']['rapls_pdf_thumbnail'])(['id' => 9]),
+    ], ['', '', '', '', '']);
 
     echo "\n$pass passed, $fail failed\n";
     exit($fail ? 1 : 0);

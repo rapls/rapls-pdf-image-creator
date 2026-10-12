@@ -186,6 +186,10 @@ $withDetail = call_private($engine, 'statusFor', ['pdf_blocked_by_policy', '/etc
 check('detail is passed through', $withDetail['detail'], '/etc/ImageMagick-6/policy.xml');
 check('policy branch names policy.xml',
     false !== stripos($withDetail['action'], 'policy.xml'), true);
+// Review of 1.4.32: a read check that failed for a reason of the moment says
+// so -- it is still the error code, but not "could not be asked which formats".
+$readFailed = call_private($engine, 'statusFor', ['pdf_read_failed', 'x']);
+check('a failed test read: the error code, its own words, tried again', [$readFailed['code'], $readFailed['summary'] === call_private($engine, 'statusFor', ['error'])['summary'], false !== strpos($readFailed['summary'], 'ten minutes')], ['error', false, true]);
 check('delegate branch does not blame policy alone',
     false !== stripos(call_private($engine, 'statusFor', ['pdf_unsupported'])['action'], 'ImageMagick'), true);
 
@@ -230,10 +234,17 @@ $messages = [
     'no decode delegate for this image format `PDF\'' => 'delegate',
 ];
 
+// Review of 1.4.32: asked of FailureCode itself (this used to repeat its
+// pattern, and so tested a copy). A build's warning about its own missing
+// delegates.xml is not "no PDF support"; ImageMagick 6's "delegate failed" is.
+$messages += [
+    "UnableToOpenConfigureFile `delegates.xml' @ warning/configure.c/GetConfigureOptions/722" => 'other',
+    "Postscript delegate failed `/tmp/x.pdf': No such file or directory @ error/pdf.c/ReadPDFImage/713" => 'delegate',
+    "DelegateLibrarySupportNotBuiltIn `x.pdf' (Freetype)" => 'delegate',
+];
 foreach ($messages as $message => $expected) {
-    $isPolicy = (bool) preg_match('/not\s*authoriz|security policy/i', $message);
-    $isDelegate = !$isPolicy && (bool) preg_match('/no decode delegate|FailedToExecuteCommand|delegate/i', $message);
-    check(substr($message, 0, 34) . '...', $isPolicy ? 'policy' : ($isDelegate ? 'delegate' : 'other'), $expected);
+    $said = \Rapls\PDFImageCreator\FailureCode::fromExceptionMessage($message);
+    check(substr($message, 0, 34) . '...', \Rapls\PDFImageCreator\FailureCode::PDF_BLOCKED_BY_POLICY === $said ? 'policy' : (\Rapls\PDFImageCreator\FailureCode::PDF_UNSUPPORTED === $said ? 'delegate' : 'other'), $expected);
 }
 
 echo "\n=== CMYK probe: blank detection ===\n";

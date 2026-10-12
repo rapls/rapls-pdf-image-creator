@@ -197,38 +197,6 @@ final class Settings
 
 
     /**
-     * Get file extension for output format
-     */
-    public function getFileExtension(): string
-    {
-        $format = $this->getFormat();
-        switch ($format) {
-            case 'png':
-                return 'png';
-            case 'webp':
-                return 'webp';
-            default:
-                return 'jpg';
-        }
-    }
-
-    /**
-     * Get MIME type for output format
-     */
-    public function getMimeType(): string
-    {
-        $format = $this->getFormat();
-        switch ($format) {
-            case 'png':
-                return 'image/png';
-            case 'webp':
-                return 'image/webp';
-            default:
-                return 'image/jpeg';
-        }
-    }
-
-    /**
      * Get default insert size
      */
     public function getInsertSize(): string

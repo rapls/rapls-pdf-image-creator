@@ -234,6 +234,13 @@ final class Admin
             RAPLS_PIC_VERSION
         );
 
+        // The script only on the settings page: on the Media Library it did
+        // nothing, and every visit fetched it and a nonce for it (review of
+        // 1.4.32). The stylesheet styles the Media Library's column too.
+        if ($hook !== 'settings_page_' . self::PAGE_SLUG) {
+            return;
+        }
+
         wp_enqueue_script(
             'rapls-pic-admin',
             RAPLS_PIC_PLUGIN_URL . 'admin/js/admin.js',
@@ -270,6 +277,8 @@ final class Admin
                 'httpStatus' => __('Status: %s', 'rapls-pdf-image-creator'),
                 /* translators: %s: error text from the server */
                 'httpError' => __('Error: %s', 'rapls-pdf-image-creator'),
+                'statsFailed' => __('The statistics could not be read. Try again.', 'rapls-pdf-image-creator'),
+                'rescan' => __('The choice changed: scan again before starting.', 'rapls-pdf-image-creator'),
             ],
         ]);
     }
@@ -349,7 +358,7 @@ final class Admin
      */
     public function removableQueryArgs($args): array
     {
-        return array_merge((array) $args, ['rapls_pic_generated', 'rapls_pic_error', 'rapls_pic_rechecked']);
+        return array_merge((array) $args, ['rapls_pic_generated', 'rapls_pic_error', 'rapls_pic_rechecked', 'rapls_pic_dismiss_engine_notice', 'rapls_pic_dismiss_color_notice']);
     }
 
     /**
@@ -359,6 +368,16 @@ final class Admin
     {
         $this->showColorUpdateNotice();
 
+        $this->showRegenerateNotices();
+
+        $this->showEngineNotice();
+    }
+
+    /**
+     * The notice after the Media Library's "Regenerate Thumbnail"
+     */
+    private function showRegenerateNotices(): void
+    {
         // Success notice
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Display-only notice, no data processing
         if (isset($_GET['rapls_pic_generated'])) {
@@ -370,12 +389,36 @@ final class Admin
         // Error notice
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Display-only notice, no data processing
         if (isset($_GET['rapls_pic_error'])) {
+            // With the reason, and the way to the Status tab where the server
+            // is described: "failed" alone left nothing to go on (review of
+            // 1.4.32). The reason is this attempt's code, carried in the
+            // address and said in this plugin's own words. The recorded
+            // message was ImageMagick's text, with its command line and the
+            // server's paths, shown to anyone who could edit the PDF -- and
+            // the site's last failure, which may have been another PDF's
+            // (review after 1.4.32). The Status tab, for administrators,
+            // still shows the message itself.
+            // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Display-only notice, no data processing
+            $code = sanitize_key(wp_unslash((string) $_GET['rapls_pic_error']));
+            $reason = FailureCode::describe($code)['label'];
+            // ERROR too: from generate() it is the server check's "unable to
+            // check" -- a test PDF ImageMagick could not read just now.
+            if ('' === $reason && in_array($code, [FailureCode::NO_EXTENSION, FailureCode::PDF_BLOCKED_BY_POLICY, FailureCode::PDF_UNSUPPORTED, FailureCode::ERROR], true)) {
+                $reason = __('This server cannot make PDF thumbnails at the moment.', 'rapls-pdf-image-creator');
+            }
+
             echo '<div class="notice notice-error is-dismissible">';
-            echo '<p>' . esc_html__('Failed to generate PDF thumbnail.', 'rapls-pdf-image-creator') . '</p>';
+            echo '<p>' . esc_html__('Failed to generate PDF thumbnail.', 'rapls-pdf-image-creator');
+            if ('' !== $reason) {
+                echo ' ' . esc_html($reason);
+            }
+            if (current_user_can('manage_options')) {
+                echo ' <a href="' . esc_url(admin_url('options-general.php?page=' . self::PAGE_SLUG . '#tab-status')) . '">'
+                    . esc_html__('See the Status tab', 'rapls-pdf-image-creator') . '</a>';
+            }
+            echo '</p>';
             echo '</div>';
         }
-
-        $this->showEngineNotice();
     }
 
     /**
@@ -483,12 +526,22 @@ final class Admin
      */
     private function getEngineNoticeDismissUrl(string $code): string
     {
-        global $pagenow;
-
-        $base = admin_url(is_string($pagenow) && '' !== $pagenow ? $pagenow : 'index.php');
+        // This screen's own address, query and all: built from the file name
+        // alone, it went from another plugin's admin.php?page=x to a bare
+        // admin.php, which shows nothing, and from Pages to Posts (review of
+        // 1.4.32). The argument is taken off the address afterwards
+        // (removableQueryArgs()). Without the screen's own nonce: this
+        // link's took its place, and a confirmation screen -- Plugins'
+        // "Delete" -- answered "The link you followed has expired" (review
+        // after 1.4.32). Its action goes too only when it came with a nonce,
+        // a one-time request: "action=edit" is the screen itself, and
+        // post.php without it is the Posts list.
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only whether one is there
+        $oneTime = isset($_GET['_wpnonce']);
+        $here = remove_query_arg($oneTime ? ['_wpnonce', '_wp_http_referer', 'action', 'action2'] : ['_wp_http_referer']);
 
         return wp_nonce_url(
-            add_query_arg('rapls_pic_dismiss_engine_notice', $code, $base),
+            add_query_arg('rapls_pic_dismiss_engine_notice', $code, $here),
             'rapls_pic_dismiss_engine_notice'
         );
     }

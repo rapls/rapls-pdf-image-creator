@@ -133,6 +133,18 @@ final class BulkProcessor
                         ),
                         $rows['total']
                     );
+                } elseif (0 === $stats['total'] && 0 === $rows['inherit']) {
+                    // None of them is an ordinary Media Library item: private,
+                    // in the trash, or given a status by another plugin. The
+                    // scan takes "inherit" only, so blaming another plugin's
+                    // query was wrong here too (review of 1.4.32), and
+                    // "private or trashed" did not cover the last (review
+                    // after 1.4.32).
+                    $note = sprintf(
+                        /* translators: %s: post statuses and counts, e.g. "private=2, trash=1" */
+                        __('No PDF here is an ordinary Media Library item (%s). Bulk Generate handles those only; a PDF with any other status — private, in the trash, or one another plugin gave it — is left out until it is an ordinary item again.', 'rapls-pdf-image-creator'),
+                        $rows['statuses']
+                    );
                 } elseif (0 === $stats['total']) {
                     // The rows are there and the query did not see them.
                     $note = sprintf(
@@ -350,7 +362,7 @@ final class BulkProcessor
      * library is empty or whether something filtered the answer away. This
      * counts the rows, so the two can be told apart.
      *
-     * @return array{total: int, inherit: int, statuses: string}
+     * @return array{total: int, inherit: int, trash: int, statuses: string}
      */
     private function countPdfRows(): array
     {

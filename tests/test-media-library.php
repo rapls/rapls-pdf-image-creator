@@ -63,6 +63,7 @@ namespace {
     check('PDF without thumbnail: core preview kept', $library->filterAttachmentImageSrc($corePreview, 20, [900, 450], true), $corePreview);
     check('PDF without thumbnail, nothing found: false', $library->filterAttachmentImageSrc(false, 20, 'medium', false), false);
     check('not a PDF: untouched', $library->filterAttachmentImageSrc($corePreview, 30, 'medium', false), $corePreview);
+    check('a PDF ID given as a string still gets its thumbnail', $library->filterAttachmentImageSrc($corePreview, '10', 'large', false), $thumbnail);
 
     // The thumbnail's file is gone: fall back to what core found.
     unset($GLOBALS['srcs'][11]);
@@ -172,6 +173,14 @@ namespace {
     $GLOBALS['mimes'][210] = 'image/jpeg';
     $GLOBALS['meta'][210]['_rapls_pic_is_thumbnail'] = '1';
     $GLOBALS['meta'][210]['_rapls_pic_source_pdf'] = 10;
+    // Review of 1.4.32: a generated image shown with its PDF's url keeps an
+    // image for every size, so a gallery's "large" is not the PDF.
+    $generatedJs = $library->filterAttachmentForJs(['url' => 'https://example.test/doc-pdf-thumbnail.jpg', 'mime' => 'image/jpeg', 'sizes' => ['full' => ['url' => 'https://example.test/doc-pdf-thumbnail.jpg', 'width' => 724, 'height' => 1024], 'thumbnail' => ['url' => 'https://example.test/doc-pdf-thumbnail-150x150.jpg', 'width' => 150, 'height' => 150]]], new WP_Post(210, 10, 'image/jpeg'), []);
+    check("a generated image under its PDF's url: every size an image, its own sizes kept", [
+        false !== strpos((string) ($generatedJs['url'] ?? ''), '.jpg'),
+        $generatedJs['sizes']['large']['url'] ?? null,
+        $generatedJs['sizes']['thumbnail']['url'] ?? null,
+    ], [false, 'https://example.test/doc-pdf-thumbnail.jpg', 'https://example.test/doc-pdf-thumbnail-150x150.jpg']);
     $rest = $library->filterRestAttachment(new WP_REST_Response(['id' => 210, 'mime_type' => 'image/jpeg', 'source_url' => 'https://example.test/doc-pdf-thumbnail.jpg', 'link' => 'https://example.test/?attachment_id=210']), new WP_Post(210, 10, 'image/jpeg'), new WP_REST_Request())->get_data();
     check("R68-02: a generated image's source_url stays its own", [$rest['source_url'], $rest['link'], $rest['rapls_pic_source_pdf_id'] ?? null, $rest['rapls_pic_source_pdf_url'] ?? null], ['https://example.test/doc-pdf-thumbnail.jpg', 'https://example.test/?attachment_id=210', 10, 'https://example.test/10.pdf']);
 
@@ -195,6 +204,20 @@ namespace {
         'https://cdn.example.net/media/2026/10/doc-pdf-thumbnail-300x225.jpg',
         'https://cdn.example.net/media/2026/10/doc-pdf-thumbnail-300x225.jpg',
     ]);
+    // Review of 1.4.32: a size the thumbnail has no file for -- "large" for a
+    // 1024-pixel image -- is the full image, never the PDF the block editor
+    // would fall back to (a gallery asks for "large").
+    if (!function_exists('get_intermediate_image_sizes')) { function get_intermediate_image_sizes() { return ['thumbnail', 'medium', 'medium_large', 'large', '1536x1536']; } }
+    $cdnJs = $library->filterAttachmentForJs(['url' => 'https://example.test/300.pdf', 'mime' => 'application/pdf'], new WP_Post(300, 0, 'application/pdf'), []);
+    $cdnRest = $library->filterRestAttachment(new WP_REST_Response(['id' => 300, 'mime_type' => 'application/pdf', 'source_url' => 'https://example.test/300.pdf', 'media_details' => []]), new WP_Post(300, 0, 'application/pdf'), new WP_REST_Request())->get_data();
+    $full = 'https://cdn.example.net/media/2026/10/doc-pdf-thumbnail.jpg';
+    check('a size not made is the full image, in the media modal and the REST answer; a size made stays its own', [
+        $cdnJs['sizes']['large']['url'] ?? null,
+        $cdnJs['sizes']['1536x1536']['url'] ?? null,
+        $cdnRest['media_details']['sizes']['large']['source_url'] ?? null,
+        $cdnRest['media_details']['sizes']['thumbnail']['source_url'] ?? null,
+        $cdnJs['sizes']['medium']['url'] ?? null,
+    ], [$full, $full, $full, $full, 'https://cdn.example.net/media/2026/10/doc-pdf-thumbnail-300x225.jpg']);
 
     // R67-03: only the Media Library screen's main query hides generated images.
     if (!function_exists('is_admin')) { function is_admin() { return true; } }
@@ -210,6 +233,83 @@ namespace {
     check("R67-03: upload.php's main query hides generated images", $narrowed('upload.php', true), true);
     check('  ...another query on that screen is left alone', $narrowed('upload.php', false), false);
     check("  ...another plugin's admin-ajax query is left alone", $narrowed('admin-ajax.php', true), false);
+
+    // Review of 1.4.32: the plugin's own queries are not hidden from; the
+    // icon and attribute filters do nothing with "Display Thumbnail Icon"
+    // off; an image's metadata is not given a PDF's keys; the regenerate
+    // link is only for someone who may edit the PDF.
+    $GLOBALS['pagenow'] = 'upload.php';
+    $own = new WP_Query(['post_type' => 'attachment', 'rapls_pic_internal' => true], true);
+    $library->filterMediaLibrary($own);
+    $GLOBALS['options'][\Rapls\PDFImageCreator\Settings::OPTION_NAME] = ['display_thumbnail_icon' => false];
+    $settingsAgain = new \Rapls\PDFImageCreator\Settings();
+    $settingsField = new ReflectionProperty(\Rapls\PDFImageCreator\MediaLibrary::class, 'settings');
+    if (PHP_VERSION_ID < 80100) { $settingsField->setAccessible(true); }
+    $settingsWere = $settingsField->getValue($library);
+    $settingsField->setValue($library, $settingsAgain);
+    $GLOBALS['mimes'][40] = 'application/pdf';
+    $GLOBALS['meta'][40]['_rapls_pic_thumbnail_id'] = 41;
+    $GLOBALS['posts'][41] = (object) ['ID' => 41];
+    $GLOBALS['srcs'][41] = ['https://example.test/doc-40-thumbnail.png', 724, 1024, false];
+    $iconOff = [
+        $library->filterAttachmentImageAttributes(['src' => 'icon.png'], new WP_Post(40, 0, 'application/pdf'), 'thumbnail'),
+        $library->filterMimeTypeIcon('https://example.test/document.png', 'application/pdf', 10),
+    ];
+    $settingsField->setValue($library, $settingsWere);
+    unset($GLOBALS['options'][\Rapls\PDFImageCreator\Settings::OPTION_NAME]);
+    $imageMeta = ['width' => 300, 'height' => 200, 'sizes' => ['thumbnail' => ['file' => 'a-150x150.jpg']]];
+    $GLOBALS['meta'][30]['_wp_attached_file'] = '2026/10/a.jpg';
+    check('the plugin\'s own query is not hidden from; with the icon setting off nothing is swapped; an image\'s metadata is left as it is', [
+        $own->get('meta_query'),
+        $iconOff,
+        $library->ensurePdfMetadataHasImageKeys($imageMeta, 30),
+    ], ['', [['src' => 'icon.png'], 'https://example.test/document.png'], $imageMeta]);
+    if (!function_exists('current_user_can')) { function current_user_can($cap, ...$a) { return !empty($GLOBALS['can_edit']); } }
+    if (!function_exists('wp_nonce_url')) { function wp_nonce_url($u, $a) { return $u . '&_wpnonce=n'; } }
+    if (!function_exists('admin_url')) { function admin_url($p = '') { return 'https://example.test/wp-admin/' . $p; } }
+    if (!function_exists('esc_url')) { function esc_url($u) { return $u; } }
+    if (!function_exists('esc_html__')) { function esc_html__($s, $d = null) { return $s; } }
+    $GLOBALS['can_edit'] = false;
+    $withoutEdit = $library->addRowActions(['edit' => 'Edit'], new WP_Post(10, 0, 'application/pdf'));
+    $GLOBALS['can_edit'] = true;
+    $withEdit = $library->addRowActions(['edit' => 'Edit'], new WP_Post(10, 0, 'application/pdf'));
+    check('  ...the regenerate link only for someone who may edit the PDF', [array_keys($withoutEdit), isset($withEdit['rapls_pic_regenerate'])], [['edit'], true]);
+
+    // Review of 1.4.32: core hands these filters what its caller gave it --
+    // '' from an empty post meta, null for $icon -- and a typed parameter made
+    // that a fatal error on any page. Called as core calls them, not strictly.
+    $untyped = [];
+    $GLOBALS['mimes'][977] = 'application/pdf';
+    foreach ([
+        'image_src' => [[$library, 'filterAttachmentImageSrc'], [false, '', 'large', null], false],
+        'image_src null id' => [[$library, 'filterAttachmentImageSrc'], [false, null, 'large', false], false],
+        'image' => [[$library, 'filterAttachmentImage'], ['', '', 'large', null, ''], ''],
+        // Review after 1.4.32: a size of null or a number reaches the
+        // thumbnail's own call, which takes a name.
+        'image of a PDF, size null' => [[$library, 'filterAttachmentImage'], ['', 977, null, false, ''], ''],
+        'image of a PDF, size 0' => [[$library, 'filterAttachmentImage'], ['', 977, 0, false, ''], ''],
+        'mime icon false' => [[$library, 'filterMimeTypeIcon'], [false, 'application/pdf', ''], false],
+        'posts_where one arg' => [[$library, 'limitPdfsToThumbnailed'], [' AND 1=1'], ' AND 1=1'],
+    ] as $label => [$callback, $args, $want]) {
+        try {
+            $untyped[$label] = call_user_func_array($callback, $args) === $want;
+        } catch (\Throwable $e) {
+            $untyped[$label] = get_class($e);
+        }
+    }
+    check("core's filters may pass '' or null: no fatal error, the value comes back", $untyped, array_fill_keys(array_keys($untyped), true));
+    // ...and the size it then asks for is core's default, the thumbnail, for
+    // a size of null or ''; a name or a number is passed on as a name.
+    if (!function_exists('get_the_title')) { function get_the_title($id) { return 'PDF ' . $id; } }
+    if (!function_exists('wp_get_attachment_image')) { function wp_get_attachment_image($id, $size = 'thumbnail', $icon = false, $attr = '') { $GLOBALS['image_sizes'][] = $size; return '<img>'; } }
+    $GLOBALS['meta'][977]['_rapls_pic_thumbnail_id'] = 978;
+    $GLOBALS['posts'][978] = new WP_Post(978, 977, 'image/jpeg');
+    $GLOBALS['image_sizes'] = [];
+    foreach ([null, '', 'medium', 300, ['a' => 1]] as $askedSize) {
+        $library->filterAttachmentImage('', 977, $askedSize, false, '');
+    }
+    unset($GLOBALS['meta'][977], $GLOBALS['posts'][978]);
+    check('  ...a size of null or \'\' asks for the thumbnail; a name or number is passed on; an array is the full size', $GLOBALS['image_sizes'], ['thumbnail', 'thumbnail', 'medium', '300', 'full']);
 
     echo "\n$pass passed, $fail failed\n";
     exit($fail ? 1 : 0);

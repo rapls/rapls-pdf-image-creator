@@ -52,6 +52,7 @@ function makeElement() {
         is() { return this._checked; },
         val() { return ''; },
         closest() { return makeElement(); },
+        next() { return $('output-of-range'); },
         click() { this._handlers.click && this._handlers.click({ preventDefault() {} }); return this; },
     };
 }
@@ -112,8 +113,10 @@ const i18n = {
     generating: 'Generating thumbnail %1$d of %2$d...', scan: 'Scan for PDFs', stopped: 'Stopped',
     stopping: 'Stopping after the current PDF...', continueRun: 'Continue', scanning: 'Scanning... %d PDFs so far',
     processingFile: 'Processing: %s', failed: 'Failed', requestFailed: 'Request failed', errorShort: 'Error',
-    httpStatus: 'Status: %s', httpError: 'Error: %s',
+    httpStatus: 'Status: %s', httpError: 'Error: %s', statsFailed: 'Stats failed', rescan: 'Scan again',
 };
+const replaced = [];
+const windowStub = { location: { hash: '' }, history: { replaceState(state, title, url) { replaced.push(url); } } };
 
 $('#rapls-pic-bulk-start').text('Start Generation');
 $('#rapls-pic-bulk-scan').text('Scan for PDFs');
@@ -122,7 +125,7 @@ const source = fs.readFileSync(path.join(__dirname, '..', 'admin', 'js', 'admin.
 vm.runInNewContext(source, {
     jQuery: $,
     document: documentStub,
-    window: { location: { hash: '' } },
+    window: windowStub,
     location: { reload() {} },
     raplsPicAdmin: { ajaxUrl: '/admin-ajax.php', nonce: 'n', i18n },
     confirm: () => { confirms++; return true; },
@@ -130,6 +133,13 @@ vm.runInNewContext(source, {
     setTimeout: () => {},
 });
 ready();
+
+// Review of 1.4.32: the script itself takes the tabs that are not chosen out
+// of the Tab order (the markup leaves them in, for when it does not run).
+check('Before anything is pressed, only the chosen tab is in the Tab order', tabs.map((t) => t.attr('tabindex')), [undefined, '-1', '-1']);
+// The range slider's number follows it, as text.
+$('input[type="range"].rapls-pic-range')._handlers.input.call({ value: '<b>150</b>' });
+check('The range slider\'s number is written as text', $('output-of-range').text(), '<b>150</b>');
 
 // Review after 1.4.31: nothing is asked until the Status tab is opened (this
 // script also loads on the Media Library, and every visit read the library).
@@ -224,6 +234,42 @@ fault();
 check('  ...a failed look stops, so Continue asks again from the same place', [$('#rapls-pic-bulk-status').text(), $('#rapls-pic-bulk-start').text(), requests.length], ['Stopped', 'Continue', 0]);
 $('#rapls-pic-bulk-start').click();
 check('  ...and Continue does', next().data.after, 0);
+
+console.log('\n--- Review of 1.4.32 ---');
+// The run above, finished first.
+answer({ pdf_id: null, filename: '', after: 9999, done: true });
+// What the server says about the library is written as text, never as markup.
+$('#rapls-pic-bulk-scan').click();
+answer({ done: true, after: 10, total: 0, total_pdfs: 0, with_thumbnail: 0, rows: 2, statuses: 'inherit=1, <img src=x onerror=alert(1)>=1', note: '<script>alert(1)</script>' });
+check('The scan\'s rows and note are text; nothing to do keeps Start off', [$('#rapls-pic-bulk-rows').text(), $('#rapls-pic-bulk-note').text(), $('#rapls-pic-bulk-start').prop('disabled')], ['2 (inherit=1, <img src=x onerror=alert(1)>=1)', '<script>alert(1)</script>', true]);
+// More PDFs than the scan counted (uploaded meanwhile): the count and the bar stop at the total.
+$('#rapls-pic-bulk-scan').click();
+answer({ done: true, after: 10, total: 1, total_pdfs: 1, with_thumbnail: 0, rows: 1, statuses: '', note: '' });
+$('#rapls-pic-bulk-start').click();
+answer({ pdf_id: 3001, filename: 'one.pdf', after: 3001, done: false });
+answer({ pdf_id: 3001 });
+answer({ pdf_id: 3002, filename: 'two.pdf', after: 3002, done: false });
+const pastStatus = $('#rapls-pic-bulk-status').text();
+answer({ pdf_id: 3002 });
+check('A PDF past the scanned total: "1 of 1", and the bar at 100', [pastStatus, $('#rapls-pic-progress').attr('aria-valuenow')], ['Generating thumbnail 1 of 1...', '100']);
+answer({ pdf_id: null, filename: '', after: 9999, done: true });
+requests.length = 0;
+// The include box changed after a scan: the count is stale, Start waits for a new scan.
+$('#rapls-pic-bulk-scan').click();
+answer({ done: true, after: 1260, total: 3, total_pdfs: 3, with_thumbnail: 0, rows: 3, statuses: '', note: '' });
+const startBefore = $('#rapls-pic-bulk-start').prop('disabled');
+$('#rapls-pic-include-existing')._handlers.change.call($('#rapls-pic-include-existing'));
+check('ticking the box after a scan asks for a new scan before Start', [startBefore, $('#rapls-pic-bulk-start').prop('disabled'), $('#rapls-pic-bulk-message').text()], [false, true, 'Scan again']);
+// Statistics that cannot be read say so.
+tabs[2]._handlers.click.call(tabs[2], { preventDefault() {} });
+$('#rapls-pic-refresh-stats').click();
+while (requests.length > 1) { requests.shift(); }
+answer({ message: 'nope' }, false);
+check('statistics that cannot be read say so', $('#rapls-pic-stats-error').text(), 'Stats failed');
+// The tab is kept in the address by replacing it, not by adding history.
+check('a chosen tab replaces the address, adding no history', [replaced[replaced.length - 1], windowStub.location.hash], ['#tab-status', '']);
+tabs[0]._handlers.click.call(tabs[0], { preventDefault() {} });
+requests.length = 0;
 
 console.log('\n--- An unknown tab in the address, and Stop at the end ---');
 // A second load of the page with "#tab-foo": the tabs stay as they are.

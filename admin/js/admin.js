@@ -86,8 +86,15 @@
             $('.rapls-pic-tab-content').removeClass('active');
             $(document.getElementById('tab-' + name)).addClass('active');
 
-            // Update URL hash
-            window.location.hash = 'tab-' + name;
+            // Update URL hash -- replaced, not added: setting location.hash
+            // scrolled to the panel and left a history entry per tab, which
+            // Back then stepped through without changing the tab (review of
+            // 1.4.32).
+            if (window.history && 'function' === typeof window.history.replaceState) {
+                window.history.replaceState(null, '', '#tab-' + name);
+            } else {
+                window.location.hash = 'tab-' + name;
+            }
 
             $(document).trigger('rapls-pic-tab', [name]);
         }
@@ -127,6 +134,21 @@
             $('#rapls-pic-bulk-start').on('click', this.start.bind(this));
             $('#rapls-pic-bulk-stop').on('click', this.stop.bind(this));
             $('#rapls-pic-bulk-start').data('original-text', $('#rapls-pic-bulk-start').text());
+
+            // The scan counted with the box as it was then: ticked or cleared
+            // afterwards, Start ran the old choice without a word (review of
+            // 1.4.32). The count is stale, so it goes, and the scan is asked for.
+            const self = this;
+            $('#rapls-pic-include-existing').on('change', function() {
+                if (self.isRunning) {
+                    return;
+                }
+
+                self.canContinue = false;
+                $('#rapls-pic-bulk-start').prop('disabled', true).text($('#rapls-pic-bulk-start').data('original-text'));
+                $('#rapls-pic-bulk-results').hide();
+                $('#rapls-pic-bulk-message').text(raplsPicAdmin.i18n.rescan);
+            });
         },
 
         scanFailed: function(message) {
@@ -197,7 +219,13 @@
                 $('#rapls-pic-bulk-rows-row').hide();
             }
 
+            // Shown before the note is written: a live region still hidden
+            // when its text changes is not announced (review of 1.4.32).
+            $('#rapls-pic-bulk-results').show();
+            $('#rapls-pic-bulk-message').text('');
+
             if (data.note) {
+                $('#rapls-pic-bulk-note-row').show();
                 $('#rapls-pic-bulk-note').text(data.note);
 
                 if (data.retry) {
@@ -212,13 +240,10 @@
                         })
                         .appendTo('#rapls-pic-bulk-note');
                 }
-
-                $('#rapls-pic-bulk-note-row').show();
             } else {
                 $('#rapls-pic-bulk-note-row').hide();
             }
 
-            $('#rapls-pic-bulk-results').show();
             $('#rapls-pic-bulk-start').prop('disabled', !(data.total > 0));
         },
 
@@ -470,10 +495,11 @@
                     },
                     success: function(response) {
                         if (!response.success) {
-                            $button.prop('disabled', false);
+                            failed();
                             return;
                         }
 
+                        $('#rapls-pic-stats-error').text('');
                         $('#rapls-pic-stats-total').text(response.data.total);
                         $('#rapls-pic-stats-with').text(response.data.with_thumbnail);
                         $('#rapls-pic-stats-without').text(response.data.without_thumbnail);
@@ -485,9 +511,16 @@
                         }
                     },
                     error: function() {
-                        $button.prop('disabled', false);
+                        failed();
                     }
                 });
+            };
+
+            // Said, not only the button given back: the "-" left in the
+            // table read as an empty library (review of 1.4.32).
+            const failed = function() {
+                $button.prop('disabled', false);
+                $('#rapls-pic-stats-error').text(raplsPicAdmin.i18n.statsFailed);
             };
 
             page(0, {total: 0, with_thumbnail: 0});
@@ -521,7 +554,10 @@
             const insertType = $('input[name="rapls_pic_settings[insert_type]"]:checked').val();
             const $sizeRow = $('#rapls_pic_insert_size').closest('tr');
 
-            if (insertType === 'image') {
+            // Custom HTML uses the size too: %THUMBNAIL_URL% is the
+            // thumbnail at this size, and an empty template falls back to the
+            // image (review of 1.4.32).
+            if (insertType === 'image' || insertType === 'custom') {
                 $sizeRow.show();
             } else {
                 $sizeRow.hide();

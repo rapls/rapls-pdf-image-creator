@@ -25,8 +25,8 @@ function check(label, got, want) {
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'admin', 'js', 'admin.js'), 'utf8');
 
-function run(hash, present) {
-    const log = { ajax: 0, docEvents: [], threw: null, active: [] };
+function run(hash, present, insertType = '') {
+    const log = { ajax: 0, docEvents: [], threw: null, active: [], shown: [], hidden: [] };
     let ready = null;
     const documentStub = { getElementById: (id) => (present.includes('#' + id) ? { id } : null) };
 
@@ -36,8 +36,8 @@ function run(hash, present) {
             selector,
             on() { return c; }, not() { return c; }, attr() { return c; }, removeAttr() { return c; },
             removeClass() { return c; }, text() { return c; }, data() { return undefined; }, prop() { return c; },
-            hide() { return c; }, show() { return c; }, val() { return ''; }, is() { return false; },
-            hasClass() { return false; }, next() { return c; }, closest() { return c; }, find() { return c; },
+            hide() { log.hidden.push(selector); return c; }, show() { log.shown.push(selector); return c; }, val() { return /insert_type\]"\]:checked$/.test(selector) ? insertType : ''; }, is() { return false; },
+            hasClass() { return false; }, next() { return c; }, closest(sel) { return collection(selector + ' < ' + sel, 1); }, find() { return c; },
             each() { return c; }, trigger() { return c; },
             filter(fn) { return 'function' === typeof fn ? collection(selector + ':filtered', 0) : c; },
             addClass(cls) { if ('active' === cls || 'nav-tab-active' === cls) { log.active.push(selector); } return c; },
@@ -90,6 +90,11 @@ const library = run('', []);
 check('nothing is asked, and no tab listener is left behind', [library.threw, library.ajax, library.docEvents.includes('rapls-pic-tab')], [null, 0, false]);
 const settings = run('', ['#rapls-pic-refresh-stats']);
 check('  ...on the settings screen, the Status tab is waited for', [settings.ajax, settings.docEvents.includes('rapls-pic-tab')], [0, true]);
+
+console.log('\n--- Insert Settings: the size row ---');
+const sizeRow = '#rapls_pic_insert_size < tr';
+const shownFor = (type) => { const log = run('', ['#rapls-pic-refresh-stats'], type); return [log.shown.includes(sizeRow), log.hidden.includes(sizeRow)]; };
+check('the size is shown for the image and for Custom HTML, hidden for a title link', [shownFor('image'), shownFor('custom'), shownFor('title')], [[true, false], [true, false], [false, true]]);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

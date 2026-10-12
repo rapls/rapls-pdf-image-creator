@@ -54,6 +54,28 @@ $cp = new ColorProfile();
 $cp->findProfilePath('srgb');
 $cp->findProfilePath('srgb');
 check('miss is cached too', $calls, 1);
+// Review of 1.4.32: the cached miss is still a miss, not a path of ''.
+check('  ...and read back as no profile', $cp->findProfilePath('srgb'), null);
+
+// Review of 1.4.32: a real profile under another extension is refused (the
+// file check, not only the content check, is what turns away a .txt).
+reset_state();
+copy($goodSrgb, "$dir/profile-as.txt");
+add_filter('rapls_pdf_image_creator_icc_paths', function ($p, $t) use ($dir) { return ["$dir/profile-as.txt"]; });
+check('a valid profile named .txt is refused', (new ColorProfile())->findProfilePath('srgb'), null);
+@unlink("$dir/profile-as.txt");
+
+// Under the minimum size even with the signature in place: refused by size.
+reset_state();
+file_put_contents("$dir/short.icc", str_repeat("\0", 36) . 'acsp' . str_repeat("\0", 60));
+add_filter('rapls_pdf_image_creator_icc_paths', function ($p, $t) use ($dir) { return ["$dir/short.icc"]; });
+check('a 100-byte file with the signature is still too small', (new ColorProfile())->findProfilePath('srgb'), null);
+@unlink("$dir/short.icc");
+
+// A mode the filter invents is "auto", as getStatus() reports it.
+reset_state();
+add_filter('rapls_pdf_image_creator_color_conversion', function () { return 'bogus'; });
+check('an unknown conversion mode is auto', (new ColorProfile())->getStatus()['mode'], 'auto');
 
 echo "\n--- conversion modes ---\n";
 
@@ -235,6 +257,13 @@ check('the wildcard found both installs', count($out), 3);
 // A host that upgraded in place keeps the old directory. ImageMagick uses the
 // new Ghostscript, so the profile search should agree with it.
 check('newest version first', false !== strpos($out[1], '10.04.0'), true);
+
+// Review after 1.4.32: a "[" or "?" in the folder before the wildcard is
+// part of the name, not a pattern.
+$bracketRoot = RAPLS_PIC_TEST_TMP . '/site [old]?/gs';
+@mkdir("$bracketRoot/10.04.0/iccprofiles", 0777, true);
+makeIcc("$bracketRoot/10.04.0/iccprofiles/default_cmyk.icc", 300);
+check('a folder with "[" or "?" in its name is found through the wildcard', $expand->invoke($cp2, ["$bracketRoot/*/iccprofiles/default_cmyk.icc"]), ["$bracketRoot/10.04.0/iccprofiles/default_cmyk.icc"]);
 
 $none = $expand->invoke($cp2, [RAPLS_PIC_TEST_TMP . '/nothing/*/x.icc']);
 check('a wildcard matching nothing drops out', $none, []);

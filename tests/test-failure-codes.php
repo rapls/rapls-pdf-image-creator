@@ -150,5 +150,22 @@ check('  ...and the availability check reads them as before', FailureCode::fromE
 $engineSource = (string) file_get_contents(RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/ImagickEngine.php');
 check('  ...convert() asks as a conversion', substr_count($engineSource, 'FailureCode::fromExceptionMessage($e->getMessage(), true)'), 2);
 
+echo "\n=== Review after 1.4.32: ImageMagick 6's per-file words, and one reading for the check ===\n";
+
+$im6Failed = "Postscript delegate failed `/tmp/x.pdf': No such file or directory @ error/pdf.c/ReadPDFImage/713";
+$noFont = "DelegateLibrarySupportNotBuiltIn `x.pdf' (Freetype) @ warning/annotate.c/RenderFreetype/1945";
+check('ImageMagick 6 failing on one file, during a conversion, is a render error', FailureCode::fromExceptionMessage($im6Failed, true), FailureCode::RENDER_ERROR);
+check('  ...a font library this build lacks too', FailureCode::fromExceptionMessage($noFont, true), FailureCode::RENDER_ERROR);
+check('  ...but with Ghostscript not found it is still no PDF support', FailureCode::fromExceptionMessage($im6Failed . ' (127)', true), FailureCode::PDF_UNSUPPORTED);
+check('  ...a Ghostscript library not built in is still no PDF support', FailureCode::fromExceptionMessage("DelegateLibrarySupportNotBuiltIn `x.pdf' (GhostPDL)", true), FailureCode::PDF_UNSUPPORTED);
+check('the check: Ghostscript run and failing is a passing failure; not found, no decode delegate and "delegate failed" are the server', [
+    FailureCode::fromProbeMessage($gsFailed),
+    FailureCode::fromProbeMessage($gsMissing),
+    FailureCode::fromProbeMessage("no decode delegate for this image format `PDF'"),
+    FailureCode::fromProbeMessage($im6Failed),
+    FailureCode::fromProbeMessage("NotAuthorized `PDF' @ error/constitute.c/IsCoderAuthorized/454 FailedToExecuteCommand (1)"),
+], [FailureCode::RENDER_ERROR, FailureCode::PDF_UNSUPPORTED, FailureCode::PDF_UNSUPPORTED, FailureCode::PDF_UNSUPPORTED, FailureCode::PDF_BLOCKED_BY_POLICY]);
+check('  ...the cache and the status ask the same reading', substr_count($engineSource, "FailureCode::fromProbeMessage($"), 2);
+
 printf("\n%d passed, %d failed\n", $pass, $fail);
 exit(0 === $fail ? 0 : 1);

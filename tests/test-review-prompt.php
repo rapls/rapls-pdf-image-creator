@@ -52,8 +52,9 @@ function esc_attr($s) { return $s; }
 function wp_nonce_url($url, $action = -1) { return $url . '&_wpnonce=test'; }
 function add_query_arg($key, $value = null, $url = '') { return 'https://example.test/wp-admin/?' . $key . '=' . $value; }
 function remove_query_arg($keys, $url = '') { return 'https://example.test/wp-admin/'; }
-function check_admin_referer($action = -1, $q = '_wpnonce') { return true; }
-function check_ajax_referer($action = -1, $q = false, $die = true) { return true; }
+// As core: a nonce that does not check out stops the request there.
+function check_admin_referer($action = -1, $q = '_wpnonce') { $GLOBALS['nonce_asked'][] = $action; if (!empty($GLOBALS['nonce_fails'])) { throw new Redirected('nonce-died'); } return true; }
+function check_ajax_referer($action = -1, $q = false, $die = true) { $GLOBALS['nonce_asked'][] = $action; if (!empty($GLOBALS['nonce_fails'])) { throw new Redirected('nonce-died'); } return true; }
 function sanitize_key($k) { return preg_replace('/[^a-z0-9_\-]/', '', strtolower((string) $k)); }
 function wp_unslash($v) { return $v; }
 function wp_create_nonce($a = -1) { return 'nonce'; }
@@ -78,6 +79,7 @@ $GLOBALS['wpdb'] = new FakeWpdb();
 require RAPLS_PIC_PLUGIN_DIR . 'includes/Settings.php';
 require RAPLS_PIC_PLUGIN_DIR . 'includes/Admin.php';
 require RAPLS_PIC_PLUGIN_DIR . 'includes/ReviewPrompt.php';
+if (!class_exists(\Rapls\PDFImageCreator\Generator::class)) { require RAPLS_PIC_PLUGIN_DIR . 'includes/Generator.php'; }
 
 use Rapls\PDFImageCreator\Admin;
 use Rapls\PDFImageCreator\ReviewPrompt;
@@ -118,6 +120,11 @@ check('7日未満では表示しない', shows(), false);
 ready();
 $GLOBALS['wpdb']->answer = null;
 check('サムネイルが1枚も作れていなければ表示しない', shows(), false);
+
+// 1.4.32 のレビュー: このサーバーでサムネイルを作れなくなっているあいだは出さない（ステータスが赤いときに頼まない）。
+ready();
+$GLOBALS['options']['rapls_pic_engine_unavailable'] = 'pdf_unsupported';
+check('いまサムネイルを作れないサーバーでは表示しない', shows(), false);
 
 ready();
 $GLOBALS['screen'] = new Screen('dashboard');
@@ -192,6 +199,28 @@ try {
 }
 check('  ...権限が無ければ受け付けない', $sent, 'json-error');
 check('  ...記録も残さない', get_option(ReviewPrompt::OPTION, ''), '');
+
+// 1.4.32 のレビュー: ボタンは権限と、それぞれの合言葉（nonce）を確かめてから記録する。
+$attempt = static function (string $method, ?bool $caps, bool $nonceFails, array $get = []): array {
+    ready();
+    $GLOBALS['caps'] = $caps;
+    $GLOBALS['nonce_fails'] = $nonceFails;
+    $GLOBALS['nonce_asked'] = [];
+    $_GET = $get;
+    $went = '';
+    try {
+        (new ReviewPrompt())->$method();
+    } catch (Redirected $e) {
+        $went = $e->to;
+    }
+    $GLOBALS['nonce_fails'] = false;
+    return [get_option(ReviewPrompt::OPTION, ''), $went, $GLOBALS['nonce_asked']];
+};
+check('ボタンは権限が無ければ何もしない。合言葉が違えば止まって記録しない', [
+    $attempt('handleDismiss', false, false, ['rapls_pic_review' => 'no'])[0],
+    array_slice($attempt('handleDismiss', true, true, ['rapls_pic_review' => 'no']), 0, 3),
+    array_slice($attempt('handleAjaxDismiss', true, true), 0, 3),
+], ['', ['', 'nonce-died', [(new ReflectionClassConstant(ReviewPrompt::class, 'ARG'))->getValue()]], ['', 'nonce-died', [(new ReflectionClassConstant(ReviewPrompt::class, 'AJAX'))->getValue()]]]);
 
 echo "\n--- 中身 ---\n";
 

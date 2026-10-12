@@ -27,7 +27,7 @@ function update_option($k, $v, $a = null) { $GLOBALS['options'][$k] = $v; return
 function __($s, $d = null) { return $s; }
 if (!function_exists('_n')) { function _n($one, $many, $n, $d = null) { return 1 === (int) $n ? $one : $many; } }
 function _x($s, $c, $d = null) { return $s; }
-function esc_html($s) { return $s; }
+function esc_html($s) { return htmlspecialchars((string) $s, ENT_QUOTES); }
 function wp_mkdir_p($d) { return @mkdir($d, 0777, true) || is_dir($d); }
 
 /** Records every call so we can assert on the pipeline order. */
@@ -74,17 +74,49 @@ class Imagick
     public function setResolution($x, $y) { self::$log[] = "setResolution($x)"; }
     /** GS_OPTIONS as each read saw it. */
     public static $gsOptionsSeen = [];
+    /** When true, every read comes back flat, GS_OPTIONS or not. */
+    public static $alwaysBlank = false;
+    /** The path each read was given. */
+    public static $readPaths = [];
     public function readImage($p) {
         self::$log[] = 'readImage';
+        self::$readPaths[] = $p;
         self::$gsOptionsSeen[] = getenv('GS_OPTIONS');
-        if (self::$blankWithoutGsOptions) {
+        // A request killed mid-read (max_execution_time): no catch, no finally.
+        if (!empty($GLOBALS['die_on_switch']) && false !== strpos((string) getenv('GS_OPTIONS'), '-dNOTRANSPARENCY')) {
+            echo 'died with ' . getenv('GS_OPTIONS') . "\n";
+            register_shutdown_function(static function (): void { echo 'after: ' . getenv('GS_OPTIONS'); });
+            exit(1);
+        }
+        if (self::$alwaysBlank) {
+            $this->uniform = true;
+        } elseif (self::$blankWithoutGsOptions) {
             $gs = getenv('GS_OPTIONS');
             $this->uniform = false === $gs || '' === $gs || false === strpos($gs, '-dNOTRANSPARENCY');
         }
         return true;
     }
-    public function getImageWidth() { return 100; }
-    public function getImageHeight() { return 100; }
+    /** Size of what the in-memory test PDFs read back as; [0, 0] is an empty raster. */
+    public static $blobSize = [100, 100];
+    /** The colour at the middle of each page read from a blob, by page. */
+    public static $blobColours = [['r' => 0, 'g' => 255, 'b' => 255]];
+    /** How many pages a blob reads back as. */
+    public static $blobPages = 1;
+    private $fromBlob = false;
+    private $index = 0;
+    public function getImageWidth() { return $this->fromBlob ? self::$blobSize[0] : 100; }
+    public function getImageHeight() { return $this->fromBlob ? self::$blobSize[1] : 100; }
+    public function getNumberImages() { return $this->fromBlob ? self::$blobPages : 1; }
+    /** A count or a size, without drawing: one A4 page unless a test says otherwise. */
+    public function pingImage($p) { self::$log[] = 'pingImage'; return true; }
+    public function setIteratorIndex($i) { $this->index = (int) $i; return true; }
+    public function getImage() { $one = clone $this; return $one; }
+    public function getImagePixelColor($x, $y) {
+        $rgb = self::$blobColours[$this->index] ?? self::$blobColours[0];
+        $pixel = new ImagickPixel('white');
+        $pixel->rgb = $rgb;
+        return $pixel;
+    }
     public function getImageChannelRange($channel) {
         return $this->uniform
             ? ['minima' => 65535.0, 'maxima' => 65535.0]
@@ -122,17 +154,17 @@ class Imagick
     public static $blobError = null;
     public function readImageBlob($blob, $name = null) {
         if (null === self::$blobError) { throw new Error('readImageBlob cannot render in this stub'); }
-        if ('' === self::$blobError) { return true; }
+        if ('' === self::$blobError) { $this->fromBlob = true; return true; }
         throw new ImagickException(self::$blobError);
     }
 }
 
 class ImagickException extends Exception {}
-class ImagickPixel { public $c; public function __construct($c = 'white') {
+class ImagickPixel { public $c; public $rgb = ['r' => 255, 'g' => 255, 'b' => 255]; public function __construct($c = 'white') {
     if (!in_array(strtolower($c), ['white','black','transparent','#f5f5f5','red'], true)) {
         throw new ImagickException("unparseable color: $c");
     }
-    $this->c = $c; } public function __toString() { return $this->c; } }
+    $this->c = $c; } public function __toString() { return $this->c; } public function getColor() { return $this->rgb; } }
 
 require RAPLS_PIC_PLUGIN_DIR . 'includes/FailureCode.php';
 require RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/ColorProfile.php';
@@ -169,5 +201,10 @@ function reset_state() {
     Imagick::$profileImageFails = false;
     Imagick::$versionString = 'ImageMagick 7.1.1-47 Q16 aarch64';
     Imagick::$blankWithoutGsOptions = false;
+    Imagick::$alwaysBlank = false;
+    Imagick::$readPaths = [];
+    Imagick::$blobSize = [100, 100];
+    Imagick::$blobColours = [['r' => 0, 'g' => 255, 'b' => 255]];
+    Imagick::$blobPages = 1;
     putenv('GS_OPTIONS');
 }

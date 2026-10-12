@@ -284,14 +284,22 @@ final class MediaLibrary
      * 900x450) and used to show that white preview while the Media Library
      * grid, which goes through filterAttachmentForJs(), showed the thumbnail.
      *
+     * Untyped, and cast here: core hands on the ID and $icon as its caller
+     * gave them -- '' from an empty post meta, null -- and a typed parameter
+     * made that a fatal error on any page, for any attachment, PDF or not
+     * (review of 1.4.32). Without this plugin core answers false.
+     *
      * @param array|false $image Image data or false
-     * @param int $attachmentId Attachment ID
+     * @param mixed $attachmentId Attachment ID, as the caller gave it
      * @param string|int[] $size Requested size
-     * @param bool $icon Whether to use icon
+     * @param mixed $icon Whether to use icon
      * @return array|false
      */
-    public function filterAttachmentImageSrc($image, int $attachmentId, $size, bool $icon)
+    public function filterAttachmentImageSrc($image, $attachmentId = 0, $size = 'thumbnail', $icon = false)
     {
+        $attachmentId = (int) $attachmentId;
+        $icon = (bool) $icon;
+
         // Check if it's a PDF
         $mimeType = get_post_mime_type($attachmentId);
         if ($mimeType !== 'application/pdf') {
@@ -314,15 +322,24 @@ final class MediaLibrary
     /**
      * Filter attachment image HTML for PDFs
      *
-     * @param string $html Image HTML
-     * @param int $attachmentId Attachment ID
+     * Untyped and cast, as filterAttachmentImageSrc() is (review of 1.4.32).
+     *
+     * @param mixed $html Image HTML
+     * @param mixed $attachmentId Attachment ID, as the caller gave it
      * @param string|int[] $size Image size
-     * @param bool $icon Whether icon
+     * @param mixed $icon Whether icon
      * @param string|array $attr Attributes (core passes '' by default; plugins may pass a string or an array)
-     * @return string
+     * @return mixed
      */
-    public function filterAttachmentImage(string $html, int $attachmentId, $size, bool $icon, $attr): string
+    public function filterAttachmentImage($html, $attachmentId = 0, $size = 'thumbnail', $icon = false, $attr = '')
     {
+        if (!is_string($html)) {
+            return $html;
+        }
+
+        $attachmentId = (int) $attachmentId;
+        $icon = (bool) $icon;
+
         // A fallback, not the usual route. filterAttachmentImageSrc() above
         // already gives core the thumbnail, so core's HTML is not empty for a
         // PDF that has one. It is empty only when something later on
@@ -349,7 +366,16 @@ final class MediaLibrary
         }
 
         // Get thumbnail image
-        return $this->generator->getThumbnailImage($attachmentId, is_array($size) ? 'full' : $size, $attr);
+        // A size of null or a number from another plugin's call was a
+        // TypeError in getThumbnailImage(), which takes a name (review after
+        // 1.4.32).
+        if (is_array($size)) {
+            $size = 'full';
+        } elseif (!is_scalar($size) || '' === (string) $size) {
+            $size = 'thumbnail';
+        }
+
+        return $this->generator->getThumbnailImage($attachmentId, (string) $size, $attr);
     }
 
     /**
@@ -385,6 +411,11 @@ final class MediaLibrary
                 $response['picSourcePdfId'] = (int) $sourcePdfId;
                 $response['picSourcePdfUrl'] = $pdfUrl;
                 $response['picIsThumbnail'] = true;
+                // With url now the PDF's, a size the image has no file for
+                // must not fall back to url (see withEverySize()).
+                if (!empty($response['sizes']['full']) && is_array($response['sizes'])) {
+                    $response['sizes'] = self::withEverySize($response['sizes'], $response['sizes']['full']);
+                }
             }
             return $response;
         }
@@ -449,12 +480,40 @@ final class MediaLibrary
             }
         }
 
-        $response['sizes'] = $sizes;
+        $response['sizes'] = self::withEverySize($sizes, $sizes['full']);
 
         // Mark as having a PDF thumbnail
         $response['picThumbnailId'] = $thumbnailId;
 
         return $response;
+    }
+
+    /**
+     * Every registered size, the full image standing in for any not made
+     *
+     * The block editor looks for the size it wants -- a gallery asks for
+     * "large" -- and, when there is none, falls back to the attachment's own
+     * url or source_url, which for a PDF is the PDF. WordPress makes no
+     * "large" for an image smaller than the large box, and the thumbnail is
+     * 1024 pixels at most by default, so a PDF put in a gallery became
+     * <img src="....pdf"> (review of 1.4.32). For an image, the fallback is
+     * the image itself; this gives the PDF the same.
+     *
+     * @param array<string, array<string, mixed>> $sizes The sizes there are, with 'full'.
+     * @param array<string, mixed>                $full  The full size's entry.
+     * @return array<string, array<string, mixed>>
+     */
+    public static function withEverySize(array $sizes, array $full): array
+    {
+        $names = function_exists('get_intermediate_image_sizes') ? (array) get_intermediate_image_sizes() : [];
+
+        foreach (array_merge(['thumbnail', 'medium', 'large'], $names) as $name) {
+            if (is_string($name) && '' !== $name && !isset($sizes[$name])) {
+                $sizes[$name] = $full;
+            }
+        }
+
+        return $sizes;
     }
 
     /**
@@ -561,6 +620,7 @@ final class MediaLibrary
             }
         }
 
+        $mediaDetails['sizes'] = self::withEverySize($mediaDetails['sizes'], $mediaDetails['sizes']['full']);
         $data['media_details'] = $mediaDetails;
 
         // Add custom field to indicate PDF thumbnail
@@ -731,12 +791,23 @@ final class MediaLibrary
         // Generate thumbnail
         $result = $this->generator->generate($attachmentId, true);
 
-        // Redirect back with message
-        $redirectUrl = admin_url('upload.php');
+        // Back to the list as it was -- its page, search and filter -- not to
+        // its first page (review of 1.4.32). Only to the Media Library.
+        $redirectUrl = (string) wp_get_referer();
+        if ('' === $redirectUrl || false === strpos($redirectUrl, 'upload.php')) {
+            $redirectUrl = admin_url('upload.php');
+        }
+        $redirectUrl = remove_query_arg(['rapls_pic_generated', 'rapls_pic_error'], $redirectUrl);
         if ($result) {
             $redirectUrl = add_query_arg('rapls_pic_generated', '1', $redirectUrl);
         } else {
-            $redirectUrl = add_query_arg('rapls_pic_error', '1', $redirectUrl);
+            // The code, not the message: the notice says it in words of its
+            // own, so nothing from ImageMagick -- a command line, a server
+            // path -- reaches whoever can edit this PDF, and it is this
+            // attempt's reason, not the site's last (review after 1.4.32).
+            $outcome = $this->generator->outcomeFor($attachmentId);
+            $code = sanitize_key((string) ($outcome['code'] ?? ''));
+            $redirectUrl = add_query_arg('rapls_pic_error', '' !== $code ? $code : '1', $redirectUrl);
         }
 
         wp_safe_redirect($redirectUrl);
@@ -815,9 +886,12 @@ final class MediaLibrary
      * @param string    $where The query's WHERE clause
      * @param \WP_Query $query The query
      */
-    public function limitPdfsToThumbnailed(string $where, $query): string
+    public function limitPdfsToThumbnailed($where, $query = null)
     {
-        if (!$query instanceof \WP_Query || !$query->get('rapls_pic_image_pick')) {
+        // Untyped, with a default: a plugin running posts_where by hand, with
+        // one argument or a non-string, was a fatal error here (review of
+        // 1.4.32).
+        if (!is_string($where) || !$query instanceof \WP_Query || !$query->get('rapls_pic_image_pick')) {
             return $where;
         }
 
@@ -991,13 +1065,18 @@ final class MediaLibrary
     /**
      * Filter mime type icon for PDFs
      *
-     * @param string $icon Icon URL
-     * @param string $mime MIME type
-     * @param int $postId Post ID
-     * @return string Modified icon URL
+     * Untyped and cast: core passes false for an icon it did not find,
+     * and the post ID as it was given (review of 1.4.32).
+     *
+     * @param mixed $icon Icon URL, or false
+     * @param mixed $mime MIME type
+     * @param mixed $postId Post ID
+     * @return mixed Modified icon URL
      */
-    public function filterMimeTypeIcon(string $icon, string $mime, int $postId): string
+    public function filterMimeTypeIcon($icon, $mime = '', $postId = 0)
     {
+        $postId = (int) $postId;
+
         // Check if display thumbnail icon is enabled
         if (!$this->settings->shouldDisplayThumbnailIcon()) {
             return $icon;

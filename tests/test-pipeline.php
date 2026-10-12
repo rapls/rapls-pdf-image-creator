@@ -20,7 +20,7 @@ function apply_filters($tag, $value, ...$rest) {
     return $value;
 }
 function get_transient($k) { return $GLOBALS['transients'][$k] ?? false; }
-function set_transient($k, $v, $t = 0) { $GLOBALS['transients'][$k] = $v; return true; }
+function set_transient($k, $v, $t = 0) { $GLOBALS['transients'][$k] = $v; $GLOBALS['transient_ttl'][$k] = $t; return true; }
 function delete_transient($k) { unset($GLOBALS['transients'][$k]); return true; }
 function get_option($k, $d = false) { return $GLOBALS['options'][$k] ?? $d; }
 function update_option($k, $v, $a = null) { $GLOBALS['options'][$k] = $v; return true; }
@@ -96,6 +96,8 @@ class Imagick
     public function setResolution($x, $y) { self::$log[] = "setResolution($x)"; }
     /** When set, a suffixed read of a page past $pageCount throws, as Ghostscript's "FirstPage > LastPage" does. */
     public static $throwPastEnd = false;
+    /** The path the last read was given. */
+    public static $lastPath = '';
     public function readImage($p) {
         $suffixed = (bool) preg_match('/\[(\d+)\]$/', $p, $asked);
         if ($suffixed && self::$throwPastEnd && (int) $asked[1] >= self::$pageCount) {
@@ -103,6 +105,7 @@ class Imagick
             throw new ImagickException('Failed to read the file');
         }
         self::$log[] = 'readImage' . ($suffixed ? '[n]' : '(whole)');
+        self::$lastPath = $p;
         $this->colorspace = self::$readColorspace;
         $this->flat = self::$emptyFor[$suffixed ? 'suffix' : 'whole'];
     }
@@ -126,9 +129,13 @@ class Imagick
         $pixel->alpha = self::$alphaRead && $this->flat ? 0.0 : 1.0;
         return $pixel;
     }
-    public function getNumberImages() { return self::$pageCount; }
+    /** What a count (ping) answers, when a test makes it differ from the pages a read finds. */
+    public static $countSays = null;
+    public function getNumberImages() { return self::$countSays ?? self::$pageCount; }
     /** Counts the pages without drawing (readWholePage(), review after 1.4.31). */
-    public function pingImage($p) { self::$log[] = 'pingImage'; return true; }
+    /** A ping's page size in points, as ImageMagick reports it at 72 dpi (A4 unless a test says otherwise). */
+    public static $pingSize = [595, 842];
+    public function pingImage($p) { self::$log[] = 'pingImage'; [$this->w, $this->h] = self::$pingSize; return true; }
     public function setIteratorIndex($i) { self::$log[] = "setIteratorIndex($i)"; return true; }
     public function getImage() { self::$log[] = 'getImage'; $n = clone $this; return $n; }
     public function getImageColorspace() { return $this->colorspace; }
@@ -305,6 +312,18 @@ Imagick::$emptyFor = ['suffix' => true, 'whole' => true];
 check('a genuinely blank page is retried once', in_array('readImage(whole)', $log, true), true);
 check('  ...and recorded as not the suffix', $GLOBALS['transients']['rapls_pic_page_suffix'] ?? null, 'no');
 
+// Review of 1.4.32: the whole file is not read when all its pages, at this
+// resolution, are past WHOLE_READ_MAX_PIXELS (20 A4 pages at 600 dpi are
+// about 700 megapixels, held at once).
+Imagick::$emptyFor = ['suffix' => true, 'whole' => false];
+Imagick::$pingSize = [2384, 3370];   // A0
+[$r, $log] = run(['format' => 'jpeg', 'resolution' => 300]);
+Imagick::$pingSize = [595, 842];
+check('a document too big to hold whole at this resolution is not read whole', in_array('readImage(whole)', $log, true), false);
+[$r, $log] = run(['format' => 'jpeg', 'resolution' => 150]);
+check('  ...three A4 pages at 150 dpi are', in_array('readImage(whole)', $log, true), true);
+Imagick::$emptyFor = ['suffix' => true, 'whole' => true];
+
 // Once the suffix is known to work, a blank page is not retried at all: the
 // retry reads every page of the document, and used to do it on every
 // generation of a PDF whose chosen page is blank.
@@ -351,6 +370,19 @@ Imagick::$flatColor = ['r' => 0, 'g' => 163, 'b' => 218];
 check('a document longer than the limit is not read whole, even where the suffix is known broken', [in_array('readImage(whole)', $log, true), in_array('readImage[n]', $log, true)], [false, true]);
 [$r, $log] = run(['format' => 'jpeg']);
 check('  ...and where nothing is known, the page stays as read and "do not retry" is remembered', [in_array('readImage(whole)', $log, true), $GLOBALS['transients']['rapls_pic_page_suffix'] ?? null], [false, 'no']);
+// Review after 1.4.32: for an hour, when it was this document's length or
+// size that stopped it -- for a week it kept every shorter document from
+// being measured. A retry that failed for any other reason is a week.
+$lengthTtl = $GLOBALS['transient_ttl']['rapls_pic_page_suffix'] ?? null;
+Imagick::$pageCount = 3;
+Imagick::$pingSize = [2384, 3370];   // A0
+[$r, $log] = run(['format' => 'jpeg', 'resolution' => 300]);
+Imagick::$pingSize = [595, 842];
+$sizeTtl = $GLOBALS['transient_ttl']['rapls_pic_page_suffix'] ?? null;
+Imagick::$pageCount = 0;
+[$r, $log] = run(['format' => 'jpeg']);
+$otherTtl = [$GLOBALS['transients']['rapls_pic_page_suffix'] ?? null, $GLOBALS['transient_ttl']['rapls_pic_page_suffix'] ?? null];
+check('  ...for an hour when the document was too long or too large to try, a week otherwise', [$lengthTtl, $sizeTtl, $otherTtl], [HOUR_IN_SECONDS, HOUR_IN_SECONDS, ['no', WEEK_IN_SECONDS]]);
 Imagick::$pageCount = $pagesWas;
 Imagick::$flatColor = ['r' => 255, 'g' => 255, 'b' => 255];
 
@@ -547,6 +579,62 @@ check('an Error during the conversion is a failure, not a fatal', [$r->isSuccess
 });
 check('a result listener answering something else leaves the result as it was', [$r instanceof \Rapls\PDFImageCreator\Engine\ConversionResult, $r->isSuccess()], [true, true]);
 
+echo "\n=== Review of 1.4.32: a negative page from a filter is page 0 ===\n";
+Imagick::$emptyFor = ['suffix' => false, 'whole' => false];
+[$r] = run(['format' => 'jpeg', 'page' => -3]);
+check('a page below 0 is read as the first page', [$r->isSuccess(), substr(Imagick::$lastPath, -3)], [true, '[0]']);
+
+echo "\n=== Review of 1.4.32: the page count from the file's own page tree ===\n";
+$treeFile = static function (string $body): string {
+    $f = RAPLS_PIC_TEST_TMP . '/tree-' . md5($body) . '.pdf';
+    file_put_contents($f, "%PDF-1.4\n" . $body . "\n%%EOF\n");
+    return $f;
+};
+check('the root /Count is read', ImagickEngine::pagesFromBytes($treeFile("1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n2 0 obj << /Type /Pages /Kids [3 0 R 4 0 R] /Count 7 >> endobj")), 7);
+check('  ...the largest, across a file saved over itself', ImagickEngine::pagesFromBytes($treeFile("2 0 obj << /Type /Pages /Count 3 /Kids [] >> endobj\n2 0 obj << /Type /Pages /Count 5 /Kids [] >> endobj\n9 0 obj << /Type /Pages /Count 2 /Parent 2 0 R >> endobj")), 5);
+check('  ...a /Type /Page is not a page tree', ImagickEngine::pagesFromBytes($treeFile("3 0 obj << /Type /Page /Count 99 >> endobj")), null);
+check('  ...a tree with a dictionary inside it is left to ImageMagick', ImagickEngine::pagesFromBytes($treeFile("2 0 obj << /Type /Pages /Resources << /Font 1 >> /Count 4 >> endobj")), null);
+check('  ...and one whose own /Count sits after a dictionary holding another /Count', ImagickEngine::pagesFromBytes($treeFile("2 0 obj << /Type /Pages /Kids [3 0 R] /X << /Count 50 >> /Count 2 >> endobj")), null);
+check('  ...so is a file with object streams', ImagickEngine::pagesFromBytes($treeFile("2 0 obj << /Type /Pages /Count 4 >> endobj\n5 0 obj << /Type /ObjStm /N 3 >> endobj")), null);
+check('  ...and an outline\'s /Count is not read as pages', ImagickEngine::pagesFromBytes($treeFile("7 0 obj << /Type /Outlines /Count 40 >> endobj\n2 0 obj << /Type /Pages /Count 2 >> endobj")), 2);
+check('  ...no file, no answer', ImagickEngine::pagesFromBytes(RAPLS_PIC_TEST_TMP . '/missing.pdf'), null);
+// Review after 1.4.32: half a million page-tree dictionaries in an 11 MB file
+// made the list of matches alone a fatal error under a 128 MB limit. Read one
+// at a time, and past PAGE_TREE_MAX_NODES left to ImageMagick -- asked in a
+// PHP with a 64 MB limit, where the old way could not finish.
+$manyNodes = RAPLS_PIC_TEST_TMP . '/many-nodes.pdf';
+file_put_contents($manyNodes, "%PDF-1.4\n" . str_repeat("<</Type/Pages/Count 1>>\n", 500000) . "%%EOF\n");
+$nodesChild = RAPLS_PIC_TEST_TMP . '/many-nodes.php';
+file_put_contents($nodesChild, '<?php define("ABSPATH", "/"); function __($s, $d = null) { return $s; }'
+    . ' require ' . var_export(RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/EngineInterface.php', true) . ';'
+    . ' require ' . var_export(RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/ColorProfile.php', true) . ';'
+    . ' require ' . var_export(RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/ImagickEngine.php', true) . ';'
+    . ' var_export(Rapls\\PDFImageCreator\\Engine\\ImagickEngine::pagesFromBytes($argv[1]));');
+$nodesOut = [];
+exec(escapeshellarg(PHP_BINARY) . ' -n -d memory_limit=64M ' . escapeshellarg($nodesChild) . ' ' . escapeshellarg($manyNodes) . ' 2>&1', $nodesOut);
+file_put_contents($manyNodes, "%PDF-1.4\n" . str_repeat("<</Type/Pages/Count 2>>\n", 300) . "%%EOF\n");
+check('  ...half a million page-tree nodes: no answer, and no fatal error under 64 MB; some hundreds are read', [implode("\n", $nodesOut), ImagickEngine::pagesFromBytes($manyNodes)], ['NULL', 2]);
+@unlink($manyNodes);
+@unlink($nodesChild);
+// ...and many matches inside one dictionary the size of the file are not each
+// searched and copied whole (75 s of CPU for a 32 MB file before).
+file_put_contents($manyNodes, "%PDF-1.4\n<<" . str_repeat('/Type /Pages /Count 1 ' . str_repeat(' ', 3200), 2000) . ">>\n%%EOF\n");
+$started = microtime(true);
+$overlapping = ImagickEngine::pagesFromBytes($manyNodes);
+check('  ...matches that share one dictionary: no answer, at once', [$overlapping, microtime(true) - $started < 2.0], [null, true]);
+@unlink($manyNodes);
+// Review after 1.4.32: a file is read for its page tree only with room for
+// it -- read whole on a 64 MB limit, a 32 MB file was a fatal error.
+$memoryFor = new ReflectionMethod(ImagickEngine::class, 'memoryFor');
+if (PHP_VERSION_ID < 80100) { $memoryFor->setAccessible(true); }
+$limitWas = ini_get('memory_limit');
+ini_set('memory_limit', (string) (int) ((memory_get_usage() + 20 * 1048576) / 1048576) . 'M');
+$roomFor = [$memoryFor->invoke(null, 1048576), $memoryFor->invoke(null, 16 * 1048576)];
+ini_set('memory_limit', '-1');
+$roomFor[] = $memoryFor->invoke(null, 32 * 1048576);
+ini_set('memory_limit', $limitWas);
+check('  ...read only with room for it: 1 MB in 20 MB to spare, not 16 MB; no limit, anything', $roomFor, [true, false, true]);
+
 echo "\n=== Review after 1.4.31: a page past the end of the PDF says so ===\n";
 Imagick::$emptyFor = ['suffix' => false, 'whole' => false];
 Imagick::$throwPastEnd = true;
@@ -564,6 +652,23 @@ $atCount = $r->getCode();
 Imagick::$pageCount = 1;
 [$r] = run(['format' => 'jpeg', 'page' => 1]);
 check('  ...the page equal to the count is past the end; a one-page PDF has "1 page"', [$atCount, $r->getCode(), false !== strpos((string) $r->getError(), 'but this PDF has 1 page.')], ['page_out_of_range', 'page_out_of_range', true]);
+// The count comes from the file's page tree where it can. A page the tree
+// has is not counted again by ImageMagick; a page the tree does not have is
+// confirmed by it first, since a damaged file can state fewer pages than
+// Ghostscript finds (review after 1.4.32).
+$pdfWas = $pdf;
+$pdf = $treeFile("1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n2 0 obj << /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >> endobj");
+[$r, $log] = run(['format' => 'jpeg', 'page' => 2]);
+$confirmed = [$r->getCode(), in_array('pingImage', $log, true)];
+Imagick::$countSays = 9;
+[$r, $log] = run(['format' => 'jpeg', 'page' => 2]);
+$understated = $r->getCode();
+Imagick::$countSays = null;
+$pdf = $treeFile("2 0 obj << /Type /Pages /Kids [3 0 R] /Count 5 >> endobj");
+[$r, $log] = run(['format' => 'jpeg', 'page' => 1]);
+$within = [$r->getCode(), in_array('pingImage', $log, true)];
+$pdf = $pdfWas;
+check('  ...counted from the page tree; a page past it is confirmed by ImageMagick before it is called missing', [$confirmed, $understated, $within], [['page_out_of_range', true], 'render_error', ['render_error', false]]);
 Imagick::$throwPastEnd = false;
 Imagick::$pageCount = $pagesWas;
 
