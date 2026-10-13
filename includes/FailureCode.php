@@ -31,6 +31,9 @@ final class FailureCode
     public const NO_EXTENSION = 'no_extension';
     public const PDF_BLOCKED_BY_POLICY = 'pdf_blocked_by_policy';
     public const PDF_UNSUPPORTED = 'pdf_unsupported';
+    // Every engine was taken away by the rapls_pdf_image_creator_engines
+    // filter. Generator::getAvailabilityStatus() words it.
+    public const NO_ENGINE = 'no_engine';
 
     // This attachment.
     public const NOT_A_PDF = 'not_a_pdf';
@@ -62,6 +65,7 @@ final class FailureCode
             self::NO_EXTENSION,
             self::PDF_BLOCKED_BY_POLICY,
             self::PDF_UNSUPPORTED,
+            self::NO_ENGINE,
             self::NOT_A_PDF,
             self::SOURCE_MISSING,
             self::PAGE_OUT_OF_RANGE,
@@ -85,12 +89,13 @@ final class FailureCode
      *
      * $converting is for a conversion of a particular file, after the
      * availability check has already found PDF support. There, Ghostscript
-     * failing on that one file ("FailedToExecuteCommand ... (1)") and an
-     * output format with no encoder ("NoEncodeDelegateForThisImageFormat
-     * `WEBP'") are about this file and this setting, not the server's PDF
-     * support: read as PDF_UNSUPPORTED, they sent people to their host to
-     * enable something already enabled (review after 1.4.31). Ghostscript
-     * not found at all -- the shell's 127 -- is still unsupported.
+     * failing on that one file ("FailedToExecuteCommand ... (1)") is about
+     * this file, not the server's PDF support: read as PDF_UNSUPPORTED, it
+     * sent people to their host to enable something already enabled (review
+     * after 1.4.31). Ghostscript not found at all -- the shell's 127 -- is
+     * still unsupported. An output format with no encoder
+     * ("NoEncodeDelegateForThisImageFormat `WEBP'") matches none of the
+     * patterns below and is a render error either way.
      */
     public static function fromExceptionMessage(string $message, bool $converting = false): string
     {
@@ -101,10 +106,6 @@ final class FailureCode
         }
 
         if ($converting) {
-            if (preg_match('/no\s*encode\s*delegate/i', $message)) {
-                return self::RENDER_ERROR;
-            }
-
             if (self::ranAndFailed($message)) {
                 return self::RENDER_ERROR;
             }
@@ -132,8 +133,12 @@ final class FailureCode
 
         // The pixel cache refusing to open. Permanent for this file at this
         // resolution -- the same request will exhaust the same limit again --
-        // and it says nothing at all about the next file.
-        if (preg_match('/cache\s*resources\s*exhausted|OpenPixelCache|width or height exceeds limit/i', $message)) {
+        // and it says nothing at all about the next file. "Invalid IHDR
+        // data" is the same refusal in other words: ImageMagick 7 reads the
+        // page Ghostscript wrote as a PNG, and its PNG reader turns down one
+        // wider or taller than the width or height limit with it (measured
+        // on 7.1.1, review after 1.4.33).
+        if (preg_match('/cache\s*resources\s*exhausted|OpenPixelCache|width or height exceeds limit|invalid\s*IHDR/i', $message)) {
             return self::RESOURCE_LIMIT;
         }
 
@@ -177,8 +182,9 @@ final class FailureCode
      *
      * Environment codes are not answered here. ImagickEngine::statusFor()
      * already writes those, with the policy file path filled in where it could
-     * be found, and this returns an empty action for them so the caller reaches
-     * for that instead.
+     * be found -- and Generator::getAvailabilityStatus() writes NO_ENGINE --
+     * and this returns an empty action for them so the caller reaches for
+     * that instead.
      *
      * @return array{label: string, action: string}
      */
@@ -210,9 +216,14 @@ final class FailureCode
                 ];
 
             case self::RESOURCE_LIMIT:
+                // Two causes share this code: ImageMagick refusing a page at
+                // the resolution asked, which a lower one can fix, and the
+                // plugin refusing a page too large even at the lowest
+                // resolution (since 1.4.34), which nothing on this screen can.
+                // The advice names both.
                 return [
-                    'label' => __('The page was too large for ImageMagick to open.', 'rapls-pdf-image-creator'),
-                    'action' => __('Lower the resolution on the Settings tab and generate again. Large-format pages at a high DPI can run to hundreds of millions of pixels.', 'rapls-pdf-image-creator'),
+                    'label' => __('The page was too large to draw.', 'rapls-pdf-image-creator'),
+                    'action' => __('Lower the resolution on the Settings tab and generate again: large-format pages at a high DPI can run to hundreds of millions of pixels. If the message says the page is too large even at the lowest resolution, no setting will help; that page cannot be made into a thumbnail.', 'rapls-pdf-image-creator'),
                 ];
 
             case self::WRITE_FAILED:
@@ -244,6 +255,7 @@ final class FailureCode
             self::NO_EXTENSION,
             self::PDF_BLOCKED_BY_POLICY,
             self::PDF_UNSUPPORTED,
+            self::NO_ENGINE,
             self::NOT_A_PDF,
             self::SOURCE_MISSING,
             self::PAGE_OUT_OF_RANGE,

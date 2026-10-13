@@ -169,15 +169,11 @@ final class Admin
 
         // Format
         $validFormats = ['jpeg', 'png', 'webp'];
-        $sanitized['format'] = in_array($input['format'] ?? 'jpeg', $validFormats, true)
-            ? $input['format']
-            : 'jpeg';
+        $sanitized['format'] = self::oneOf($input['format'] ?? 'jpeg', $validFormats, 'jpeg');
 
         // Background color
         $validBgColors = ['white', 'black', 'transparent'];
-        $sanitized['bgcolor'] = in_array($input['bgcolor'] ?? 'white', $validBgColors, true)
-            ? $input['bgcolor']
-            : 'white';
+        $sanitized['bgcolor'] = self::oneOf($input['bgcolor'] ?? 'white', $validBgColors, 'white');
 
         // Page number
         $sanitized['page'] = max(0, absint($input['page'] ?? 0));
@@ -188,21 +184,15 @@ final class Admin
 
         // Insert type
         $validInsertTypes = ['image', 'title', 'custom'];
-        $sanitized['insert_type'] = in_array($input['insert_type'] ?? 'image', $validInsertTypes, true)
-            ? $input['insert_type']
-            : 'image';
+        $sanitized['insert_type'] = self::oneOf($input['insert_type'] ?? 'image', $validInsertTypes, 'image');
 
         // Insert size
         $validSizes = array_merge(get_intermediate_image_sizes(), ['full']);
-        $sanitized['insert_size'] = in_array($input['insert_size'] ?? 'medium', $validSizes, true)
-            ? $input['insert_size']
-            : 'medium';
+        $sanitized['insert_size'] = self::oneOf($input['insert_size'] ?? 'medium', $validSizes, 'medium');
 
         // Insert link
         $validLinks = ['file', 'attachment', 'none'];
-        $sanitized['insert_link'] = in_array($input['insert_link'] ?? 'file', $validLinks, true)
-            ? $input['insert_link']
-            : 'file';
+        $sanitized['insert_link'] = self::oneOf($input['insert_link'] ?? 'file', $validLinks, 'file');
 
         // Custom HTML template
         $sanitized['custom_html'] = wp_kses_post($input['custom_html'] ?? '');
@@ -213,6 +203,22 @@ final class Admin
         $sanitized['keep_on_uninstall'] = !empty($input['keep_on_uninstall']);
 
         return $sanitized;
+    }
+
+    /**
+     * The value when it is one of the list, otherwise the default
+     *
+     * A key missing from the input used to be checked as its default and
+     * then read from the input anyway, which saved null -- a partial save
+     * from code or WP-CLI lost the format and the background (review after
+     * 1.4.33).
+     *
+     * @param mixed              $value
+     * @param array<int, string> $allowed
+     */
+    private static function oneOf($value, array $allowed, string $default): string
+    {
+        return in_array($value, $allowed, true) ? $value : $default;
     }
 
     /**
@@ -400,12 +406,7 @@ final class Admin
             // still shows the message itself.
             // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Display-only notice, no data processing
             $code = sanitize_key(wp_unslash((string) $_GET['rapls_pic_error']));
-            $reason = FailureCode::describe($code)['label'];
-            // ERROR too: from generate() it is the server check's "unable to
-            // check" -- a test PDF ImageMagick could not read just now.
-            if ('' === $reason && in_array($code, [FailureCode::NO_EXTENSION, FailureCode::PDF_BLOCKED_BY_POLICY, FailureCode::PDF_UNSUPPORTED, FailureCode::ERROR], true)) {
-                $reason = __('This server cannot make PDF thumbnails at the moment.', 'rapls-pdf-image-creator');
-            }
+            $reason = self::failureReason($code);
 
             echo '<div class="notice notice-error is-dismissible">';
             echo '<p>' . esc_html__('Failed to generate PDF thumbnail.', 'rapls-pdf-image-creator');
@@ -419,6 +420,28 @@ final class Admin
             echo '</p>';
             echo '</div>';
         }
+    }
+
+    /**
+     * Why a generation failed, in this plugin's words, from its code
+     *
+     * Never ImageMagick's own text, which carries its command line and the
+     * server's paths. Empty for a code with nothing more to say than
+     * "failed". Said by the regeneration notice and by Bulk Generate, which
+     * said "Failed to generate thumbnail." for every reason (review after
+     * 1.4.33).
+     */
+    public static function failureReason(string $code): string
+    {
+        $reason = FailureCode::describe($code)['label'];
+
+        // ERROR too: from generate() it is the server check's "unable to
+        // check" -- a test PDF ImageMagick could not read just now.
+        if ('' === $reason && in_array($code, [FailureCode::NO_EXTENSION, FailureCode::PDF_BLOCKED_BY_POLICY, FailureCode::PDF_UNSUPPORTED, FailureCode::ERROR], true)) {
+            $reason = __('This server cannot make PDF thumbnails at the moment.', 'rapls-pdf-image-creator');
+        }
+
+        return $reason;
     }
 
     /**
@@ -441,8 +464,13 @@ final class Admin
 
         if ('ok' === $status['code']) {
             // The host fixed it. Forget everything we recorded about it, so a
-            // later failure starts from a clean slate.
-            delete_transient(RAPLS_PIC_ACTIVATION_NOTICE);
+            // later failure starts from a clean slate. Each only when it is
+            // there: this runs on every admin page, and deleting asks the
+            // database whether or not there is anything to delete (review
+            // after 1.4.33).
+            if (false !== get_transient(RAPLS_PIC_ACTIVATION_NOTICE)) {
+                delete_transient(RAPLS_PIC_ACTIVATION_NOTICE);
+            }
             if (false !== get_option(Generator::UNAVAILABLE_OPTION, false)) {
                 delete_option(Generator::UNAVAILABLE_OPTION);
             }
@@ -549,10 +577,11 @@ final class Admin
     /**
      * Throw away the cached probe results and measure again
      *
-     * The probes cache for twelve hours, which is right for a value read on
-     * every admin page load and wrong for the moment after a host says "we
-     * have enabled PDFs for you". Without this the site owner waits half a day
-     * to find out whether that is true.
+     * The probes cache for twelve hours, some for a day or a week, which is
+     * right for a value read on every admin page load and wrong for the
+     * moment after a host says "we have enabled PDFs for you". Without this
+     * the site owner waits half a day or more to find out whether that is
+     * true.
      */
     public function maybeRecheckProbes(): void
     {

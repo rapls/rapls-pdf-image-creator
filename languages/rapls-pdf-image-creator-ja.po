@@ -151,6 +151,14 @@ msgstr ""
 "チェックすると、プラグイン削除後も生成された画像ファイルは通常の画像ファイル"
 "として扱われます。"
 
+msgid ""
+"Images a post still shows, as its featured image or in its content, are kept "
+"either way. A post whose featured image was a PDF is given that PDF's image."
+msgstr ""
+"投稿がまだ表示している画像 (アイキャッチ画像や本文中の画像) は、どちらの場"
+"合も残します。PDF をアイキャッチ画像にしていた投稿には、その PDF の画像を設定し"
+"ます。"
+
 msgid "Insert Settings"
 msgstr "挿入設定"
 
@@ -184,6 +192,13 @@ msgstr "PDF サムネイルを挿入する際に使用する画像サイズ。"
 
 msgid "Link To"
 msgstr "リンク先"
+
+msgid ""
+"In the Add Media window, Link To starts at this choice for a PDF with a "
+"thumbnail. A link chosen there is used instead."
+msgstr ""
+"サムネイルのある PDF では、「メディアを追加」画面のリンク先がここで選んだもの"
+"になります。その画面で別のリンク先を選ぶと、そちらを使います。"
 
 msgid "PDF File"
 msgstr "PDF ファイル"
@@ -242,6 +257,12 @@ msgstr "スキャン結果"
 msgid "PDFs found:"
 msgstr "見つかった PDF:"
 
+msgid "To generate:"
+msgstr "生成する数:"
+
+msgid "Plugin Activation Error"
+msgstr "プラグインの有効化エラー"
+
 msgid "PDF attachments in the database:"
 msgstr "データベース内の PDF 添付ファイル:"
 
@@ -277,11 +298,11 @@ msgid "Check this server again"
 msgstr "このサーバーを再検査"
 
 msgid ""
-"Results below are measured, then remembered for twelve hours. Use this after "
-"your host changes something."
+"Results below are measured, then remembered: most for twelve hours, some for "
+"up to a week. Use this after your host changes something."
 msgstr ""
-"以下の結果は実測値で、12時間記憶されます。ホスティング事業者側で設定が変わっ"
-"たときに使ってください。"
+"以下の結果は実際に測ったもので、多くは12時間、一部は最長1週間記憶します。"
+"ホスティング事業者側で設定が変わったときに使ってください。"
 
 msgid "What to do:"
 msgstr "対処方法:"
@@ -290,8 +311,8 @@ msgid "See Site Health for the full report"
 msgstr "詳しい状況はサイトヘルスで確認できます"
 
 #, php-format
-msgid "Last seen on %1$s, %2$s ago."
-msgstr "最後に発生したのは %1$s、%2$s 前です。"
+msgid "Last happened with the PDF \"%1$s\", %2$s ago."
+msgstr "最後に起きたのは PDF「%1$s」で、%2$s前です。"
 
 msgid "This clears itself the next time a thumbnail is generated successfully."
 msgstr "次にサムネイルの生成が成功した時点で、この表示は消えます。"
@@ -374,7 +395,7 @@ msgstr "一括生成を開始しますか ? 時間がかかる場合がありま
 
 #, php-format
 msgid "Generating thumbnail %1$d of %2$d..."
-msgstr "サムネイル生成中%1$d / %2$d..."
+msgstr "%2$d件中%1$d件目のサムネイルを生成しています..."
 
 msgid "Rapls PDF Image Creator:"
 msgstr "Rapls PDF Image Creator:"
@@ -680,15 +701,22 @@ msgstr ""
 "添付ファイルはメディアライブラリに登録されていますが、実体のファイルがありま"
 "せん。PDF をアップロードし直してください。"
 
-msgid "The page was too large for ImageMagick to open."
-msgstr "ページが大きすぎて ImageMagick が開けませんでした。"
+msgid "The page was too large to draw."
+msgstr "ページが大きすぎて描画できませんでした。"
+
+msgid "This page is too large to draw, even at the lowest resolution."
+msgstr "このページは大きすぎるため、最も低い解像度でも描画できません。"
 
 msgid ""
-"Lower the resolution on the Settings tab and generate again. Large-format "
-"pages at a high DPI can run to hundreds of millions of pixels."
+"Lower the resolution on the Settings tab and generate again: large-format "
+"pages at a high DPI can run to hundreds of millions of pixels. If the "
+"message says the page is too large even at the lowest resolution, no "
+"setting will help; that page cannot be made into a thumbnail."
 msgstr ""
 "「設定」タブで解像度を下げて、もう一度生成してください。大判のページを高い "
-"DPI で描画すると、数億ピクセルに達することがあります。"
+"DPI で描画すると、数億ピクセルに達することがあります。メッセージに最も低い解"
+"像度でも描画できないとある場合は、どの設定でも解決しません。そのページはサム"
+"ネイルにできません。"
 
 msgid "The image could not be written to the uploads folder."
 msgstr "アップロードフォルダーに画像を書き出せませんでした。"
@@ -746,7 +774,7 @@ msgid "Already did"
 msgstr "もう書きました"
 
 msgid "No thanks"
-msgstr "遠慮しておく"
+msgstr "遠慮します"
 
 msgid ""
 "Asked once. Whichever you choose — including closing this notice — it will "
@@ -879,8 +907,8 @@ msgstr "このサーバーでは WebP を使えません。5.8より前の WordP
 msgid "Where WordPress shows a file-type icon for a PDF, the generated thumbnail is shown instead. The Media Library's grid and list show a PDF's thumbnail whether or not this is on."
 msgstr "WordPress が PDF にファイル形式のアイコンを表示する場所で、代わりに生成したサムネイルを表示します。メディアライブラリのグリッドとリストでは、この設定に関係なく PDF のサムネイルを表示します。"
 
-msgid "This also decides what happens to the image when its PDF is deleted. Checked: the image is deleted with the PDF, unless something else uses it. Unchecked: the image is kept as an ordinary image."
-msgstr "PDF を削除したときに画像をどうするかも、この設定で決まります。オンにすると、ほかで使われていない限り、画像も PDF と一緒に削除します。オフにすると、画像は普通の画像として残ります。"
+msgid "This also decides what happens to the image when its PDF is deleted. Checked: the image is deleted with the PDF, unless another PDF or a post uses it as its featured image; an image placed in a post's content is not looked for, and goes. Unchecked: the image is kept as an ordinary image."
+msgstr "PDF を削除したときに画像をどうするかも、この設定で決まります。オンにすると、画像も PDF と一緒に削除します。ただし、ほかの PDF や投稿がアイキャッチ画像として使っている画像は残します。投稿の本文に入れた画像は探さないため、削除されます。オフにすると、画像は普通の画像として残ります。"
 
 msgid "These settings are used by \"Insert into post\" in the classic editor's Add Media window. The block editor does not use them."
 msgstr "これらの設定は、クラシックエディターの「メディアを追加」画面の「投稿に挿入」で使われます。ブロックエディターでは使われません。"
@@ -955,7 +983,7 @@ msgstr "Imagick 拡張機能"
 
 #, php-format
 msgid "No PDF here is an ordinary Media Library item (%s). Bulk Generate handles those only; a PDF with any other status — private, in the trash, or one another plugin gave it — is left out until it is an ordinary item again."
-msgstr "メディアライブラリの通常の項目になっている PDF がありません (%s)。一括生成が扱うのは通常の項目だけです。ほかの状態の PDF（非公開、ゴミ箱の中、ほかのプラグインが状態を付けたもの）は、通常の項目に戻るまで対象になりません。"
+msgstr "メディアライブラリの通常の項目になっている PDF がありません (%s)。一括生成が扱うのは通常の項目だけです。ほかの状態の PDF (非公開、ゴミ箱の中、ほかのプラグインが状態を付けたもの) は、通常の項目に戻るまで対象になりません。"
 
 msgid "PDF Support"
 msgstr "PDF 対応"

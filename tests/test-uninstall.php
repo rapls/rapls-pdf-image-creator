@@ -4,21 +4,93 @@
  *
  * uninstall.php is run as WordPress runs it -- included once -- against a
  * stand-in network of two sites whose options and postmeta are kept apart.
+ * Then rapls_pic_uninstall_site() is run again on one site, seeded afresh,
+ * for the images posts still show and for each lookup that can fail
+ * (review of 1.4.33).
  */
 
 declare(strict_types=1);
 
 define('WP_UNINSTALL_PLUGIN', 'rapls-pdf-image-creator/rapls-pdf-image-creator.php');
 define('WP_LANG_DIR', sys_get_temp_dir());
+define('ARRAY_A', 'ARRAY_A');
+
+/**
+ * Every option and transient the plugin keeps, as the plugin names them
+ *
+ * Read from includes/ and the main file rather than listed by hand, so a
+ * name added there and forgotten in uninstall.php fails below.
+ *
+ * @return array{options: string[], transients: string[]}
+ */
+function plugin_names(): array
+{
+    $root = dirname(__DIR__);
+    $files = [$root . '/rapls-pdf-image-creator.php'];
+    $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root . '/includes', FilesystemIterator::SKIP_DOTS));
+    foreach ($iterator as $file) {
+        if ('php' === $file->getExtension()) {
+            $files[] = $file->getPathname();
+        }
+    }
+
+    $names = ['options' => [], 'transients' => []];
+    foreach ($files as $file) {
+        $source = (string) file_get_contents($file);
+        // Constants named for what they hold: FOO_OPTION, OPTION_NAME, FOO_TRANSIENT, TRANSIENT_PREFIX.
+        preg_match_all("/const\\s+(?:\\w*_)?(OPTION|TRANSIENT)(?:_\\w*)?\\s*=\\s*'([a-z0-9_]+)'/", $source, $constants, PREG_SET_ORDER);
+        foreach ($constants as $constant) {
+            $names['TRANSIENT' === $constant[1] ? 'transients' : 'options'][] = $constant[2];
+        }
+        preg_match_all("/define\\(\\s*'\\w*NOTICE'\\s*,\\s*'([a-z0-9_]+)'/", $source, $defines);
+        foreach ($defines[1] as $name) {
+            $names['transients'][] = $name;
+        }
+        // And names written out where they are used.
+        preg_match_all("/\\b(?:get|add|update|delete|set)_(option|transient)\\(\\s*'([a-z0-9_]+)'/", $source, $literals, PREG_SET_ORDER);
+        foreach ($literals as $literal) {
+            $names['option' === $literal[1] ? 'options' : 'transients'][] = $literal[2];
+        }
+    }
+
+    return ['options' => array_values(array_unique($names['options'])), 'transients' => array_values(array_unique($names['transients']))];
+}
+
+$GLOBALS['names'] = plugin_names();
+
+function seed_options(array $options): array
+{
+    foreach ($GLOBALS['names']['options'] as $name) {
+        $options[$name] = $options[$name] ?? 'seeded';
+    }
+    return $options;
+}
+/** A name ending in "_" is a prefix (the ICC paths); both of its keys are seeded. */
+function seed_transients(): array
+{
+    $transients = [];
+    foreach ($GLOBALS['names']['transients'] as $name) {
+        if ('_' === substr($name, -1)) {
+            $transients[$name . 'srgb'] = 'seeded';
+            $transients[$name . 'cmyk'] = 'seeded';
+        } else {
+            $transients[$name] = 'seeded';
+        }
+    }
+    return $transients;
+}
 
 $GLOBALS['blog'] = 1;
 $GLOBALS['switches'] = [];
-// Per site: options, postmeta rows [post_id, key, value], and what was deleted.
+// Per site: options, transients, postmeta rows [post_id, key, value], posts
+// [ID => content], the attachments that exist, and what was deleted.
 $GLOBALS['sites'] = [
-    1 => ['options' => ['rapls_pic_settings' => ['keep_on_uninstall' => false], 'rapls_pic_version' => '1.4.19', 'rapls_pic_last_failure' => ['code' => 'render_error']], 'meta' => [[10, '_rapls_pic_thumbnail_id', '11'], [11, '_rapls_pic_is_thumbnail', '1'], [11, '_rapls_pic_source_pdf', '10']], 'deleted' => []],
-    2 => ['options' => ['rapls_pic_settings' => ['keep_on_uninstall' => true], 'rapls_pic_version' => '1.4.19', 'rapls_pic_last_failure' => ['code' => 'render_error']], 'meta' => [[20, '_rapls_pic_thumbnail_id', '21'], [21, '_rapls_pic_is_thumbnail', '1'], [21, '_rapls_pic_source_pdf', '20']], 'deleted' => []],
+    1 => ['options' => seed_options(['rapls_pic_settings' => ['keep_on_uninstall' => false]]), 'transients' => seed_transients(), 'meta' => [[10, '_rapls_pic_thumbnail_id', '11'], [11, '_rapls_pic_is_thumbnail', '1'], [11, '_rapls_pic_source_pdf', '10']], 'posts' => [], 'attachments' => [11], 'deleted' => []],
+    2 => ['options' => seed_options(['rapls_pic_settings' => ['keep_on_uninstall' => true]]), 'transients' => seed_transients(), 'meta' => [[20, '_rapls_pic_thumbnail_id', '21'], [21, '_rapls_pic_is_thumbnail', '1'], [21, '_rapls_pic_source_pdf', '20'], [25, '_thumbnail_id', '20']], 'posts' => [], 'attachments' => [21], 'deleted' => []],
 ];
 $GLOBALS['user_meta_deleted'] = [];
+// A query whose SQL contains this fails, as a database error would.
+$GLOBALS['fail_on'] = null;
 
 function is_multisite() { return !empty($GLOBALS['multisite']); }
 function get_sites($args = []) { return array_keys($GLOBALS['sites']); }
@@ -27,19 +99,98 @@ function restore_current_blog() { $GLOBALS['blog'] = array_pop($GLOBALS['switche
 function &site() { return $GLOBALS['sites'][$GLOBALS['blog']]; }
 function get_option($key, $default = false) { return site()['options'][$key] ?? $default; }
 function delete_option($key) { unset(site()['options'][$key]); return true; }
-function delete_transient($key) { return true; }
+function delete_transient($key) { unset(site()['transients'][$key]); return true; }
 function wp_cache_delete($key, $group = '') { return true; }
+function wp_basename($path, $suffix = '') { return basename($path, $suffix); }
 function delete_metadata($type, $id, $key, $value = '', $all = false) { $GLOBALS['user_meta_deleted'][] = $key; return true; }
 function wp_delete_attachment($id, $force = false) { site()['deleted'][] = (int) $id; return true; }
+function update_post_meta($id, $key, $value, $previous = '') {
+    foreach (site()['meta'] as &$row) {
+        if ($row[0] === $id && $row[1] === $key && ('' === $previous || $row[2] === (string) $previous)) {
+            $row[2] = (string) $value;
+        }
+    }
+    return true;
+}
+function meta_value(int $id, string $key): ?string {
+    foreach (site()['meta'] as $row) {
+        if ($row[0] === $id && $row[1] === $key) {
+            return $row[2];
+        }
+    }
+    return null;
+}
 
 $GLOBALS['wpdb'] = new class {
     public $postmeta = 'wp_postmeta';
+    public $posts = 'wp_posts';
     public $last_error = '';
+    private function failing(string $sql): bool {
+        $this->last_error = (null !== $GLOBALS['fail_on'] && false !== strpos($sql, $GLOBALS['fail_on'])) ? 'Table is marked as crashed' : '';
+        return '' !== $this->last_error;
+    }
+    public function prepare($sql, ...$args) { return vsprintf($sql, $args); }
     public function get_col($sql) {
-        if (false !== strpos($sql, "meta_key = '_rapls_pic_is_thumbnail'")) {
-            return array_map(static function ($row) { return (string) $row[0]; }, array_values(array_filter(site()['meta'], static function ($row) { return '_rapls_pic_is_thumbnail' === $row[1]; })));
+        if ($this->failing($sql)) {
+            return null;
         }
-        return [];   // nothing else uses the images
+        if (false !== strpos($sql, "used.meta_key IN ('_thumbnail_id', '_rapls_pic_thumbnail_id')")) {
+            // A thumbnail some post other than its PDF names, as the SQL asks.
+            $used = [];
+            foreach (site()['meta'] as $row) {
+                if (in_array($row[1], ['_thumbnail_id', '_rapls_pic_thumbnail_id'], true)) {
+                    $source = meta_value((int) $row[2], '_rapls_pic_source_pdf');
+                    if (null !== $source && $row[0] !== (int) $source) {
+                        $used[] = $row[2];
+                    }
+                }
+            }
+            return array_values(array_unique($used));
+        }
+        throw new RuntimeException('unexpected get_col: ' . $sql);
+    }
+    public function get_results($sql, $output = null) {
+        if ($this->failing($sql)) {
+            return null;
+        }
+        if (false !== strpos($sql, "marker.meta_key = '_rapls_pic_is_thumbnail'")) {
+            $rows = [];
+            foreach (site()['meta'] as $row) {
+                if ('_rapls_pic_is_thumbnail' === $row[1] && '1' === $row[2]) {
+                    $rows[] = ['id' => (string) $row[0], 'file' => meta_value($row[0], '_wp_attached_file'), 'pdf' => meta_value($row[0], '_rapls_pic_source_pdf')];
+                }
+            }
+            return $rows;
+        }
+        if (false !== strpos($sql, "thumb.meta_key = '_rapls_pic_thumbnail_id'")) {
+            // Only thumbnails that are still attachments, when the SQL says so.
+            $attachmentsOnly = false !== strpos($sql, "image.post_type = 'attachment'");
+            $rows = [];
+            foreach (site()['meta'] as $row) {
+                if ('_thumbnail_id' === $row[1]) {
+                    $thumbnail = meta_value((int) $row[2], '_rapls_pic_thumbnail_id');
+                    if (null !== $thumbnail && (!$attachmentsOnly || in_array((int) $thumbnail, site()['attachments'], true))) {
+                        $rows[] = ['post' => (string) $row[0], 'pdf' => $row[2], 'thumbnail' => $thumbnail];
+                    }
+                }
+            }
+            // Something changing a featured image between this lookup and the update.
+            if (isset($GLOBALS['after_featured_lookup'])) {
+                ($GLOBALS['after_featured_lookup'])();
+            }
+            return $rows;
+        }
+        if (preg_match('/WHERE ID > (\d+) .* LIMIT (\d+)/', $sql, $m)) {
+            $GLOBALS['post_reads'] = ($GLOBALS['post_reads'] ?? 0) + 1;
+            $rows = [];
+            foreach (site()['posts'] as $id => $content) {
+                if ($id > (int) $m[1] && count($rows) < (int) $m[2]) {
+                    $rows[] = ['ID' => (string) $id, 'post_content' => $content];
+                }
+            }
+            return $rows;
+        }
+        throw new RuntimeException('unexpected get_results: ' . $sql);
     }
     public function delete($table, $where) {
         site()['meta'] = array_values(array_filter(site()['meta'], static function ($row) use ($where) { return $row[1] !== $where['meta_key']; }));
@@ -56,15 +207,108 @@ function check($label, $got, $want) {
     printf("%s %-62s got=%s want=%s\n", $ok ? 'ok  ' : 'FAIL', $label, json_encode($got), json_encode($want));
 }
 
+check('the scan found the names it should', [count($GLOBALS['names']['options']) >= 8, count($GLOBALS['names']['transients']) >= 9, in_array('rapls_pic_activation_notice', $GLOBALS['names']['transients'], true), in_array('rapls_pic_icc_path_', $GLOBALS['names']['transients'], true)], [true, true, true, true]);
+
 $GLOBALS['multisite'] = true;
 require dirname(__DIR__) . '/uninstall.php';
 
 check('site 1 (keep off): its generated image deleted', $GLOBALS['sites'][1]['deleted'], [11]);
 check('site 2 (keep on): its generated image kept', $GLOBALS['sites'][2]['deleted'], []);
-check('both sites: options gone', [array_keys($GLOBALS['sites'][1]['options']), array_keys($GLOBALS['sites'][2]['options'])], [[], []]);
-check('both sites: markers gone', [$GLOBALS['sites'][1]['meta'], $GLOBALS['sites'][2]['meta']], [[], []]);
+check('both sites: every option gone', [array_keys($GLOBALS['sites'][1]['options']), array_keys($GLOBALS['sites'][2]['options'])], [[], []]);
+check('both sites: every transient gone', [array_keys($GLOBALS['sites'][1]['transients']), array_keys($GLOBALS['sites'][2]['transients'])], [[], []]);
+check('both sites: markers gone, a post\'s featured image kept', [$GLOBALS['sites'][1]['meta'], $GLOBALS['sites'][2]['meta']], [[], [[25, '_thumbnail_id', '21']]]);
 check('back on the site it started from', [$GLOBALS['blog'], $GLOBALS['switches']], [1, []]);
 check('user flags removed once, for the network', count($GLOBALS['user_meta_deleted']), 2);
+
+echo "\n--- Images posts still show, keep off ---\n";
+
+/**
+ * One site with four PDFs and their thumbnails, and 250 posts
+ *
+ *  30/31  a post's featured image is the PDF
+ *  40/41  a post shows a size of the thumbnail by its address (post 330,
+ *         past the first 200, so the second batch has to be read)
+ *  60/61  a post's block names the PDF by its wp-image- class only
+ *  70/71  nothing uses it
+ */
+function seed_site(): void
+{
+    $posts = [];
+    for ($id = 100; $id < 350; $id++) {
+        $posts[$id] = '<p>Nothing here but <img src="https://example.test/wp-content/uploads/2026/10/other-photo.jpg"></p>';
+    }
+    $posts[330] = '<!-- wp:image {"id":40} --><figure><img src="https://example.test/wp-content/uploads/2026/10/b-pdf-thumbnail-300x200.jpg" alt=""/></figure><!-- /wp:image -->';
+    $posts[120] = '<!-- wp:image {"id":60} --><figure><img src="https://cdn.example.test/x" class="wp-image-60"/></figure><!-- /wp:image -->';
+
+    $meta = [[90, '_thumbnail_id', '30']];
+    foreach ([30 => 'a', 40 => 'b', 60 => 'c', 70 => 'd'] as $pdf => $name) {
+        $meta[] = [$pdf, '_rapls_pic_thumbnail_id', (string) ($pdf + 1)];
+        $meta[] = [$pdf + 1, '_rapls_pic_is_thumbnail', '1'];
+        $meta[] = [$pdf + 1, '_rapls_pic_source_pdf', (string) $pdf];
+        $meta[] = [$pdf + 1, '_wp_attached_file', "2026/10/$name-pdf-thumbnail.jpg"];
+    }
+
+    $GLOBALS['sites'][1] = ['options' => ['rapls_pic_settings' => ['keep_on_uninstall' => false]], 'transients' => [], 'meta' => $meta, 'posts' => $posts, 'attachments' => [31, 41, 61, 71], 'deleted' => []];
+    $GLOBALS['blog'] = 1;
+}
+
+seed_site();
+rapls_pic_uninstall_site();
+check('only the image nothing uses is deleted', $GLOBALS['sites'][1]['deleted'], [71]);
+check('the featured PDF now names its image', meta_value(90, '_thumbnail_id'), '31');
+
+foreach ([
+    'the featured-image lookup' => "thumb.meta_key = '_rapls_pic_thumbnail_id'",
+    'the list of thumbnails' => "marker.meta_key = '_rapls_pic_is_thumbnail'",
+    'the used-elsewhere lookup' => "used.meta_key IN ('_thumbnail_id', '_rapls_pic_thumbnail_id')",
+    'reading the posts' => 'post_content <>',
+] as $label => $sql) {
+    seed_site();
+    $GLOBALS['fail_on'] = $sql;
+    rapls_pic_uninstall_site();
+    $GLOBALS['fail_on'] = null;
+    check("when $label fails, nothing is deleted", $GLOBALS['sites'][1]['deleted'], []);
+}
+
+echo "\n--- Featured images: only to an attachment, and only if unchanged ---\n";
+
+// A PDF whose recorded thumbnail is not an attachment any more (a post with
+// that ID, or nothing): the post keeps the PDF rather than naming a non-image.
+seed_site();
+$GLOBALS['sites'][1]['meta'][] = [80, '_rapls_pic_thumbnail_id', '81'];
+$GLOBALS['sites'][1]['meta'][] = [91, '_thumbnail_id', '80'];
+rapls_pic_uninstall_site();
+check('a thumbnail that is not an attachment is not made the featured image', meta_value(91, '_thumbnail_id'), '80');
+
+// A featured image someone changes while this runs is left as they set it.
+seed_site();
+$GLOBALS['after_featured_lookup'] = static function (): void {
+    foreach ($GLOBALS['sites'][1]['meta'] as &$row) {
+        if (90 === $row[0] && '_thumbnail_id' === $row[1]) {
+            $row[2] = '555';
+        }
+    }
+};
+rapls_pic_uninstall_site();
+unset($GLOBALS['after_featured_lookup']);
+check('  ...and one changed meanwhile is not overwritten', meta_value(90, '_thumbnail_id'), '555');
+
+echo "\n--- Reading posts stops once every thumbnail is found ---\n";
+
+// All three thumbnails nothing else keeps are shown by post 130, in the first
+// 200 posts: the second batch is not read. The featured one (31) is not looked
+// for at all -- if it were, nothing would show it and every post would be read.
+seed_site();
+$GLOBALS['sites'][1]['posts'][130] = '<img src="/u/2026/10/b-pdf-thumbnail.jpg"><img src="/u/2026/10/d-pdf-thumbnail-150x150.jpg">';
+$GLOBALS['post_reads'] = 0;
+rapls_pic_uninstall_site();
+check('one batch read, and nothing deleted', [$GLOBALS['post_reads'], $GLOBALS['sites'][1]['deleted']], [1, []]);
+seed_site();
+$GLOBALS['post_reads'] = 0;
+rapls_pic_uninstall_site();
+check('  ...while one never found means every post is read', $GLOBALS['post_reads'], 2);
+
+check('a stem drops size, "-scaled" and extension', [rapls_pic_uninstall_stem('2026/10/B-pdf-thumbnail-300x200.JPG'), rapls_pic_uninstall_stem('x/b-pdf-thumbnail-scaled.webp'), rapls_pic_uninstall_stem('b-pdf-thumbnail-1.jpg')], ['b-pdf-thumbnail', 'b-pdf-thumbnail', 'b-pdf-thumbnail-1']);
 
 echo "\n$pass passed, $fail failed\n";
 exit($fail ? 1 : 0);

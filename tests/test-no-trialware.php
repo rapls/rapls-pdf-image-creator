@@ -36,7 +36,7 @@ function check(string $label, $actual, $expected): void
  *
  * @return array<int, string>
  */
-function shipped_php_files(): array
+function shipped_php_files(array $extensions = ['php']): array
 {
     $roots = ['includes', 'admin'];
     $files = [
@@ -51,7 +51,7 @@ function shipped_php_files(): array
         }
         $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir));
         foreach ($iterator as $file) {
-            if ($file->isFile() && 'php' === strtolower($file->getExtension())) {
+            if ($file->isFile() && in_array(strtolower($file->getExtension()), $extensions, true)) {
                 $files[] = $file->getPathname();
             }
         }
@@ -62,8 +62,21 @@ function shipped_php_files(): array
     return $files;
 }
 
-$files = shipped_php_files();
+// The scripts too: admin/js ships, and a gate or an upsell could as easily
+// sit in a script as in PHP (review after 1.4.33).
+$files = shipped_php_files(['php', 'js']);
 check('there are shipped files to scan', count($files) > 5, true);
+check('  ...the scripts among them', count(array_filter($files, static function ($f) { return '.js' === substr($f, -3); })) >= 3, true);
+
+// The one file allowed to name the add-on's sales page (CLAUDE.md, "Telling
+// people the add-on exists"). Its address is taken out of that file before the
+// scans below, and is looked for everywhere else.
+$upsellFile = RAPLS_PIC_PLUGIN_DIR . 'includes/Upsell.php';
+$addOnUrl = '#https?://raplsworks\.com/plugins/rapls-pdf-image-creator-pro/?[^\'"\s]*#';
+$scanned = static function (string $file) use ($upsellFile, $addOnUrl): string {
+    $contents = (string) file_get_contents($file);
+    return $file === $upsellFile ? (string) preg_replace($addOnUrl, '', $contents) : $contents;
+};
 
 // ---------------------------------------------------------------------------
 echo "\n=== nothing here knows the add-on exists ===\n";
@@ -81,13 +94,22 @@ $forbidden = [
 foreach ($forbidden as $needle => $description) {
     $hits = [];
     foreach ($files as $file) {
-        $contents = file_get_contents($file);
-        if (false !== $contents && false !== strpos($contents, $needle)) {
+        $contents = $scanned($file);
+        if (false !== strpos($contents, $needle)) {
             $hits[] = str_replace(RAPLS_PIC_PLUGIN_DIR, '', $file);
         }
     }
     check("no $description in shipped code", $hits, []);
 }
+
+$outside = [];
+foreach ($files as $file) {
+    $contents = (string) file_get_contents($file);
+    if ($file !== $upsellFile && (preg_match($addOnUrl, $contents) || false !== strpos($contents, 'utm_source=pic-free'))) {
+        $outside[] = str_replace(RAPLS_PIC_PLUGIN_DIR, '', $file);
+    }
+}
+check('the add-on\'s page is linked from includes/Upsell.php only', $outside, []);
 
 // ---------------------------------------------------------------------------
 echo "\n=== no capability is gated ===\n";
@@ -109,8 +131,8 @@ $gates = [
 foreach ($gates as $pattern => $description) {
     $hits = [];
     foreach ($files as $file) {
-        $contents = file_get_contents($file);
-        if (false !== $contents && preg_match($pattern, $contents)) {
+        $contents = $scanned($file);
+        if (preg_match($pattern, $contents)) {
             $hits[] = str_replace(RAPLS_PIC_PLUGIN_DIR, '', $file);
         }
     }

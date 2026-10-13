@@ -64,6 +64,13 @@ final class BulkProcessor
     private const SEARCH_PAGES = 5;
 
     /**
+     * The images idsAfter() put in the object cache for the page it read
+     *
+     * @var array<int, int>
+     */
+    private array $primed = [];
+
+    /**
      * AJAX: Scan for PDFs, one page at a time
      *
      * Counts carried by the browser from page to page; the last page, the
@@ -286,9 +293,17 @@ final class BulkProcessor
                     'message' => __('Thumbnail generated.', 'rapls-pdf-image-creator'),
                 ]);
             } else {
+                // With the reason, as the Media Library's notice gives it:
+                // every failure said only "Failed to generate thumbnail."
+                // (review after 1.4.33).
+                $outcome = $this->generator->outcomeFor($pdfId);
+                $reason = Admin::failureReason((string) ($outcome['code'] ?? ''));
+
                 wp_send_json_error([
                     'pdf_id' => $pdfId,
-                    'message' => __('Failed to generate thumbnail.', 'rapls-pdf-image-creator'),
+                    'message' => '' !== $reason
+                        ? $reason
+                        : __('Failed to generate thumbnail.', 'rapls-pdf-image-creator'),
                 ]);
             }
         } catch (\Throwable $e) {
@@ -445,9 +460,29 @@ final class BulkProcessor
         }
 
         $ids = array_map('intval', (array) $query->posts);
+        $this->primed = [];
 
         if ([] !== $ids && function_exists('update_postmeta_cache')) {
             update_postmeta_cache($ids);
+        }
+
+        // And the images their meta names, in one query: hasThumbnail() asks
+        // whether each still exists, and that was a query per PDF (review
+        // after 1.4.33).
+        if ([] !== $ids && function_exists('_prime_post_caches')) {
+            foreach ($ids as $id) {
+                foreach ([Generator::THUMBNAIL_META_KEY, '_thumbnail_id'] as $key) {
+                    $named = (int) get_post_meta($id, $key, true);
+                    if ($named > 0) {
+                        $this->primed[$named] = $named;
+                    }
+                }
+            }
+
+            $this->primed = array_values($this->primed);
+            if ([] !== $this->primed) {
+                _prime_post_caches($this->primed, false, false);
+            }
         }
 
         return $ids;
@@ -462,7 +497,7 @@ final class BulkProcessor
      *
      * @param array<int, int> $ids
      */
-    private static function release(array $ids): void
+    private function release(array $ids): void
     {
         if (function_exists('wp_using_ext_object_cache') && wp_using_ext_object_cache()) {
             return;
@@ -470,6 +505,11 @@ final class BulkProcessor
 
         foreach ($ids as $id) {
             wp_cache_delete($id, 'post_meta');
+            wp_cache_delete($id, 'posts');
+        }
+
+        // The images looked up with them, too.
+        foreach ($this->primed as $id) {
             wp_cache_delete($id, 'posts');
         }
     }
@@ -490,7 +530,7 @@ final class BulkProcessor
             }
         }
 
-        self::release($ids);
+        $this->release($ids);
 
         return [
             'total' => count($ids),
@@ -515,13 +555,13 @@ final class BulkProcessor
 
             foreach ($ids as $id) {
                 if ($force || !$this->generator->hasThumbnail($id)) {
-                    self::release($ids);
+                    $this->release($ids);
 
                     return ['pdf_id' => $id, 'after' => $id, 'done' => false];
                 }
             }
 
-            self::release($ids);
+            $this->release($ids);
 
             if (count($ids) < self::PAGE) {
                 return ['pdf_id' => null, 'after' => [] !== $ids ? (int) end($ids) : $after, 'done' => true];
@@ -531,33 +571,5 @@ final class BulkProcessor
         }
 
         return ['pdf_id' => null, 'after' => $after, 'done' => false];
-    }
-
-    /**
-     * Get statistics for the whole library
-     *
-     * Page by page, as statsPage() counts them, for a caller in PHP. The
-     * screens ask page by page themselves (ajaxStatus()).
-     *
-     * @return array<string, int>
-     */
-    public function getStats(): array
-    {
-        $total = 0;
-        $withThumbnail = 0;
-        $after = 0;
-
-        do {
-            $page = $this->statsPage($after);
-            $total += $page['total'];
-            $withThumbnail += $page['with_thumbnail'];
-            $after = $page['after'];
-        } while (!$page['done']);
-
-        return [
-            'total' => $total,
-            'with_thumbnail' => $withThumbnail,
-            'without_thumbnail' => $total - $withThumbnail,
-        ];
     }
 }

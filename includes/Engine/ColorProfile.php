@@ -357,8 +357,11 @@ final class ColorProfile
             return false;
         }
 
-        $real = realpath($path);
-        if (false === $real || !is_file($real) || !is_readable($real)) {
+        // Quietly: every candidate is a host's folder that may not be there,
+        // and under open_basedir each one outside it was a warning in the
+        // log on every conversion (review after 1.4.33).
+        $real = @realpath($path);
+        if (false === $real || !@is_file($real) || !@is_readable($real)) {
             return false;
         }
 
@@ -367,13 +370,13 @@ final class ColorProfile
             return false;
         }
 
-        $size = filesize($real);
+        $size = @filesize($real);
         if (false === $size || $size < self::MIN_PROFILE_SIZE || $size > self::MAX_PROFILE_SIZE) {
             return false;
         }
 
         // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- WP_Filesystem mangles binary reads; nothing is written.
-        $data = file_get_contents($real);
+        $data = @file_get_contents($real);
         // The size was checked above; this only catches a read that failed.
         if (false === $data) {
             return false;

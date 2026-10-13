@@ -413,7 +413,7 @@ final class MediaLibrary
                 $response['picIsThumbnail'] = true;
                 // With url now the PDF's, a size the image has no file for
                 // must not fall back to url (see withEverySize()).
-                if (!empty($response['sizes']['full']) && is_array($response['sizes'])) {
+                if (is_array($response['sizes'] ?? null) && is_array($response['sizes']['full'] ?? null)) {
                     $response['sizes'] = self::withEverySize($response['sizes'], $response['sizes']['full']);
                 }
             }
@@ -1026,32 +1026,46 @@ final class MediaLibrary
     /**
      * Filter attachment image attributes for PDFs
      *
-     * @param array $attr Image attributes
-     * @param \WP_Post $attachment Attachment post object
+     * Untyped, as the other filters here are: a null post from another
+     * plugin's call was a fatal error (review of 1.4.33).
+     *
+     * @param mixed $attr Image attributes
+     * @param mixed $attachment Attachment post object
      * @param string|int[] $size Image size
-     * @return array Modified attributes
+     * @return mixed Modified attributes
      */
-    public function filterAttachmentImageAttributes(array $attr, \WP_Post $attachment, $size): array
+    public function filterAttachmentImageAttributes($attr, $attachment = null, $size = 'thumbnail')
     {
+        if (!is_array($attr) || !is_object($attachment) || empty($attachment->ID)) {
+            return $attr;
+        }
+
         // Check if display thumbnail icon is enabled
         if (!$this->settings->shouldDisplayThumbnailIcon()) {
             return $attr;
         }
 
         // Only process PDFs
-        if (get_post_mime_type($attachment->ID) !== 'application/pdf') {
+        if (get_post_mime_type((int) $attachment->ID) !== 'application/pdf') {
             return $attr;
         }
 
         // Get thumbnail
-        $thumbnailId = $this->generator->getThumbnailId($attachment->ID);
+        $thumbnailId = $this->generator->getThumbnailId((int) $attachment->ID);
         if (!$thumbnailId) {
             return $attr;
         }
 
-        // Get thumbnail URL
-        $sizeToUse = is_array($size) ? 'thumbnail' : $size;
-        $thumbnailSrc = wp_get_attachment_image_src($thumbnailId, $sizeToUse);
+        // Get thumbnail URL, at the size core was asked for. A size given as
+        // width and height used to become the 150px square here, under the
+        // width and height core had already written for the size asked --
+        // a stretched picture, on the front end too (review of 1.4.33).
+        // Core picks the closest size for an array, as it did for the
+        // width and height.
+        if (!is_array($size) && (!is_scalar($size) || '' === (string) $size)) {
+            $size = 'thumbnail';
+        }
+        $thumbnailSrc = wp_get_attachment_image_src($thumbnailId, $size);
         if ($thumbnailSrc) {
             $attr['src'] = $thumbnailSrc[0];
             if (isset($attr['srcset'])) {

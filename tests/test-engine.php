@@ -310,11 +310,8 @@ check('  ...Ghostscript run but failing or killed, ten minutes; not found, twelv
 echo "\n--- Review of 1.4.32: the checks' own rules ---\n";
 // A page still flat with -dNOTRANSPARENCY is not counted as the switch
 // working: nothing is remembered as "this server needs it".
-// (With the suffix known to need the whole-file route, the retry reads the
-// whole file too, and hands back what it drew, flat or not.)
 reset_state();
 Imagick::$alwaysBlank = true;
-set_transient('rapls_pic_page_suffix', 'yes', 600);
 priv($engine, $ref, 'readPage', new Imagick(), '/tmp/none.pdf', 0, 150);
 check('a page flat with the switch too: the server is not remembered as needing it', get_transient('rapls_pic_gs_options'), false);
 // A cached read check from another ImageMagick version is not used.
@@ -338,20 +335,45 @@ Imagick::$blobError = '';
 $cyan = priv($engine, $ref, 'probeCmykRender');
 Imagick::$blobError = null;
 check('the CMYK check: an empty raster or a black page fails, cyan passes', [$empty['ok'], $black['ok'], $cyan['ok']], [false, false, true]);
-// The page selection check: one page back from a two-page file fails; two
-// different pages pass.
+// The page selection check, read the way a conversion reads a page (review
+// after 1.4.33): from a file, by page number. A build that ignores the number
+// fails; one that honours it passes; the file is gone afterwards.
 reset_state();
 Imagick::$blobError = '';
-Imagick::$blobPages = 1;
+Imagick::$pageNumberIgnored = true;
 Imagick::$blobColours = [['r' => 255, 'g' => 255, 'b' => 255], ['r' => 0, 'g' => 0, 'b' => 0]];
-$merged = priv($engine, $ref, 'probePageSelection');
+$ignored = priv($engine, $ref, 'probePageSelection');
 reset_state();
 Imagick::$blobError = '';
-Imagick::$blobPages = 2;
 Imagick::$blobColours = [['r' => 255, 'g' => 255, 'b' => 255], ['r' => 0, 'g' => 0, 'b' => 0]];
 $two = priv($engine, $ref, 'probePageSelection');
+$probePaths = array_values(preg_grep('/rapls-pic-page-probe/', Imagick::$readPaths));
 Imagick::$blobError = null;
-check('the page check: one page back fails, two different pages pass', [$merged['ok'], $two['ok']], [false, true]);
+check('the page check: a page number ignored fails, honoured passes', [$ignored['ok'], $two['ok'], $two['error']], [false, true, 'FFFFFF / 000000']);
+check('  ...read from a file, by page number, flattened as a conversion is', [count($probePaths), (bool) preg_match('/\[0\]$/', $probePaths[0] ?? ''), (bool) preg_match('/\[1\]$/', $probePaths[1] ?? ''), Imagick::$probeFilesSeen, in_array('mergeImageLayers', Imagick::$log, true)], [2, true, true, [true, true], true]);
+check('  ...and the file is deleted afterwards', file_exists(substr($probePaths[0] ?? 'x[0]', 0, -3)), false);
+// A name someone made first -- a link left in a shared /tmp pointing at a
+// file of theirs -- is refused, not written through.
+$victim = RAPLS_PIC_TEST_TMP . '/victim.txt';
+$planted = RAPLS_PIC_TEST_TMP . '/planted-probe.pdf';
+file_put_contents($victim, 'keep me');
+@unlink($planted);
+symlink($victim, $planted);
+try {
+    priv($engine, $ref, 'probeFile', '%PDF-1.4 test', $planted);
+    $plantedOutcome = 'written';
+} catch (\RuntimeException $e) {
+    $plantedOutcome = 'refused';
+}
+check('  ...a test file whose name is already taken by a link is refused, and its target left alone', [$plantedOutcome, file_get_contents($victim)], ['refused', 'keep me']);
+@unlink($planted);
+@unlink($victim);
+reset_state();
+Imagick::$blobError = "NoDecodeDelegateForThisImageFormat `PDF'";
+$refusedProbe = priv($engine, $ref, 'probePageSelection');
+$refusedPaths = array_values(preg_grep('/rapls-pic-page-probe/', Imagick::$readPaths));
+Imagick::$blobError = null;
+check('  ...a server that cannot read it is "not tested", and the file is deleted all the same', [$refusedProbe['ok'], file_exists(substr($refusedPaths[0] ?? 'x[0]', 0, -3))], [null, false]);
 // A policy refusal with no policy file found shows what ImageMagick said.
 reset_state();
 $refused = priv($engine, $ref, 'statusFromProbe', ['ok' => false, 'error' => "NotAuthorized `PDF' @ error/constitute.c/IsCoderAuthorized/454"]);
@@ -374,6 +396,46 @@ foreach (['putenv', 'exec'] as $list) {
 }
 @unlink($child);
 check('putenv disabled on the host: the retry is not tried; otherwise it is', $asked, ['putenv' => 'no', 'exec' => 'yes']);
+
+echo "\n--- Review after 1.4.33: what was not pinned ---\n";
+// The device note names bmpsep8 as the one ImageMagick cannot read back, and
+// only that one.
+$deviceRow = static function (string $device) use ($engine, $ref): string {
+    reset_state();
+    Imagick::$versionString = 'ImageMagick 6.9.10-68 Q16 x86_64';
+    set_transient('rapls_pic_cmyk_delegate', ['device' => $device], 600);
+    $row = priv($engine, $ref, 'getCmykPdfStatus');
+    return (string) $row['detail'];
+};
+$bmp = $deviceRow('bmpsep8');
+$pam = $deviceRow('pamcmyk32');
+check('the CMYK row names the device, and calls only bmpsep8 unreadable', [
+    false !== strpos($bmp, 'through the bmpsep8 device.'),
+    false !== strpos($bmp, 'That is the one ImageMagick cannot read back.'),
+    false !== strpos($pam, 'through the pamcmyk32 device.'),
+    false !== strpos($pam, 'cannot read back'),
+], [true, true, true, false]);
+Imagick::$versionString = 'ImageMagick 7.1.1-47 Q16 aarch64';
+
+// restoreGsOptions() with no retry in flight leaves what the site set alone:
+// it runs at every shutdown once registered.
+reset_state();
+putenv('GS_OPTIONS=-sFONTPATH=/srv/site');
+ImagickEngine::restoreGsOptions();
+check('restoring with no retry in flight leaves the site\'s GS_OPTIONS', getenv('GS_OPTIONS'), '-sFONTPATH=/srv/site');
+putenv('GS_OPTIONS');
+ImagickEngine::restoreGsOptions();
+check('  ...and leaves an unset one unset', getenv('GS_OPTIONS'), false);
+
+// The flatness of a page is scanned once a read (review after 1.4.33).
+reset_state();
+$scans = 0;
+$counting = new class () extends Imagick {
+    public static $scans = 0;
+    public function getImageChannelRange($channel) { self::$scans++; return parent::getImageChannelRange($channel); }
+};
+priv($engine, $ref, 'readPage', $counting, '/tmp/none.pdf', 0, 150);
+check('a page with content is scanned for flatness once', get_class($counting)::$scans, 1);
 
 printf("\n%d passed, %d failed\n", $pass, $fail);
 exit($fail === 0 ? 0 : 1);

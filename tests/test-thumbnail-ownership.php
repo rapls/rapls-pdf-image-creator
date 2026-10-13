@@ -66,7 +66,7 @@ namespace {
 
     $generator = (new ReflectionClass(\Rapls\PDFImageCreator\Generator::class))->newInstanceWithoutConstructor();
     $own = static function (int $image, int $pdf): void {
-        $GLOBALS['posts'][$image] = (object) ['ID' => $image];
+        $GLOBALS['posts'][$image] = (object) ['ID' => $image, 'post_type' => 'attachment'];
         $GLOBALS['meta'][$image]['_rapls_pic_is_thumbnail'] = '1';
         $GLOBALS['meta'][$image]['_rapls_pic_source_pdf'] = $pdf;
     };
@@ -78,7 +78,7 @@ namespace {
 
     // PDF 20's featured image is someone else's picture.
     $GLOBALS['deleted'] = [];
-    $GLOBALS['posts'][99] = (object) ['ID' => 99];
+    $GLOBALS['posts'][99] = (object) ['ID' => 99, 'post_type' => 'attachment'];
     $GLOBALS['meta'][20]['_thumbnail_id'] = 99;
     check('featured image from elsewhere: not deleted', [$generator->deleteThumbnail(20), $GLOBALS['deleted'], isset($GLOBALS['posts'][99])], [false, [], true]);
     check('  ...only unlinked from this PDF', $GLOBALS['meta'][20]['_thumbnail_id'] ?? '', '');
@@ -142,14 +142,8 @@ namespace {
     $GLOBALS['wpdb'] = $saved;
 
     // Uninstalling keeps what something else uses too, as deleteThumbnail()
-    // does: the images another post names, and nothing at all when that
-    // cannot be asked. Read from the file -- it runs only as an uninstall.
-    $uninstall = (string) file_get_contents(RAPLS_PIC_PLUGIN_DIR . 'uninstall.php');
-    check('uninstall keeps images another post uses', [
-        false !== strpos($uninstall, 'AND used.post_id <> CAST(source.meta_value AS UNSIGNED)'),
-        false !== strpos($uninstall, 'in_array((int) $rapls_pic_thumbnail_id, $rapls_pic_used, true)'),
-        false !== strpos($uninstall, '!$rapls_pic_used_failed'),
-    ], [true, true, true]);
+    // does. test-uninstall.php runs uninstall.php for that, query failures
+    // included.
 
     echo "\n$pass passed, $fail failed\n";
     exit($fail ? 1 : 0);

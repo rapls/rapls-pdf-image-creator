@@ -21,13 +21,17 @@ $suites = [
     'test-thumbnail-ownership.php',
     'test-regenerate.php',
     'test-bulk.php',
+    'test-insert.php',
     'test-uninstall.php',
     'test-admin-screens.php',
+    'test-admin-notices.php',
+    'test-site-health.php',
     // JavaScript, run with node when there is one.
     'test-admin-tabs.js',
     'test-block-editor.js',
     'test-bulk-admin.js',
     'test-core-media-states.js',
+    'test-insert-link.js',
 ];
 $failed = [];
 

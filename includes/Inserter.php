@@ -50,6 +50,29 @@ final class Inserter
         // whole insert HTML were added to every PDF in every media-modal
         // query, and no script read either (review after 1.4.31). The HTML
         // is made when "Insert into post" is pressed, above.
+
+        // The media window's Link To starts at the "Link To" setting.
+        add_action('wp_enqueue_media', [$this, 'enqueueInsertLink']);
+    }
+
+    /**
+     * Start the media window's Link To at the "Link To" setting, for PDFs
+     *
+     * The window's choice is what linkFor() follows; this makes the setting
+     * that choice until someone changes it there (review of 1.4.33).
+     */
+    public function enqueueInsertLink(): void
+    {
+        wp_enqueue_script(
+            'pic-insert-link',
+            RAPLS_PIC_PLUGIN_URL . 'admin/js/insert-link.js',
+            ['media-views'],
+            RAPLS_PIC_VERSION,
+            true
+        );
+        wp_localize_script('pic-insert-link', 'raplsPicInsertLink', [
+            'link' => $this->settings->getInsertLink(),
+        ]);
     }
 
     /**
@@ -57,7 +80,8 @@ final class Inserter
      *
      * @param string $html HTML to be sent to editor
      * @param int $attachmentId Attachment ID
-     * @param array $attachment Attachment data
+     * @param array $attachment Attachment data, as the media window sent it
+     *                          ('url' is its Link To; see linkFor())
      * @return string Modified HTML
      */
     public function filterMediaSendToEditor(string $html, int $attachmentId, array $attachment): string
@@ -87,7 +111,6 @@ final class Inserter
     {
         $insertType = $this->settings->getInsertType();
         $insertSize = $this->settings->getInsertSize();
-        $insertLink = $this->settings->getInsertLink();
 
         // Get PDF data
         // Cast: either can be false (a file gone, a permalink filter), and
@@ -96,6 +119,7 @@ final class Inserter
         $pdfUrl = (string) wp_get_attachment_url($pdfId);
         $pdfTitle = (string) get_the_title($pdfId);
         $attachmentUrl = (string) get_attachment_link($pdfId);
+        $href = $this->linkFor($attachment, $pdfUrl, $attachmentUrl);
 
         // Get thumbnail data
         $thumbnailId = $this->generator->getThumbnailId($pdfId);
@@ -103,14 +127,48 @@ final class Inserter
 
         switch ($insertType) {
             case 'title':
-                return $this->generateTitleHtml($pdfId, $pdfUrl, $pdfTitle, $attachmentUrl, $insertLink);
+                return $this->generateTitleHtml($pdfId, $pdfTitle, $href);
 
             case 'custom':
-                return $this->generateCustomHtml($pdfId, $pdfUrl, $pdfTitle, $attachmentUrl, $thumbnailUrl);
+                return $this->generateCustomHtml($pdfId, $pdfUrl, $pdfTitle, $attachmentUrl, $thumbnailUrl, $href);
 
             case 'image':
             default:
-                return $this->generateImageHtml($pdfId, $pdfUrl, $pdfTitle, $attachmentUrl, $thumbnailUrl, $insertSize, $insertLink);
+                return $this->generateImageHtml($pdfId, $pdfTitle, $thumbnailUrl, $insertSize, $href);
+        }
+    }
+
+    /**
+     * Where the inserted HTML links to; '' for no link
+     *
+     * The media window's own "Link To" when it said one. Its choice was
+     * ignored, and the PDF linked to wherever this plugin's setting said
+     * whatever was picked there (review of 1.4.33). The window starts at
+     * the setting (admin/js/insert-link.js), so the setting still decides
+     * when nobody changes it there. Core sends the link as
+     * 'url', and leaves 'url' out for "None"; its 'id' says the request came
+     * from the media window. Without either -- another caller -- the "Link
+     * To" setting decides, as before.
+     *
+     * @param array<string, mixed> $attachment What came with the request
+     */
+    private function linkFor(array $attachment, string $pdfUrl, string $attachmentUrl): string
+    {
+        if (array_key_exists('url', $attachment)) {
+            return is_string($attachment['url']) ? $attachment['url'] : '';
+        }
+
+        if (isset($attachment['id'])) {
+            return '';
+        }
+
+        switch ($this->settings->getInsertLink()) {
+            case 'none':
+                return '';
+            case 'attachment':
+                return $attachmentUrl;
+            default:
+                return $pdfUrl;
         }
     }
 
@@ -118,19 +176,15 @@ final class Inserter
      * Generate title-only HTML
      *
      * @param int $pdfId PDF attachment ID
-     * @param string $pdfUrl PDF URL
      * @param string $pdfTitle PDF title
-     * @param string $attachmentUrl Attachment page URL
-     * @param string $insertLink Link type
+     * @param string $href Where it links to; '' for no link
      * @return string Generated HTML
      */
-    private function generateTitleHtml(int $pdfId, string $pdfUrl, string $pdfTitle, string $attachmentUrl, string $insertLink): string
+    private function generateTitleHtml(int $pdfId, string $pdfTitle, string $href): string
     {
-        if ($insertLink === 'none') {
+        if ('' === $href) {
             return esc_html($pdfTitle);
         }
-
-        $href = $insertLink === 'attachment' ? $attachmentUrl : $pdfUrl;
 
         return sprintf(
             '<a href="%s" class="rapls-pic-pdf-link" data-pdf-id="%d">%s</a>',
@@ -144,18 +198,16 @@ final class Inserter
      * Generate image HTML
      *
      * @param int $pdfId PDF attachment ID
-     * @param string $pdfUrl PDF URL
      * @param string $pdfTitle PDF title
-     * @param string $attachmentUrl Attachment page URL
      * @param string $thumbnailUrl Thumbnail URL
      * @param string $insertSize Image size
-     * @param string $insertLink Link type
+     * @param string $href Where it links to; '' for no link
      * @return string Generated HTML
      */
-    private function generateImageHtml(int $pdfId, string $pdfUrl, string $pdfTitle, string $attachmentUrl, string $thumbnailUrl, string $insertSize, string $insertLink): string
+    private function generateImageHtml(int $pdfId, string $pdfTitle, string $thumbnailUrl, string $insertSize, string $href): string
     {
         if (!$thumbnailUrl) {
-            return $this->generateTitleHtml($pdfId, $pdfUrl, $pdfTitle, $attachmentUrl, $insertLink);
+            return $this->generateTitleHtml($pdfId, $pdfTitle, $href);
         }
 
         // Get image HTML
@@ -173,11 +225,9 @@ final class Inserter
             );
         }
 
-        if ($insertLink === 'none') {
+        if ('' === $href) {
             return $imageHtml;
         }
-
-        $href = $insertLink === 'attachment' ? $attachmentUrl : $pdfUrl;
 
         return sprintf(
             '<a href="%s" class="rapls-pic-pdf-link" data-pdf-id="%d">%s</a>',
@@ -195,9 +245,10 @@ final class Inserter
      * @param string $pdfTitle PDF title
      * @param string $attachmentUrl Attachment page URL
      * @param string $thumbnailUrl Thumbnail URL
+     * @param string $href Where the fallback links to; '' for no link
      * @return string Generated HTML
      */
-    private function generateCustomHtml(int $pdfId, string $pdfUrl, string $pdfTitle, string $attachmentUrl, string $thumbnailUrl): string
+    private function generateCustomHtml(int $pdfId, string $pdfUrl, string $pdfTitle, string $attachmentUrl, string $thumbnailUrl, string $href): string
     {
         $template = $this->settings->getCustomHtml();
 
@@ -205,12 +256,10 @@ final class Inserter
             // Fall back to image if no template set
             return $this->generateImageHtml(
                 $pdfId,
-                $pdfUrl,
                 $pdfTitle,
-                $attachmentUrl,
                 $thumbnailUrl,
                 $this->settings->getInsertSize(),
-                $this->settings->getInsertLink()
+                $href
             );
         }
 

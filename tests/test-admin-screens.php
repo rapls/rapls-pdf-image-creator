@@ -114,7 +114,7 @@ if (PHP_VERSION_ID < 80100) { $settingsProp->setAccessible(true); }
 $settingsProp->setValue($inserter, new \Rapls\PDFImageCreator\Settings());
 $custom = new ReflectionMethod(\Rapls\PDFImageCreator\Inserter::class, 'generateCustomHtml');
 if (PHP_VERSION_ID < 80100) { $custom->setAccessible(true); }
-$made = (string) $custom->invoke($inserter, 7, 'https://e.test/a"b.pdf', 'He said "hi"', 'https://e.test/?attachment_id=7"x', 'https://e.test/t"h.jpg');
+$made = (string) $custom->invoke($inserter, 7, 'https://e.test/a"b.pdf', 'He said "hi"', 'https://e.test/?attachment_id=7"x', 'https://e.test/t"h.jpg', '');
 unset($GLOBALS['options'][\Rapls\PDFImageCreator\Settings::OPTION_NAME]);
 check('a custom template gets escaped placeholders (verification of the change)', [
     false !== strpos($made, 'title="He said &quot;hi&quot;"'),
@@ -286,7 +286,7 @@ $savedOk = $admin->sanitizeSettings(['format' => 'webp', 'insert_size' => 'large
 check('a format or size not on the list is the default; a template loses scripts', [$saved['format'], $saved['insert_size'], $saved['custom_html'], $savedOk['format'], $savedOk['insert_size']], ['jpeg', 'medium', '<p>%TITLE%</p>', 'webp', 'large']);
 if (!function_exists('get_post_mime_type')) { function get_post_mime_type($id) { return $GLOBALS['mime_of'][(int) $id] ?? false; } }
 if (!function_exists('get_post_meta')) { function get_post_meta($id, $k, $single = false) { return $GLOBALS['meta_of'][(int) $id][$k] ?? ''; } }
-if (!function_exists('get_post')) { function get_post($id) { return isset($GLOBALS['mime_of'][(int) $id]) ? (object) ['ID' => (int) $id] : null; } }
+if (!function_exists('get_post')) { function get_post($id) { return isset($GLOBALS['mime_of'][(int) $id]) ? (object) ['ID' => (int) $id, 'post_type' => 'attachment'] : null; } }
 if (!function_exists('wp_get_attachment_url')) { function wp_get_attachment_url($id) { return 'https://example.test/' . (int) $id . '.pdf'; } }
 if (!function_exists('get_the_title')) { function get_the_title($id) { return $GLOBALS['title_of'][(int) $id] ?? ''; } }
 if (!function_exists('wp_get_attachment_image_url')) { function wp_get_attachment_image_url($id, $size = 'thumbnail') { return 'https://example.test/' . (int) $id . '-' . $size . '.jpg'; } }

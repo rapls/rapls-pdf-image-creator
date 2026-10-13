@@ -178,7 +178,13 @@ r = answer({ done: false, after: 1200, total: 150, total_pdfs: 200, with_thumbna
 check('Scan: page one from the start', [r.data.action, r.data.after], ['rapls_pic_bulk_scan', 0]);
 check('  ...page two from the cursor, counts carried, progress shown', [next().data.after, next().data.total_pdfs, next().data.with_thumbnail, $('#rapls-pic-bulk-scan').text()], [1200, 200, 50, 'Scanning... 200 PDFs so far']);
 answer({ done: true, after: 1260, total: 200, total_pdfs: 260, with_thumbnail: 60, rows: 200, statuses: '', note: '' });
-check('  ...the result: 200 to do, Start enabled, no list kept', [$('#rapls-pic-bulk-total').text(), $('#rapls-pic-bulk-start').prop('disabled'), requests.length], ['200', false, 0]);
+check('  ...the result: 260 found, 200 to do, Start enabled, no list kept', [$('#rapls-pic-bulk-total').text(), $('#rapls-pic-bulk-todo').text(), $('#rapls-pic-bulk-start').prop('disabled'), requests.length], ['260', '200', false, 0]);
+// Review after 1.4.33: the database's count is shown only where it differs
+// from the PDFs found -- not whenever some already have a thumbnail.
+check('  ...the database\'s count is shown, as it differs from the PDFs found (200, 260)', $('#rapls-pic-bulk-rows-row')._shown, true);
+$('#rapls-pic-bulk-scan').click();
+answer({ done: true, after: 1260, total: 200, total_pdfs: 260, with_thumbnail: 60, rows: 260, statuses: 'inherit=260', note: '' });
+check('  ...and not where it agrees, though 60 already have a thumbnail', $('#rapls-pic-bulk-rows-row')._shown, false);
 
 console.log('\n--- Generate ---');
 $('#rapls-pic-bulk-start').click();
@@ -191,6 +197,10 @@ check('  ...the progress bar says how far, to a screen reader too (1 of 200)', $
 answer({ pdf_id: 1005, filename: 'b.pdf', after: 1005, done: false });
 fault();
 check('A draw that never answers counts as failed, and the run goes on past it', [$('#rapls-pic-stat-failed').text(), next().data.action, next().data.after], ['1', 'rapls_pic_bulk_next', 1005]);
+
+// Review after 1.4.33: the box changed while a run is going changes nothing.
+$('#rapls-pic-include-existing')._handlers.change.call($('#rapls-pic-include-existing'));
+check('  ...ticking the include box mid-run leaves the run and its count alone', [$('#rapls-pic-bulk-message').text(), $('#rapls-pic-bulk-results')._shown], ['', true]);
 
 console.log('\n--- Stop, then Continue (Codex review of 1.4.25, 6) ---');
 answer({ pdf_id: 1007, filename: 'c.pdf', after: 1007, done: false });
@@ -282,6 +292,17 @@ requests.length = 0;
 ready();
 requests.length = 0;
 check('"#tab-foo" leaves the tabs as they were (one still reachable)', tabs.map((t) => [t.attr('aria-selected'), t.attr('tabindex')]), before);
+
+// A browser with no history.replaceState: the address still names the tab.
+const bare = { location: { hash: '' } };
+vm.runInNewContext(source, {
+    jQuery: $, document: documentStub, window: bare, location: { reload() {} },
+    raplsPicAdmin: { ajaxUrl: '/admin-ajax.php', nonce: 'n', i18n }, confirm: () => true, alert: () => {}, setTimeout: () => {},
+});
+ready();
+requests.length = 0;
+tabs[1]._handlers.click.call(tabs[1], { preventDefault() {} });
+check('without history.replaceState the tab still goes into the address', bare.location.hash, 'tab-bulk');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

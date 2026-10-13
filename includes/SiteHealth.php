@@ -53,11 +53,23 @@ final class SiteHealth
     /**
      * Add the PDF rendering test
      *
-     * @param array<string, mixed> $tests Registered tests.
-     * @return array<string, mixed>
+     * Untyped, like the other callbacks on core's filters: a listener
+     * ahead of this one that answers something other than an array was a
+     * TypeError, and the Site Health screen went with it.
+     *
+     * @param mixed $tests Registered tests.
+     * @return mixed
      */
-    public function registerTest(array $tests): array
+    public function registerTest($tests)
     {
+        if (!is_array($tests)) {
+            return $tests;
+        }
+
+        if (!isset($tests['direct']) || !is_array($tests['direct'])) {
+            $tests['direct'] = [];
+        }
+
         $tests['direct']['rapls_pic_pdf_rendering'] = [
             'label' => __('PDF thumbnail generation', 'rapls-pdf-image-creator'),
             'test' => [$this, 'runTest'],
@@ -121,11 +133,17 @@ final class SiteHealth
     /**
      * Add a debug information section
      *
-     * @param array<string, mixed> $info Debug sections.
-     * @return array<string, mixed>
+     * Untyped, as registerTest() is.
+     *
+     * @param mixed $info Debug sections.
+     * @return mixed
      */
-    public function registerDebugInformation(array $info): array
+    public function registerDebugInformation($info)
     {
+        if (!is_array($info)) {
+            return $info;
+        }
+
         $status = $this->generator->getAvailabilityStatus();
         $config = $this->settings->get();
 

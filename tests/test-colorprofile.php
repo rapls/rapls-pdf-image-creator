@@ -268,5 +268,48 @@ check('a folder with "[" or "?" in its name is found through the wildcard', $exp
 $none = $expand->invoke($cp2, [RAPLS_PIC_TEST_TMP . '/nothing/*/x.icc']);
 check('a wildcard matching nothing drops out', $none, []);
 
+echo "\n--- Review after 1.4.33: what was not pinned ---\n";
+
+// A literal candidate with "[" in it is a name, passed through as it is.
+$bracketed = RAPLS_PIC_TEST_TMP . '/icc [v2]/sRGB.icc';
+check('a literal with "[" in it is passed through untouched', $expand->invoke($cp2, [$bracketed]), [$bracketed]);
+
+// Over the largest size a profile can be, refused without being read.
+reset_state();
+file_put_contents("$dir/huge.icc", str_repeat("\0", 36) . 'acsp' . str_repeat("\0", 4194304 - 40 + 1));
+makeIcc("$dir/largest.icc", 4194304);
+add_filter('rapls_pdf_image_creator_icc_paths', function ($p, $t) use ($dir) { return ["$dir/huge.icc"]; });
+$huge = (new ColorProfile())->findProfilePath('srgb');
+reset_state();
+add_filter('rapls_pdf_image_creator_icc_paths', function ($p, $t) use ($dir) { return ["$dir/largest.icc"]; });
+check('a profile a byte over 4 MB is refused; one of 4 MB is not', [$huge, (new ColorProfile())->findProfilePath('srgb')], [null, "$dir/largest.icc"]);
+@unlink("$dir/huge.icc");
+@unlink("$dir/largest.icc");
+
+// A miss is remembered for an hour, a find for a day.
+reset_state();
+$GLOBALS['transient_ttl'] = [];
+add_filter('rapls_pdf_image_creator_icc_paths', function ($p, $t) use ($goodSrgb) { return $t === 'srgb' ? [$goodSrgb] : ['/no/such.icc']; });
+$ttlCp = new ColorProfile();
+$ttlCp->findProfilePath('srgb');
+$ttlCp->findProfilePath('cmyk');
+check('a profile found is remembered a day, a miss an hour', [$GLOBALS['transient_ttl']['rapls_pic_icc_path_srgb'] ?? null, $GLOBALS['transient_ttl']['rapls_pic_icc_path_cmyk'] ?? null], [DAY_IN_SECONDS, HOUR_IN_SECONDS]);
+
+// flushCache() forgets both.
+$ttlCp->flushCache();
+check('flushCache() forgets both profiles', [get_transient('rapls_pic_icc_path_srgb'), get_transient('rapls_pic_icc_path_cmyk')], [false, false]);
+
+// Under open_basedir, a candidate outside it is passed over without a
+// warning: asked in a PHP restricted to the test folder, of a file that is
+// there (a path that is not there warns about nothing).
+$basedirChild = RAPLS_PIC_TEST_TMP . '/basedir.php';
+file_put_contents($basedirChild, '<?php define("RAPLS_PIC_QUIET", 1); require ' . var_export(__DIR__ . '/harness.php', true) . ';'
+    . ' add_filter("rapls_pdf_image_creator_icc_paths", function ($p, $t) { return ["/etc/hosts", "/usr/share/color/icc/sRGB.icc"]; });'
+    . ' $r = (new Rapls\\PDFImageCreator\\Engine\\ColorProfile())->findProfilePath("srgb"); echo "found:", var_export($r, true);');
+$basedirOut = [];
+exec(escapeshellarg(PHP_BINARY) . ' -d display_errors=1 -d error_reporting=-1 -d ' . escapeshellarg('open_basedir=' . RAPLS_PIC_TEST_TMP . PATH_SEPARATOR . dirname(__DIR__)) . ' ' . escapeshellarg($basedirChild) . ' 2>&1', $basedirOut);
+@unlink($basedirChild);
+check('a profile outside open_basedir is passed over without a warning', implode("\n", $basedirOut), 'found:NULL');
+
 printf("\n%d passed, %d failed\n", $pass, $fail);
 exit($fail === 0 ? 0 : 1);

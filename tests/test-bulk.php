@@ -47,10 +47,16 @@ namespace {
     function delete_post_meta($id, $key) { unset($GLOBALS['meta'][(int) $id][$key]); return true; }
     function get_attached_file($id) { return $GLOBALS['files'][(int) $id] ?? false; }
     function update_postmeta_cache($ids) { $GLOBALS['primed'] += count($ids); return []; }
+    function do_action($tag, ...$args) {}
+    function _prime_post_caches($ids, $terms = true, $meta = true) { $GLOBALS['primed_posts'][] = array_values($ids); }
     function wp_using_ext_object_cache() { return !empty($GLOBALS['ext_cache']); }
     function wp_cache_delete($key, $group = '') { ++$GLOBALS['evicted']; return true; }
     function add_shortcode($tag, $cb) { $GLOBALS['shortcodes'][$tag] = $cb; }
     if (!function_exists('get_post_mime_type')) { function get_post_mime_type($id) { return $GLOBALS['mime_of'][(int) $id] ?? false; } }
+    function get_post_status($id) { return 'publish'; }
+    function get_post_status_object($status) { return (object) ['public' => 'publish' === $status]; }
+    function wp_get_post_parent_id($id) { return 0; }
+    function post_password_required($post = null) { return false; }
     function shortcode_atts($pairs, $atts, $tag = '') { return array_merge($pairs, array_intersect_key((array) $atts, $pairs)); }
     function wp_get_attachment_image($id, $size, $icon, $attr) { return '<img class="' . $attr['class'] . '">'; }
     function wp_get_attachment_url($id) { return 'https://example.test/doc.pdf'; }
@@ -109,6 +115,7 @@ namespace {
     require RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/EngineInterface.php';
     require RAPLS_PIC_PLUGIN_DIR . 'includes/Generator.php';
     require RAPLS_PIC_PLUGIN_DIR . 'includes/BulkProcessor.php';
+    require RAPLS_PIC_PLUGIN_DIR . 'includes/Admin.php';
     require RAPLS_PIC_PLUGIN_DIR . 'includes/Plugin.php';
 
     use Rapls\PDFImageCreator\BulkProcessor;
@@ -153,7 +160,7 @@ namespace {
             $GLOBALS['files'][$id] = '/uploads/doc-' . $id . '.pdf';
             if ($everyNth > 0 && 0 === $i % $everyNth) {
                 $GLOBALS['meta'][$id]['_rapls_pic_thumbnail_id'] = 50000 + $id;
-                $GLOBALS['posts'][50000 + $id] = (object) ['ID' => 50000 + $id];
+                $GLOBALS['posts'][50000 + $id] = (object) ['ID' => 50000 + $id, 'post_type' => 'attachment'];
             }
         }
     };
@@ -176,12 +183,16 @@ namespace {
 
     $library(450, 3);
     $GLOBALS['queries'] = [];
+    $GLOBALS['primed_posts'] = [];
     [$ok, $data, $pages] = $scan(false);
     check('450 PDFs are counted in 3 requests of at most 200', [$ok, $pages, $data['total_pdfs'], $data['with_thumbnail'], $data['total']], [true, 3, 450, 150, 300]);
     check('  ...no query asks for every PDF at once', array_values(array_unique(array_column($GLOBALS['queries'], 'posts_per_page'))), [BulkProcessor::PAGE]);
     check('  ...and the reply holds no list of PDFs', array_key_exists('pdfs', $data), false);
     check('  ...meta is read once per page, for the page', $GLOBALS['primed'], 450);
-    check('  ...and let go of after each page (no persistent cache)', $GLOBALS['evicted'], 900);
+    check('  ...and let go of after each page, with the images (no persistent cache)', $GLOBALS['evicted'], 1050);
+    // Review after 1.4.33: hasThumbnail() asks whether each image is there,
+    // one query per PDF unless they were read together first.
+    check('  ...the images their meta names are read a page at a time', [count($GLOBALS['primed_posts'] ?? []), array_sum(array_map('count', $GLOBALS['primed_posts'] ?? [])), $GLOBALS['primed_posts'][0][0] ?? null], [3, 150, 51001]);
     [, $data] = $scan(true);
     check('Including those with thumbnails, all 450 are to do', [$data['total'], $data['note']], [450, '']);
 
@@ -260,7 +271,22 @@ namespace {
         $carried = ['total' => $data['total'], 'with_thumbnail' => $data['with_thumbnail']];
     } while (!$data['done'] && $requests < 10);
     check('The totals add up over three requests', [$requests, $data['total'], $data['with_thumbnail'], $data['without_thumbnail']], [3, 450, 150, 300]);
-    check('getStats() counts the whole library, page by page', $bulk->getStats(), ['total' => 450, 'with_thumbnail' => 150, 'without_thumbnail' => 300]);
+
+    echo "\n--- Review after 1.4.33: what the scan shows, and why a PDF failed ---\n";
+
+    // "PDFs found" is every PDF; how many are to do is said apart. It showed
+    // the to-do count under that label.
+    $library(450, 3);
+    [, $data] = $scan(false);
+    check('the scan says how many PDFs there are and how many are to do', [$data['total_pdfs'], $data['total'], $data['rows']], [450, 300, 450]);
+
+    $GLOBALS['mime_of'][1500] = 'application/pdf';
+    $GLOBALS['posts'][1500] = (object) ['ID' => 1500, 'post_type' => 'post'];
+    $GLOBALS['caps'] = ['manage_options' => true, 'edit_post' => true];
+    check('a failed PDF says why, in the plugin\'s words', $call([$bulk, 'ajaxGenerate'], ['pdf_id' => 1500]), [false, ['pdf_id' => 1500, 'message' => 'Not a PDF file.']]);
+    check('an ID that is not a number is no PDF at all', $call([$bulk, 'ajaxGenerate'], ['pdf_id' => 'abc']), [false, ['message' => 'Invalid PDF ID.']]);
+    check('  ...nor is a cursor that is not a number read as anything but the start', $call([$bulk, 'ajaxNext'], ['after' => 'abc'])[1]['pdf_id'] ?? null, 1002);
+    $GLOBALS['caps'] = ['manage_options' => true];
 
     echo "\n--- Shortcode classes, one at a time (Codex review of 1.4.25, 7) ---\n";
 
@@ -278,7 +304,7 @@ namespace {
     if (PHP_VERSION_ID < 80100) { $register->setAccessible(true); }
     $register->invoke($plugin);
     $GLOBALS['meta'][7]['_rapls_pic_thumbnail_id'] = 70;
-    $GLOBALS['posts'][70] = (object) ['ID' => 70];
+    $GLOBALS['posts'][70] = (object) ['ID' => 70, 'post_type' => 'attachment'];
     $GLOBALS['mime_of'][7] = 'application/pdf';
     $atts = ['id' => 7, 'class' => 'alignleft shadow'];
     check('[rapls_pdf_thumbnail class="alignleft shadow"]', ($GLOBALS['shortcodes']['rapls_pdf_thumbnail'])($atts), '<img class="alignleft shadow">');

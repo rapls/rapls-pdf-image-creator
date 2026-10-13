@@ -21,9 +21,9 @@ function apply_filters($tag, $value, ...$rest) {
 }
 function get_transient($k) { return $GLOBALS['transients'][$k] ?? false; }
 function set_transient($k, $v, $t = 0) { $GLOBALS['transients'][$k] = $v; $GLOBALS['transient_ttl'][$k] = $t; return true; }
-function delete_transient($k) { unset($GLOBALS['transients'][$k]); return true; }
+function delete_transient($k) { $GLOBALS['transient_deletes'][] = $k; unset($GLOBALS['transients'][$k]); return true; }
 function get_option($k, $d = false) { return $GLOBALS['options'][$k] ?? $d; }
-function update_option($k, $v, $a = null) { $GLOBALS['options'][$k] = $v; return true; }
+function update_option($k, $v, $a = null) { $GLOBALS['options'][$k] = $v; $GLOBALS['autoload'][$k] = $a; return true; }
 function __($s, $d = null) { return $s; }
 if (!function_exists('_n')) { function _n($one, $many, $n, $d = null) { return 1 === (int) $n ? $one : $many; } }
 function _x($s, $c, $d = null) { return $s; }
@@ -78,9 +78,23 @@ class Imagick
     public static $alwaysBlank = false;
     /** The path each read was given. */
     public static $readPaths = [];
+    /** When true, a page number on a probe file is ignored and every page comes back, the first first. */
+    public static $pageNumberIgnored = false;
+    /** Whether each probe file was on disk when it was read. */
+    public static $probeFilesSeen = [];
     public function readImage($p) {
         self::$log[] = 'readImage';
         self::$readPaths[] = $p;
+        // The page-selection check's two-page file, read by page number.
+        if (preg_match('#/rapls-pic-page-probe-[0-9a-f]+\.pdf\[(\d+)\]$#', (string) $p, $asked)) {
+            self::$probeFilesSeen[] = is_file(substr($p, 0, -strlen('[' . $asked[1] . ']')));
+            if (null === self::$blobError) { throw new Error('readImage cannot render the probe in this stub'); }
+            if ('' !== self::$blobError) { throw new ImagickException(self::$blobError); }
+            $this->fromBlob = true;
+            $this->index = self::$pageNumberIgnored ? 0 : (int) $asked[1];
+            $this->pages = self::$pageNumberIgnored ? 2 : 1;
+            return true;
+        }
         self::$gsOptionsSeen[] = getenv('GS_OPTIONS');
         // A request killed mid-read (max_execution_time): no catch, no finally.
         if (!empty($GLOBALS['die_on_switch']) && false !== strpos((string) getenv('GS_OPTIONS'), '-dNOTRANSPARENCY')) {
@@ -106,7 +120,9 @@ class Imagick
     private $index = 0;
     public function getImageWidth() { return $this->fromBlob ? self::$blobSize[0] : 100; }
     public function getImageHeight() { return $this->fromBlob ? self::$blobSize[1] : 100; }
-    public function getNumberImages() { return $this->fromBlob ? self::$blobPages : 1; }
+    /** Pages this read gave, when not the blob's count. */
+    private $pages = null;
+    public function getNumberImages() { return $this->fromBlob ? ($this->pages ?? self::$blobPages) : 1; }
     /** A count or a size, without drawing: one A4 page unless a test says otherwise. */
     public function pingImage($p) { self::$log[] = 'pingImage'; return true; }
     public function setIteratorIndex($i) { $this->index = (int) $i; return true; }
@@ -206,5 +222,7 @@ function reset_state() {
     Imagick::$blobSize = [100, 100];
     Imagick::$blobColours = [['r' => 0, 'g' => 255, 'b' => 255]];
     Imagick::$blobPages = 1;
+    Imagick::$pageNumberIgnored = false;
+    Imagick::$probeFilesSeen = [];
     putenv('GS_OPTIONS');
 }

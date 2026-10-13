@@ -22,7 +22,7 @@ namespace {
     function get_post_meta($id, $key, $single = false) { return $GLOBALS['meta'][$id][$key] ?? ''; }
     function delete_post_meta($id, $key) { unset($GLOBALS['meta'][$id][$key]); return true; }
     function get_post($id) { return $GLOBALS['posts'][$id] ?? null; }
-    function wp_get_attachment_image_src($id, $size = 'thumbnail', $icon = false) { return $GLOBALS['srcs'][$id] ?? false; }
+    function wp_get_attachment_image_src($id, $size = 'thumbnail', $icon = false) { $GLOBALS['src_sizes'][] = $size; return $GLOBALS['srcs'][$id] ?? false; }
     function get_option($key, $default = false) { return $GLOBALS['options'][$key] ?? $default; }
     function trailingslashit($s) { return rtrim($s, '/\\') . '/'; }
     function wp_get_upload_dir() { return ['basedir' => $GLOBALS['uploads'] ?? '']; }
@@ -55,7 +55,7 @@ namespace {
     // PDF 10 has a generated thumbnail (image 11); PDF 20 has none.
     $GLOBALS['mimes'] = [10 => 'application/pdf', 11 => 'image/png', 20 => 'application/pdf', 30 => 'image/jpeg'];
     $GLOBALS['meta'][10]['_rapls_pic_thumbnail_id'] = 11;
-    $GLOBALS['posts'][11] = (object) ['ID' => 11];
+    $GLOBALS['posts'][11] = (object) ['ID' => 11, 'post_type' => 'attachment'];
     $GLOBALS['srcs'][11] = $thumbnail;
 
     check('PDF with thumbnail, core found its preview: thumbnail', $library->filterAttachmentImageSrc($corePreview, 10, [900, 450], true), $thumbnail);
@@ -249,7 +249,7 @@ namespace {
     $settingsField->setValue($library, $settingsAgain);
     $GLOBALS['mimes'][40] = 'application/pdf';
     $GLOBALS['meta'][40]['_rapls_pic_thumbnail_id'] = 41;
-    $GLOBALS['posts'][41] = (object) ['ID' => 41];
+    $GLOBALS['posts'][41] = (object) ['ID' => 41, 'post_type' => 'attachment'];
     $GLOBALS['srcs'][41] = ['https://example.test/doc-40-thumbnail.png', 724, 1024, false];
     $iconOff = [
         $library->filterAttachmentImageAttributes(['src' => 'icon.png'], new WP_Post(40, 0, 'application/pdf'), 'thumbnail'),
@@ -310,6 +310,90 @@ namespace {
     }
     unset($GLOBALS['meta'][977], $GLOBALS['posts'][978]);
     check('  ...a size of null or \'\' asks for the thumbnail; a name or number is passed on; an array is the full size', $GLOBALS['image_sizes'], ['thumbnail', 'thumbnail', 'medium', '300', 'full']);
+
+    // Review of 1.4.33. A library with these settings, read afresh.
+    $libraryWith = static function (array $options) use ($generator): \Rapls\PDFImageCreator\MediaLibrary {
+        $GLOBALS['options'][\Rapls\PDFImageCreator\Settings::OPTION_NAME] = $options;
+        return new \Rapls\PDFImageCreator\MediaLibrary($generator, new \Rapls\PDFImageCreator\Settings());
+    };
+
+    // Core's PDF preview is removed only with auto-generate off, and only a PDF's.
+    $previewDir = sys_get_temp_dir() . '/rapls-pic-gate-' . getmypid();
+    @mkdir($previewDir . '/2026/10', 0777, true);
+    $GLOBALS['uploads'] = $previewDir;
+    $GLOBALS['mimes'][500] = 'application/pdf';
+    $GLOBALS['mimes'][501] = 'image/jpeg';
+    $GLOBALS['meta'][500]['_wp_attached_file'] = '2026/10/gate.pdf';
+    $GLOBALS['meta'][501]['_wp_attached_file'] = '2026/10/gate.jpg';
+    $gateMeta = ['sizes' => ['full' => ['file' => 'gate-pdf.jpg']]];
+    $gate = [];
+    foreach ([[true, 500], [false, 501], [false, 500]] as [$auto, $id]) {
+        file_put_contents($previewDir . '/2026/10/gate-pdf.jpg', 'preview');
+        $out = $libraryWith(['auto_generate' => $auto])->maybeSuppressCorePdfPreview($gateMeta, $id, 'create');
+        $gate[] = [$out['sizes'] === [], file_exists($previewDir . '/2026/10/gate-pdf.jpg')];
+    }
+    @unlink($previewDir . '/2026/10/gate-pdf.jpg');
+    @rmdir($previewDir . '/2026/10');
+    @rmdir($previewDir . '/2026');
+    @rmdir($previewDir);
+    check('core\'s preview: kept with auto-generate on, kept for an image, removed for a PDF with it off', $gate, [[false, true], [false, true], [true, false]]);
+
+    // A PDF deleted with "hide generated images" off: its own image stays, as
+    // an ordinary image -- both marks off it, and the PDF's keys gone.
+    $GLOBALS['mimes'][600] = 'application/pdf';
+    $GLOBALS['meta'][600] = ['_rapls_pic_thumbnail_id' => 601, '_thumbnail_id' => 601];
+    $GLOBALS['meta'][601] = ['_rapls_pic_is_thumbnail' => '1', '_rapls_pic_source_pdf' => 600];
+    $GLOBALS['posts'][601] = (object) ['ID' => 601, 'post_type' => 'attachment'];
+    $libraryWith(['hide_generated_images' => false])->onAttachmentDeleted(600);
+    check('a PDF deleted, hiding off: its image loses both marks, the PDF its keys', [$GLOBALS['meta'][601], $GLOBALS['meta'][600]], [[], []]);
+
+    // Only an attachment counts as a thumbnail, as limitPdfsToThumbnailed() asks.
+    $GLOBALS['mimes'][610] = 'application/pdf';
+    $GLOBALS['meta'][610]['_thumbnail_id'] = 611;
+    $GLOBALS['posts'][611] = (object) ['ID' => 611, 'post_type' => 'page'];
+    check('a PDF whose key names a page has no thumbnail', $generator->getThumbnailId(610), null);
+
+    // A generated image's JS response with sizes but no "full": left as it is.
+    $noFull = ['url' => 'https://example.test/x.jpg', 'mime' => 'image/jpeg', 'sizes' => ['thumbnail' => ['url' => 'https://example.test/x-150x150.jpg']]];
+    try {
+        $noFullOut = $library->filterAttachmentForJs($noFull, new WP_Post(210, 10, 'image/jpeg'), [])['sizes'];
+    } catch (\Throwable $e) {
+        $noFullOut = get_class($e);
+    }
+    check('a generated image\'s sizes without "full" are left as they are', $noFullOut, $noFull['sizes']);
+    // ...and a "full" that some other filter left as something other than an array.
+    $oddFull = ['url' => 'https://example.test/x.jpg', 'mime' => 'image/jpeg', 'sizes' => ['full' => 'https://example.test/x.jpg']];
+    try {
+        $oddFullOut = $library->filterAttachmentForJs($oddFull, new WP_Post(210, 10, 'image/jpeg'), [])['sizes'];
+    } catch (\Throwable $e) {
+        $oddFullOut = get_class($e);
+    }
+    check('  ...nor a "full" that is not an array', $oddFullOut, $oddFull['sizes']);
+
+    // The attributes filter asks for the size core was asked for -- an array
+    // too, not the 150px square -- and takes a null post without a fatal error.
+    $iconOn = $libraryWith(['display_thumbnail_icon' => true]);
+    $GLOBALS['src_sizes'] = [];
+    $attrOut = [
+        $iconOn->filterAttachmentImageAttributes(['src' => 'core.png', 'srcset' => 'a 1w'], new WP_Post(40, 0, 'application/pdf'), [300, 200]),
+        $iconOn->filterAttachmentImageAttributes(['src' => 'core.png'], new WP_Post(40, 0, 'application/pdf'), 'medium'),
+        $iconOn->filterAttachmentImageAttributes(['src' => 'core.png'], new WP_Post(40, 0, 'application/pdf'), null),
+    ];
+    // A warning counts: reading ->ID off null is one before it is anything else.
+    set_error_handler(static function (int $no, string $message): bool { throw new \ErrorException($message, 0, $no); });
+    try {
+        $attrOut[] = $iconOn->filterAttachmentImageAttributes(['src' => 'core.png'], null, 'thumbnail');
+    } catch (\Throwable $e) {
+        $attrOut[] = get_class($e);
+    } finally {
+        restore_error_handler();
+    }
+    check('the attributes filter: the size asked, srcset dropped, null post untouched', [$GLOBALS['src_sizes'], $attrOut], [
+        [[300, 200], 'medium', 'thumbnail'],
+        [['src' => 'https://example.test/doc-40-thumbnail.png'], ['src' => 'https://example.test/doc-40-thumbnail.png'], ['src' => 'https://example.test/doc-40-thumbnail.png'], ['src' => 'core.png']],
+    ]);
+    unset($GLOBALS['options'][\Rapls\PDFImageCreator\Settings::OPTION_NAME]);
+
 
     echo "\n$pass passed, $fail failed\n";
     exit($fail ? 1 : 0);

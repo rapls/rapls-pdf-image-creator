@@ -168,7 +168,11 @@ final class Plugin
             add_option(ReviewPrompt::ACTIVATED_OPTION, gmdate('Y-m-d H:i:s'), '', false);
         }
 
-        update_option(self::VERSION_OPTION, RAPLS_PIC_VERSION, false);
+        // Autoloaded: this is read on every request, and not autoloaded it
+        // cost a query on each (review after 1.4.33). update_option() takes
+        // the new autoload with the new value, so an existing install changes
+        // over at this, its next update.
+        update_option(self::VERSION_OPTION, RAPLS_PIC_VERSION, true);
     }
 
     /**
@@ -196,13 +200,54 @@ final class Plugin
      * featured image and title of someone else's private post or draft
      * (review of 1.4.32). These shortcodes are for PDFs.
      *
+     * And only a PDF this visitor could open: one attached to a private
+     * post, a draft or a post behind a password gave its thumbnail, title
+     * and address to anyone reading the post the shortcode was put in
+     * (review of 1.4.33). get_post_status() answers for an attachment with
+     * its parent's status, as core's own attachment pages do.
+     *
      * @param mixed $id
      */
     public static function pdfId($id): int
     {
         $id = absint($id);
 
-        return $id && 'application/pdf' === get_post_mime_type($id) ? $id : 0;
+        if (!$id || 'application/pdf' !== get_post_mime_type($id)) {
+            return 0;
+        }
+
+        return self::viewable($id) ? $id : 0;
+    }
+
+    /**
+     * Whether whoever is reading may see this attachment
+     */
+    private static function viewable(int $id): bool
+    {
+        $status = get_post_status_object((string) get_post_status($id));
+        $parent = (int) wp_get_post_parent_id($id);
+
+        if ($status && !empty($status->public) && !($parent && post_password_required($parent))) {
+            return true;
+        }
+
+        return current_user_can('read_post', $id);
+    }
+
+    /**
+     * The attributes a shortcode hands the image: its class, when it has one
+     *
+     * An empty class replaced the default "pic-thumbnail" and core's own
+     * classes alike, and the image came out as <img class=""> (review of
+     * 1.4.33).
+     *
+     * @return array<string, string>
+     */
+    private static function imageAttributes(string $classes): array
+    {
+        $classes = self::classList($classes);
+
+        return '' === $classes ? [] : ['class' => $classes];
     }
 
     /**
@@ -223,9 +268,7 @@ final class Plugin
                 return '';
             }
 
-            return $this->generator->getThumbnailImage($id, $atts['size'], [
-                'class' => self::classList((string) $atts['class']),
-            ]);
+            return $this->generator->getThumbnailImage($id, (string) $atts['size'], self::imageAttributes((string) $atts['class']));
         });
 
         // [rapls_pdf_thumbnail_url id="123" size="medium"]
@@ -262,9 +305,7 @@ final class Plugin
                 return '';
             }
 
-            $image = $this->generator->getThumbnailImage($id, $atts['size'], [
-                'class' => self::classList((string) $atts['class']),
-            ]);
+            $image = $this->generator->getThumbnailImage($id, (string) $atts['size'], self::imageAttributes((string) $atts['class']));
 
             if (!$image) {
                 return '';

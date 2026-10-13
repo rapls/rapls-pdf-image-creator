@@ -85,6 +85,12 @@ final class Settings
     /**
      * Save settings
      *
+     * Not called by this plugin, which saves through the Settings API, and
+     * kept: Plugin::getInstance()->getSettings() hands this object to any
+     * code on the site, and taking a public method away is a fatal error in
+     * whoever called it (review after 1.4.33). The same goes for
+     * getDefaults().
+     *
      * @param array<string, mixed> $settings Settings to save
      * @return bool Whether the stored settings now hold these values
      */
@@ -213,7 +219,10 @@ final class Settings
     }
 
     /**
-     * Get default insert link target (file, none)
+     * Get default insert link target (file, attachment, none)
+     *
+     * The media window's Link To starts here for a PDF, and a choice made
+     * there wins; see Inserter::linkFor() and admin/js/insert-link.js.
      */
     public function getInsertLink(): string
     {

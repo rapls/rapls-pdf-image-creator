@@ -208,11 +208,16 @@
             this.total = data.total;
             this.force = includeExisting;
             this.after = 0;
-            $('#rapls-pic-bulk-total').text(data.total);
+            // Every PDF the scan found, and how many of them are to do: the
+            // to-do count used to stand under "PDFs found" (review after
+            // 1.4.33).
+            $('#rapls-pic-bulk-total').text(data.total_pdfs);
+            $('#rapls-pic-bulk-todo').text(data.total);
 
-            // Only worth showing when it disagrees with the scan;
-            // otherwise it is a second number saying the same thing.
-            if (typeof data.rows !== 'undefined' && data.rows !== data.total) {
+            // Only worth showing when it disagrees with the scan's PDFs;
+            // otherwise it is a second number saying the same thing. Compared
+            // with the to-do count, it showed whenever a PDF had a thumbnail.
+            if (typeof data.rows !== 'undefined' && data.rows !== data.total_pdfs) {
                 $('#rapls-pic-bulk-rows').text(data.rows + (data.statuses ? ' (' + data.statuses + ')' : ''));
                 $('#rapls-pic-bulk-rows-row').show();
             } else {
@@ -536,7 +541,9 @@
             $('input[name="rapls_pic_settings[insert_type]"]').on('change', this.toggleCustomHtml);
             this.toggleCustomHtml();
 
-            // Toggle insert size and link visibility
+            // Toggle the insert size. Link To stays for every type: the
+            // title link uses it, and so does Custom HTML when its template
+            // is empty and it falls back to the image.
             $('input[name="rapls_pic_settings[insert_type]"]').on('change', this.toggleImageOptions);
             this.toggleImageOptions();
         },

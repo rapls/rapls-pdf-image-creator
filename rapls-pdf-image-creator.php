@@ -12,7 +12,7 @@
  * Plugin Name: Rapls PDF Image Creator – PDF Thumbnails & Featured Images
  * Plugin URI:  https://raplsworks.com/plugins/rapls-pdf-image-creator/
  * Description: The first page of each uploaded PDF becomes an image in every registered size, ready to use as a post cover or inside content. Needs ImageMagick.
- * Version:     1.4.33
+ * Version:     1.4.34
  * Author:      Rapls Works
  * Author URI:  https://raplsworks.com
  * Text Domain: rapls-pdf-image-creator
@@ -46,7 +46,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Plugin constants
-define('RAPLS_PIC_VERSION', '1.4.33');
+define('RAPLS_PIC_VERSION', '1.4.34');
 define('RAPLS_PIC_PLUGIN_FILE', __FILE__);
 define('RAPLS_PIC_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('RAPLS_PIC_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -101,7 +101,7 @@ register_activation_hook(__FILE__, function (): void {
         deactivate_plugins(RAPLS_PIC_PLUGIN_BASENAME);
         wp_die(
             esc_html__('Rapls PDF Image Creator requires PHP 7.4 or higher.', 'rapls-pdf-image-creator'),
-            'Plugin Activation Error',
+            esc_html__('Plugin Activation Error', 'rapls-pdf-image-creator'),
             ['back_link' => true]
         );
     }
@@ -113,7 +113,8 @@ register_activation_hook(__FILE__, function (): void {
 
     // Stamping the version here is what lets Plugin::maybeUpgrade() tell a
     // fresh install apart from an upgrade that predates the option.
-    update_option('rapls_pic_version', RAPLS_PIC_VERSION, false);
+    // Autoloaded, as Plugin::maybeUpgrade() writes it: read on every request.
+    update_option('rapls_pic_version', RAPLS_PIC_VERSION, true);
 
     // When the clock for the review request starts. Written once and never
     // overwritten: deactivating and reactivating must not restart the wait,

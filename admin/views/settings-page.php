@@ -237,7 +237,7 @@ if (!defined('ABSPATH')) {
                             <?php esc_html_e('Hide generated thumbnail images in the Media Library', 'rapls-pdf-image-creator'); ?>
                         </label>
                         <p class="description">
-                            <?php esc_html_e('This also decides what happens to the image when its PDF is deleted. Checked: the image is deleted with the PDF, unless something else uses it. Unchecked: the image is kept as an ordinary image.', 'rapls-pdf-image-creator'); ?>
+                            <?php esc_html_e('This also decides what happens to the image when its PDF is deleted. Checked: the image is deleted with the PDF, unless another PDF or a post uses it as its featured image; an image placed in a post\'s content is not looked for, and goes. Unchecked: the image is kept as an ordinary image.', 'rapls-pdf-image-creator'); ?>
                         </p>
                     </td>
                 </tr>
@@ -252,6 +252,7 @@ if (!defined('ABSPATH')) {
                         </label>
                         <p class="description">
                             <?php esc_html_e('If checked, generated image files will be handled as ordinary image files after plugin removal.', 'rapls-pdf-image-creator'); ?>
+                            <?php esc_html_e('Images a post still shows, as its featured image or in its content, are kept either way. A post whose featured image was a PDF is given that PDF\'s image.', 'rapls-pdf-image-creator'); ?>
                         </p>
                     </td>
                 </tr>
@@ -349,6 +350,9 @@ if (!defined('ABSPATH')) {
                                 <?php esc_html_e('None (no link)', 'rapls-pdf-image-creator'); ?>
                             </label>
                         </fieldset>
+                        <p class="description">
+                            <?php esc_html_e('In the Add Media window, Link To starts at this choice for a PDF with a thumbnail. A link chosen there is used instead.', 'rapls-pdf-image-creator'); ?>
+                        </p>
                     </td>
                 </tr>
 
@@ -419,6 +423,10 @@ if (!defined('ABSPATH')) {
                         <td><?php esc_html_e('PDFs found:', 'rapls-pdf-image-creator'); ?></td>
                         <td id="rapls-pic-bulk-total">0</td>
                     </tr>
+                    <tr>
+                        <td><?php esc_html_e('To generate:', 'rapls-pdf-image-creator'); ?></td>
+                        <td id="rapls-pic-bulk-todo">0</td>
+                    </tr>
                     <tr id="rapls-pic-bulk-rows-row" style="display:none;">
                         <td><?php esc_html_e('PDF attachments in the database:', 'rapls-pdf-image-creator'); ?></td>
                         <td id="rapls-pic-bulk-rows">0</td>
@@ -478,7 +486,7 @@ if (!defined('ABSPATH')) {
                 <?php esc_html_e('Check this server again', 'rapls-pdf-image-creator'); ?>
             </a>
             <span class="description">
-                <?php esc_html_e('Results below are measured, then remembered for twelve hours. Use this after your host changes something.', 'rapls-pdf-image-creator'); ?>
+                <?php esc_html_e('Results below are measured, then remembered: most for twelve hours, some for up to a week. Use this after your host changes something.', 'rapls-pdf-image-creator'); ?>
             </span>
         </p>
 
@@ -537,8 +545,8 @@ if (!defined('ABSPATH')) {
             <p>
                 <?php
                 printf(
-                    /* translators: 1: attachment title, 2: how long ago, e.g. "3 hours" */
-                    esc_html__('Last seen on %1$s, %2$s ago.', 'rapls-pdf-image-creator'),
+                    /* translators: 1: PDF title, 2: how long ago, e.g. "3 hours" */
+                    esc_html__('Last happened with the PDF "%1$s", %2$s ago.', 'rapls-pdf-image-creator'),
                     esc_html(get_the_title($rapls_pic_failure['pdf_id']) ?: '#' . $rapls_pic_failure['pdf_id']),
                     esc_html(human_time_diff($rapls_pic_failure['time']))
                 );

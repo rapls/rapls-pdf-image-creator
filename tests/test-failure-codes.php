@@ -37,6 +37,10 @@ $messages = [
         => FailureCode::RESOURCE_LIMIT,
     "width or height exceeds limit `big.pdf' @ error/cache.c/OpenPixelCache/3911"
         => FailureCode::RESOURCE_LIMIT,
+    // Measured on ImageMagick 7.1.1 with a width limit of 5000: a page
+    // Ghostscript drew wider than that, turned down by the PNG reader.
+    "Invalid IHDR data `/tmp/magick-UZlvFI' @ error/png.c/MagickPNGErrorHandler/1492"
+        => FailureCode::RESOURCE_LIMIT,
 
     "unable to open image `/var/www/uploads/x.jpg': Permission denied"
         => FailureCode::WRITE_FAILED,
@@ -68,13 +72,20 @@ echo "\n=== permanence ===\n";
 // A queue that retries these makes no progress while looking busy.
 foreach ([FailureCode::NO_EXTENSION, FailureCode::PDF_BLOCKED_BY_POLICY,
           FailureCode::PDF_UNSUPPORTED, FailureCode::NOT_A_PDF,
-          FailureCode::SOURCE_MISSING, FailureCode::RESOURCE_LIMIT] as $code) {
+          FailureCode::SOURCE_MISSING, FailureCode::RESOURCE_LIMIT,
+          // Review after 1.4.33: these were permanent with no test to say so.
+          FailureCode::BLANK_RENDER, FailureCode::PAGE_OUT_OF_RANGE, FailureCode::NO_ENGINE] as $code) {
     check("$code is permanent", FailureCode::isPermanent($code), true);
 }
 
 foreach ([FailureCode::WRITE_FAILED, FailureCode::RENDER_ERROR, FailureCode::ERROR] as $code) {
     check("$code is worth retrying", FailureCode::isPermanent($code), false);
 }
+check('every permanent code is in the vocabulary', array_values(array_diff(FailureCode::permanent(), FailureCode::all())), []);
+check('the generator\'s "no engine" is the vocabulary\'s', [FailureCode::NO_ENGINE, in_array(FailureCode::NO_ENGINE, FailureCode::all(), true), FailureCode::describe(FailureCode::NO_ENGINE)], ['no_engine', true, ['label' => '', 'action' => '']]);
+// An output format with no encoder is a render error with or without the
+// conversion flag: the branch that said so was never what decided it.
+check('no encoder for the output format is a render error either way', [FailureCode::fromExceptionMessage("NoEncodeDelegateForThisImageFormat `WEBP'", true), FailureCode::fromExceptionMessage("NoEncodeDelegateForThisImageFormat `WEBP'")], [FailureCode::RENDER_ERROR, FailureCode::RENDER_ERROR]);
 
 // A full disk empties; a page that is 200 megapixels is 200 megapixels again
 // tomorrow. The two look similar and are not.
@@ -109,6 +120,14 @@ check(
     false !== stripos(FailureCode::describe(FailureCode::RESOURCE_LIMIT)['action'], 'resolution'),
     true
 );
+// Two causes share the code since 1.4.34: ImageMagick refusing a page, and a
+// page too large even at the lowest resolution. The label claims neither, and
+// the advice says when lowering the resolution will not help.
+$tooLarge = FailureCode::describe(FailureCode::RESOURCE_LIMIT);
+check('  ...its label names no cause, and its advice covers a page no resolution can draw', [
+    $tooLarge['label'],
+    false !== strpos($tooLarge['action'], 'too large even at the lowest resolution, no setting will help'),
+], ['The page was too large to draw.', true]);
 
 check('an unknown code does not fatal', FailureCode::describe('made_up_code'), ['label' => '', 'action' => '']);
 

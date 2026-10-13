@@ -125,7 +125,8 @@
 
 /* Status Indicators */
 .rapls-pic-status-ok {
-    color: #00a32a;
+    /* The log's green: #00a32a was 3.35:1 on white, under the 4.5:1 text needs (review after 1.4.33). */
+    color: #007017;
 }
 
 .rapls-pic-status-error {

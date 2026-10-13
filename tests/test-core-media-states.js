@@ -70,6 +70,12 @@ check('The Classic block\'s gallery states keep images only, in the block editor
     type(new wp.media.controller.FeaturedImage().addTo(classicBlock)),
 ], ['image', 'image', MARKED]);
 
+// Review after 1.4.33: a frame that has no states collection, or one that
+// cannot be asked, is the block editor's: the state still offers PDFs, and
+// nothing throws.
+const safely = (frame) => { try { return type(new wp.media.controller.GalleryAdd().addTo(frame)); } catch (e) { return 'threw: ' + e.message; } };
+check('A frame with no states, or states that cannot be asked: offered, no error', [safely({}), safely({ states: {} })], [MARKED, MARKED]);
+
 // Codex's repro: a state another plugin adds while the same frame is built, asking for images.
 const theirs = new wp.media.controller.Library({ id: 'acme-logo', library: wp.media.query({ type: 'image', pluginState: 'acme-logo' }) });
 check('Another plugin\'s image state keeps what it asked for (Codex review of 1.4.30)', [type(theirs), theirs.get('library').props.get('pluginState')], ['image', 'acme-logo']);

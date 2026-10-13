@@ -298,7 +298,9 @@ final class ImagickEngine implements EngineInterface
      * shape cannot drift between them and the wording stays in one place.
      *
      * @param string $code   One of ok, no_extension, pdf_blocked_by_policy,
-     *                       pdf_unsupported, error.
+     *                       pdf_unsupported, pdf_read_failed, error.
+     *                       pdf_read_failed is reported as error, with
+     *                       its own wording.
      * @param string $detail Extra machine-ish detail, already translated.
      * @return array{code: string, label: string, summary: string, action: string, detail: string}
      */
@@ -765,6 +767,15 @@ final class ImagickEngine implements EngineInterface
             $options[$number] = is_numeric($options[$number]) ? (int) $options[$number] : $defaults[$number];
         }
 
+        // The size limits run through filters too, and 0 or a negative made
+        // the resize ImageMagick's "Invalid image geometry" -- no thumbnail,
+        // and a message about ImageMagick (review after 1.4.33).
+        foreach (['max_width', 'max_height'] as $side) {
+            if ($options[$side] < 1) {
+                $options[$side] = $defaults[$side];
+            }
+        }
+
         // Validate PDF file
         if (!file_exists($pdfPath)) {
             return ConversionResult::failure(
@@ -790,11 +801,29 @@ final class ImagickEngine implements EngineInterface
             if ($resolution < 1) {
                 $resolution = $defaults['resolution'];
             }
+
+            $page = max(0, (int) $options['page']);
+
+            // Lowered for a page too large to draw at it. A raster an add-on
+            // hands over has the size it has.
+            if (self::looksLikePdf($pdfPath)) {
+                $resolution = $this->boundedResolution($pdfPath, $page, $resolution, $options);
+
+                if (null === $resolution) {
+                    $imagick->clear();
+
+                    return ConversionResult::failure(
+                        __('This page is too large to draw, even at the lowest resolution.', 'rapls-pdf-image-creator'),
+                        \Rapls\PDFImageCreator\FailureCode::RESOURCE_LIMIT
+                    );
+                }
+            }
+
             $imagick->setResolution($resolution, $resolution);
 
             // Read specific page from PDF
-            $page = max(0, (int) $options['page']);
-            $imagick = $this->readPage($imagick, $pdfPath, $page, $resolution);
+            $empty = false;
+            $imagick = $this->readPage($imagick, $pdfPath, $page, $resolution, $empty);
 
             // A page with nothing on it, when nothing threw.
             //
@@ -808,7 +837,7 @@ final class ImagickEngine implements EngineInterface
             // Refusing is better than pretending. WordPress then shows its PDF
             // icon, which at least says "PDF" rather than "this document is
             // blank", and 1.4.0's failure reporting says what to ask the host.
-            if ($this->looksBlankWhite($imagick)) {
+            if ($empty && $this->looksWhite($imagick)) {
                 /**
                  * Filter whether an all-white page counts as a failure.
                  *
@@ -970,7 +999,13 @@ final class ImagickEngine implements EngineInterface
             // got no thumbnail and a message about ImageMagick (review after
             // 1.4.31). Counted only when a page past the first was asked for
             // (pagesIn()).
-            $pages = (int) $options['page'] > 0 ? self::pagesIn($pdfPath) : null;
+            //
+            // Not when ImageMagick said the page was too large: a ping of the
+            // whole document leaves out a page past the server's width or
+            // height limit, and that page was then reported missing
+            // (verification of 1.4.34).
+            $code = \Rapls\PDFImageCreator\FailureCode::fromExceptionMessage($e->getMessage(), true);
+            $pages = (int) $options['page'] > 0 && \Rapls\PDFImageCreator\FailureCode::RESOURCE_LIMIT !== $code ? self::pagesIn($pdfPath) : null;
 
             // The file's own figure can understate a damaged file whose
             // pages Ghostscript finds by walking the tree: confirmed by
@@ -1005,7 +1040,7 @@ final class ImagickEngine implements EngineInterface
                     __('Imagick error: %s', 'rapls-pdf-image-creator'),
                     $e->getMessage()
                 ),
-                \Rapls\PDFImageCreator\FailureCode::fromExceptionMessage($e->getMessage(), true)
+                $code
             );
         } catch (\Throwable $e) {
             // Not only Exception: a TypeError or an Error from the conversion
@@ -1019,7 +1054,11 @@ final class ImagickEngine implements EngineInterface
     }
 
     /**
-     * Transient remembering that this build cannot be asked for a single page
+     * Transient an earlier version kept about reading single pages
+     *
+     * Nothing writes or reads it since 1.4.34, when the whole-document read it
+     * steered was taken out (readPage()). Still in probeTransients(), so the
+     * Status tab's re-check and uninstall clear what is left of it.
      */
     private const PAGE_SUFFIX_TRANSIENT = 'rapls_pic_page_suffix';
 
@@ -1071,12 +1110,11 @@ final class ImagickEngine implements EngineInterface
      * Null when the tree cannot be read plainly -- in object streams (a
      * compressed tree), in a dictionary with another inside it, past
      * PAGE_TREE_MAX_BYTES -- and the caller asks ImageMagick instead.
-     * A damaged file can state fewer pages than Ghostscript finds by
-     * walking the tree, so a page this calls missing is confirmed by
-     * ImageMagick before it is said to be. A document over the whole-read
-     * limit is not read whole on this figure alone either: the pixels are
-     * bounded too, and a file that understates its pages that far is one
-     * Ghostscript is repairing as it reads.
+     * The figure is the file's word, and Ghostscript does not go by it: it
+     * draws the pages it finds by walking the tree. A damaged file can state
+     * fewer, and a file can simply lie -- so a page this calls missing is
+     * confirmed by ImageMagick before it is said to be, and nothing is ever
+     * sized on this figure (readPage()).
      */
     public static function pagesFromBytes(string $pdfPath): ?int
     {
@@ -1178,11 +1216,16 @@ final class ImagickEngine implements EngineInterface
     /** How long a PDF read check that failed for no lasting reason is kept (probePdfRead()). */
     public const PASSING_FAILURE_SECONDS = 600;
 
-    /** The longest document the whole-file retry reads (readPageDirect()). */
-    public const WHOLE_READ_MAX_PAGES = 20;
-
-    /** The most pixels the whole-file retry draws, all pages together. */
-    public const WHOLE_READ_MAX_PIXELS = 50000000;
+    /**
+     * The most pixels a page is drawn at unless a listener says otherwise (boundedResolution())
+     *
+     * An A4 page at 600 dpi, the highest resolution the Settings tab offers,
+     * is 35 megapixels and is drawn as asked. Past this, the resolution is
+     * lowered for that page: 40 megapixels still give more than the largest
+     * thumbnail the Settings tab allows (4096 pixels) on any page that is not
+     * extremely narrow.
+     */
+    public const RENDER_MAX_PIXELS = 40000000;
 
     /**
      * Transient remembering whether Ghostscript here needed a nudge
@@ -1190,35 +1233,331 @@ final class ImagickEngine implements EngineInterface
     private const GS_OPTIONS_TRANSIENT = 'rapls_pic_gs_options';
 
     /**
-     * Read one page, trying every rescue this server might need
+     * The lowest resolution Ghostscript draws at through ImageMagick
      *
-     * Two of them, in order, and both reached only when the page came back as
-     * one flat colour: a different route to the same page, then the same
-     * route with Ghostscript configured differently.
+     * Measured on ImageMagick 7.1.1 and Ghostscript 10.04: at 1 dpi and below
+     * the read fails ("rangecheck in setscreen"); 2 dpi draws.
+     */
+    private const MIN_RESOLUTION = 2.0;
+
+    /**
+     * The most pixels the read that measures one page is allowed (boundedResolution())
+     */
+    private const MEASURE_MAX_PIXELS = 4000000;
+
+    /**
+     * The resolution this page can be drawn at
+     *
+     * Nothing bounded the read before: a 470-byte PDF declaring one page of
+     * 200 by 200 inches took 76 seconds and 2.9 GB at 150 dpi (ImageMagick
+     * 7.1.1 and Ghostscript 10.04), before the thumbnail was cut down to
+     * 1024 pixels (review after 1.4.33). Now a page that would come out
+     * larger than RENDER_MAX_PIXELS is drawn at a lower resolution.
+     *
+     * Two questions, and the second only when the first says it may matter:
+     *
+     * 1. A ping at 72 dpi. It is not free -- ImageMagick 7 starts Ghostscript
+     *    for it, about 0.04 s on an ordinary page -- and it does not answer
+     *    for the page asked: ImageMagick 7 reports the largest page in the
+     *    whole document, whichever page is named. So it is an upper bound.
+     *    Within the limit, the page is drawn as asked.
+     * 2. Over it, the page itself is drawn small enough to be cheap
+     *    (MEASURE_MAX_PIXELS) and measured. Ghostscript decides that size,
+     *    so /Rotate, inherited boxes and UserUnit all come out as they will
+     *    in the real read -- which reading /MediaBox from the file's bytes
+     *    would have to reimplement, and could not do inside a compressed
+     *    object stream at all. Without this, an A4 cover beside a 200-inch
+     *    sheet came out at 256 pixels instead of 1024 (verification of this
+     *    change).
+     *
+     * Only ever lowered. When the ping fails, the page is measured by a
+     * bounded read at 2 dpi instead, and when that fails too, nothing more
+     * is read: the ping's error is the failure, as a read's would have been
+     * -- which is what happens to a page of a million points, 771
+     * megapixels at 2 dpi, which Ghostscript refuses in a tenth of a second.
+     * When the measuring read after a ping fails, the ping's answer is used. When the
+     * page itself is too large even at 2 dpi, the least Ghostscript draws at
+     * here, nothing is drawn and the failure says so.
+     *
+     * @param array<string, mixed> $options Conversion options, for the filter.
+     * @return float|null The resolution, or null when even MIN_RESOLUTION is
+     *                    over the limit.
+     * @throws \Throwable The ping's error, when neither it nor a bounded read
+     *                    could draw the page.
+     */
+    private function boundedResolution(string $pdfPath, int $page, float $resolution, array $options): ?float
+    {
+        /**
+         * Filter the most pixels one page of a PDF is drawn at.
+         *
+         * Past this, the page is drawn at a lower resolution. A thumbnail is
+         * cut down to the Settings tab's maximum size afterwards, so this
+         * costs nothing a visitor sees unless the page is cropped first.
+         *
+         * @since 1.4.34
+         *
+         * @param int                  $pixels  Pixels. Default 40,000,000.
+         * @param string               $pdfPath Absolute path to the PDF.
+         * @param array<string, mixed> $options Conversion options.
+         */
+        $limit = apply_filters('rapls_pdf_image_creator_max_render_pixels', self::RENDER_MAX_PIXELS, $pdfPath, $options);
+        $limit = is_numeric($limit) && (float) $limit >= 1 ? (float) $limit : (float) self::RENDER_MAX_PIXELS;
+
+        $target = $pdfPath . '[' . $page . ']';
+
+        // Most pixels either side of a measuring read held up at
+        // MIN_RESOLUTION may have: an ordinary page at the default limit.
+        $side = (int) ceil(sqrt(min($limit, (float) self::RENDER_MAX_PIXELS)));
+
+        try {
+            // At 72 dpi a pixel is a point.
+            $size = new \Imagick();
+            $size->setResolution(72, 72);
+            $size->pingImage($target);
+            $width = (float) $size->getImageWidth();
+            $height = (float) $size->getImageHeight();
+            $size->clear();
+        } catch (\Throwable $e) {
+            // The ping draws the page too, at 2 dpi on ImageMagick 7, so it
+            // fails where the read would: a policy, no Ghostscript, a page
+            // past the end -- and a page past the server's own width or
+            // height limit even at 2 dpi. Going on to read at the resolution
+            // asked had Ghostscript draw a 300,000-point page at 150 dpi for
+            // over five minutes, for ImageMagick to refuse it at the end
+            // (verification of this change). So the page is read once more,
+            // small and bounded; if that fails too, the read would, and the
+            // ping's own error is the failure, classified as a read's is.
+            $measured = $this->measurePage($target, self::MIN_RESOLUTION, $side);
+
+            if (null === $measured) {
+                throw $e;
+            }
+
+            return $this->fittedResolution($measured[0], $measured[1], $resolution, $limit);
+        }
+
+        // A page that answers no size is drawn as asked: 0 pixels are
+        // within any limit.
+        if ($this->fittedResolution($width, $height, $resolution, $limit) === $resolution) {
+            return $resolution;
+        }
+
+        // The page asked is no larger than the largest, so drawing it where
+        // the largest would be MEASURE_MAX_PIXELS keeps this read that small.
+        $measureAt = max(self::MIN_RESOLUTION, min($resolution, 72 * sqrt(self::MEASURE_MAX_PIXELS / ($width * $height))));
+
+        // Held up at MIN_RESOLUTION, the largest page could come out bigger
+        // than that. The page asked is still read -- an A4 cover beside a
+        // 300,000-point sheet is 17 by 23 pixels at 2 dpi -- but with
+        // ImageMagick told to refuse a page wider or taller than an ordinary
+        // page at the default limit would be. Measured: the 300,000-point
+        // sheet itself is then refused before its pixels are held, 23 MB
+        // against 951 MB read without the limit. Ghostscript has drawn it
+        // all the same (1.3 s), as the ping above already had.
+        $bounded = $width * $height * ($measureAt / 72) ** 2 > max((float) self::MEASURE_MAX_PIXELS, min($limit, (float) self::RENDER_MAX_PIXELS));
+
+        $measured = $this->measurePage($target, $measureAt, $bounded ? $side : 0);
+
+        // Not read, or refused by the limit: the ping's answer stands.
+        if (null !== $measured && $measured[0] * $measured[1] < $width * $height) {
+            [$width, $height] = $measured;
+        }
+
+        return $this->fittedResolution($width, $height, $resolution, $limit);
+    }
+
+    /**
+     * The resolution a page of this size in points is drawn at within the limit
+     *
+     * @return float|null Null when even MIN_RESOLUTION is over the limit.
+     */
+    private function fittedResolution(float $width, float $height, float $resolution, float $limit): ?float
+    {
+        if ($width <= 0 || $height <= 0) {
+            return $resolution;
+        }
+
+        $fits = 72 * sqrt($limit / ($width * $height));
+
+        // And within the server's own width and height limits, where it has
+        // stricter ones: past them ImageMagick refuses the page after
+        // Ghostscript has drawn it ("Invalid IHDR data"). A pixel short of
+        // each, for Ghostscript's rounding.
+        foreach (self::siteSideLimits() as $axis => $most) {
+            $fits = min($fits, 72 * ($most - 1) / (0 === $axis ? $width : $height));
+        }
+
+        if ($resolution <= $fits) {
+            return $resolution;
+        }
+
+        // Two decimals, rounded down, so the page stays within the limit.
+        $fits = floor(100 * $fits) / 100;
+
+        return $fits < self::MIN_RESOLUTION ? null : $fits;
+    }
+
+    /**
+     * The width and height limits this server sets, where it sets any
+     *
+     * @return array<int, float> 0 for the width, 1 for the height; a limit
+     *         that is 0 (none), unreadable or absent is left out.
+     */
+    private static function siteSideLimits(): array
+    {
+        $limits = [];
+
+        foreach (self::$limitTypeNames as $axis => $name) {
+            if (!defined('\Imagick::' . $name)) {
+                continue;
+            }
+
+            try {
+                $most = \Imagick::getResourceLimit(constant('\Imagick::' . $name));
+            } catch (\Throwable $e) {
+                continue;
+            }
+
+            // "Unlimited" is 2^64, which no page reaches; it needs no case of its own.
+            if (is_numeric($most) && (float) $most >= 2) {
+                $limits[$axis] = (float) $most;
+            }
+        }
+
+        return $limits;
+    }
+
+    /**
+     * The size of one page in points, drawn small to find out
+     *
+     * Ghostscript decides that size, so /Rotate, inherited boxes and UserUnit
+     * come out as they will in the real read.
+     *
+     * @param string $target  The PDF with its "[n]".
+     * @param float  $density Resolution to draw at.
+     * @param int    $side    Most pixels either side may have, or 0 for no
+     *                        limit. Set as ImageMagick's width and height
+     *                        limits for this read only, and put back.
+     * @return array{0: float, 1: float}|null Width and height, a pixel more
+     *         each way; null when the page could not be read within the limit.
+     */
+    private function measurePage(string $target, float $density, int $side): ?array
+    {
+        if ($side > 0) {
+            // Without these constants (ImageMagick 6 builds), nothing can be
+            // bounded, so nothing is read.
+            foreach (self::$limitTypeNames as $name) {
+                if (!defined('\Imagick::' . $name)) {
+                    return null;
+                }
+            }
+
+            // A request that dies inside the read runs no finally, and the
+            // limits would stay with this PHP worker for every request after
+            // it, as GS_OPTIONS would have (see readWithGhostscriptOptions()).
+            if (!self::$limitsGuarded) {
+                self::$limitsGuarded = true;
+                register_shutdown_function([self::class, 'restoreLimits']);
+            }
+
+            foreach (self::$limitTypeNames as $name) {
+                $type = constant('\Imagick::' . $name);
+                $was = \Imagick::getResourceLimit($type);
+                $was = is_numeric($was) ? (float) $was : 0.0;
+
+                // A stricter limit the site set stays in force; 0 is none.
+                if ($was > 0 && $was <= $side) {
+                    continue;
+                }
+
+                // As an int: ImageMagick reports "unlimited" as 2^64, which
+                // setResourceLimit() on PHP 7.4 refuses as a float past
+                // PHP_INT_MAX -- and then the limit was never put back.
+                self::$limitsBefore[$type] = $was >= (float) PHP_INT_MAX ? PHP_INT_MAX : (int) $was;
+                \Imagick::setResourceLimit($type, $side);
+            }
+        }
+
+        try {
+            $one = new \Imagick();
+            $one->setResolution($density, $density);
+            $one->readImage($target);
+            $one->setIteratorIndex(0);
+            // A pixel more each way: Ghostscript rounds the page to whole
+            // pixels, and this must not come out smaller than the page.
+            $size = [
+                ($one->getImageWidth() + 1) * 72 / $density,
+                ($one->getImageHeight() + 1) * 72 / $density,
+            ];
+            $one->clear();
+
+            return $size;
+        } catch (\Throwable $e) {
+            return null;
+        } finally {
+            self::restoreLimits();
+        }
+    }
+
+    /** The Imagick constants measurePage() limits by, by name. */
+    private static array $limitTypeNames = ['RESOURCETYPE_WIDTH', 'RESOURCETYPE_HEIGHT'];
+
+    /** @var array<int, int> Limits measurePage() lowered, as they were. */
+    private static array $limitsBefore = [];
+
+    /** Whether restoreLimits() is registered for shutdown (once a request). */
+    private static bool $limitsGuarded = false;
+
+    /**
+     * Put back the width and height limits measurePage() lowered, if it did
+     *
+     * @internal Public only for register_shutdown_function().
+     */
+    public static function restoreLimits(): void
+    {
+        foreach (self::$limitsBefore as $type => $was) {
+            try {
+                \Imagick::setResourceLimit($type, $was);
+            } catch (\Throwable $e) {
+                // Nothing more to do.
+            }
+        }
+
+        self::$limitsBefore = [];
+    }
+
+    /**
+     * Read one page, and read it again with Ghostscript configured differently if it comes back as one flat colour
+     *
+     * Until 1.4.34 there was a second rescue before this one: reading the
+     * whole document and taking the page out of the sequence. It had never
+     * been seen to help -- it was written after a measurement that composited
+     * every page before counting colours, and turned out to be wrong -- and
+     * its own docblock said to delete it if it got in the way. It did: its
+     * limits came from the page count the file states, while Ghostscript
+     * draws every page it finds, so a 60-page file stating one page took
+     * 954 MB to read, against 70 MB for the same file stating 60 (review
+     * after 1.4.33).
      *
      * @param \Imagick $imagick    Fresh instance with the resolution set.
      * @param string   $pdfPath    Absolute path.
      * @param int      $page       Page index, 0-based.
-     * @param int      $resolution DPI.
+     * @param float    $resolution DPI.
+     * @param bool     $empty      Set to whether the page handed back is one flat colour.
      * @return \Imagick The instance to carry on with.
      */
-    private function readPage(\Imagick $imagick, string $pdfPath, int $page, int $resolution): \Imagick
+    private function readPage(\Imagick $imagick, string $pdfPath, int $page, float $resolution, bool &$empty = false): \Imagick
     {
+        $imagick->readImage($pdfPath . '[' . $page . ']');
+        $empty = $this->looksEmpty($imagick);
+
         // Not a PDF: a raster an add-on drew with Ghostscript and hands over
-        // to be finished. The retries below are about how Ghostscript renders
-        // a PDF, and run on a raster they read it twice more for nothing --
-        // and wrote what they found into this server's answers, so a black
-        // cover finished this way told the Status tab that Ghostscript needs
-        // no -dNOTRANSPARENCY here when it had been measured to.
-        if (!self::looksLikePdf($pdfPath)) {
-            $imagick->readImage($pdfPath . '[' . $page . ']');
-
-            return $imagick;
-        }
-
-        $imagick = $this->readPageDirect($imagick, $pdfPath, $page, $resolution);
-
-        if (!$this->looksEmpty($imagick)) {
+        // to be finished. The retry below is about how Ghostscript renders a
+        // PDF, and run on a raster it read it again for nothing -- and wrote
+        // what it found into this server's answers, so a black cover finished
+        // this way told the Status tab that Ghostscript needs no
+        // -dNOTRANSPARENCY here when it had been measured to.
+        if (!$empty || !self::looksLikePdf($pdfPath)) {
             return $imagick;
         }
 
@@ -1229,6 +1568,7 @@ final class ImagickEngine implements EngineInterface
         }
 
         $imagick->clear();
+        $empty = false;
 
         return $rescued;
     }
@@ -1252,177 +1592,6 @@ final class ImagickEngine implements EngineInterface
         fclose($handle);
 
         return false !== strpos($head, '%PDF-');
-    }
-
-    /**
-     * Read one page, and read it a second way if the first comes back empty.
-     *
-     * Asking for `file.pdf[0]` makes ImageMagick pass -dFirstPage/-dLastPage
-     * to Ghostscript, and a page can come back the right size with nothing in
-     * it. When that happens, reading the whole file and taking the page out of
-     * the sequence is a different route to the same page and may hold what the
-     * first one lost.
-     *
-     * **This has not been observed to help.** It was written after a
-     * measurement that appeared to show exactly that, on ImageMagick 6.9.13-25
-     * with a PowerPoint export carrying a transparency group. The measurement
-     * was wrong: the tool doing it read every page and composited them before
-     * counting colours, so a blank page one plus a printed page two looked
-     * like a page one with content. Once that was fixed, every route returned
-     * the same blank page and the server turned out to be unable to render the
-     * file at all.
-     *
-     * Kept because the behaviour stands on its own — if one route returns
-     * nothing and another returns something, take the something. But nothing
-     * here is known to be load-bearing. If it ever gets in the way, delete
-     * it; do not defend it on the strength of the measurement above.
-     *
-     * The retry renders every page, which on a long document is expensive.
-     * What bounds it:
-     *
-     * - Until the server is measured, it runs only after a flat result.
-     * - The answer is remembered for a week. "no" (the suffix works, or the
-     *   retry could not be done) stops it. "yes" (the suffix gave a flat page
-     *   and the whole file did not) sends every conversion to the whole file
-     *   for that week -- it did say "only after a flat result", which stopped
-     *   being true once "yes" was kept (review after 1.4.31).
-     * - A document of more than WHOLE_READ_MAX_PAGES pages is never read
-     *   whole: the page is read on its own, as it is without this.
-     *
-     * @param \Imagick $imagick    Fresh instance with the resolution set.
-     * @param string   $pdfPath    Absolute path.
-     * @param int      $page       Page index, 0-based.
-     * @param int      $resolution DPI, for rebuilding the instance on retry.
-     * @return \Imagick The instance to carry on with.
-     */
-    private function readPageDirect(\Imagick $imagick, string $pdfPath, int $page, int $resolution): \Imagick
-    {
-        $suffixBroken = get_transient(self::PAGE_SUFFIX_TRANSIENT);
-
-        if ('yes' !== $suffixBroken) {
-            $imagick->readImage($pdfPath . '[' . $page . ']');
-
-            if (!$this->looksEmpty($imagick)) {
-                return $imagick;
-            }
-
-            // Already measured on this server: the suffix works, so a flat
-            // page is a flat page. Retrying read every page of the document
-            // at full resolution on every generation of a PDF whose chosen
-            // page is blank -- a 300-page file for one thumbnail -- and did it
-            // where no size check in front of this engine could see.
-            if ('no' === $suffixBroken) {
-                return $imagick;
-            }
-        }
-
-        // Either the suffix is known to be unreliable here, or it just handed
-        // back a flat colour.
-        $tooLarge = false;
-        $whole = $this->readWholePage($pdfPath, $page, $resolution, $tooLarge);
-
-        if (null === $whole) {
-            // The retry failed, the page does not exist, or the document is
-            // too long to read whole. Keep what we have; a blank thumbnail
-            // beats no thumbnail, and the caller's other checks still apply.
-            if ('yes' === $suffixBroken) {
-                $imagick->readImage($pdfPath . '[' . $page . ']');
-            } else {
-                // Not measured, and could not be: remembered as "do not
-                // retry", or every flat page tried the whole file again
-                // (review after 1.4.31). For an hour only when this document
-                // was too large to try: that is about the document, and for
-                // a week it kept every shorter one from being measured --
-                // six A4 pages at 300 dpi are past the limit (review after
-                // 1.4.32).
-                set_transient(self::PAGE_SUFFIX_TRANSIENT, 'no', $tooLarge ? HOUR_IN_SECONDS : WEEK_IN_SECONDS);
-            }
-
-            return $imagick;
-        }
-
-        if ('yes' !== $suffixBroken) {
-            // Only now is it worth recording. If both routes give the same
-            // flat colour the page really is blank and says nothing about the
-            // server.
-            set_transient(
-                self::PAGE_SUFFIX_TRANSIENT,
-                $this->looksEmpty($whole) ? 'no' : 'yes',
-                WEEK_IN_SECONDS
-            );
-
-            if ($this->looksEmpty($whole)) {
-                $whole->clear();
-
-                return $imagick;
-            }
-        }
-
-        $imagick->clear();
-
-        return $whole;
-    }
-
-    /**
-     * Read every page and hand back the one asked for
-     *
-     * @param bool $tooLarge Set to true when it was not read for its length or size.
-     * @return \Imagick|null Null when it could not be read.
-     */
-    private function readWholePage(string $pdfPath, int $page, int $resolution, bool &$tooLarge = false): ?\Imagick
-    {
-        try {
-            // Counted first: past the limit it is not read (pagesIn(), from
-            // the file's bytes where it can).
-            $pages = (int) self::pagesIn($pdfPath);
-
-            if ($pages > self::WHOLE_READ_MAX_PAGES) {
-                $tooLarge = true;
-
-                return null;
-            }
-
-            if ($pages < 1) {
-                return null;
-            }
-
-            // And within WHOLE_READ_MAX_PIXELS for them all: twenty A4 pages
-            // at 600 dpi are about 700 megapixels, held at once (review of
-            // 1.4.32). The size is the largest page's (ImageMagick 7 reports
-            // that for any page), so this errs towards not reading.
-            $size = new \Imagick();
-            $size->setResolution(72, 72);
-            $size->pingImage($pdfPath . '[' . $page . ']');
-            $scale = $resolution / 72;
-            $pixels = $size->getImageWidth() * $scale * $size->getImageHeight() * $scale * $pages;
-            $size->clear();
-
-            if ($pixels > self::WHOLE_READ_MAX_PIXELS) {
-                $tooLarge = true;
-
-                return null;
-            }
-
-            $all = new \Imagick();
-            $all->setResolution($resolution, $resolution);
-            $all->readImage($pdfPath);
-
-            if ($all->getNumberImages() <= $page) {
-                $all->clear();
-
-                return null;
-            }
-
-            $all->setIteratorIndex($page);
-            $one = $all->getImage();
-            $all->clear();
-
-            return $one;
-        } catch (\Throwable $e) {
-            // Out of memory on a long document, or anything else. The first
-            // read is still in hand.
-            return null;
-        }
     }
 
     /** GS_OPTIONS as it was before the retry set it; null when it was unset. */
@@ -1489,7 +1658,7 @@ final class ImagickEngine implements EngineInterface
      *
      * @return \Imagick|null Null when the retry is unavailable or no better.
      */
-    private function readWithGhostscriptOptions(string $pdfPath, int $page, int $resolution): ?\Imagick
+    private function readWithGhostscriptOptions(string $pdfPath, int $page, float $resolution): ?\Imagick
     {
         if (!$this->canSetEnvironment()) {
             return null;
@@ -1551,7 +1720,9 @@ final class ImagickEngine implements EngineInterface
             }
 
             putenv('GS_OPTIONS=' . trim((is_string($previous) ? $previous : '') . ' ' . $flags));
-            $one = $this->readAnyRoute($pdfPath, $page, $resolution);
+            $one = new \Imagick();
+            $one->setResolution($resolution, $resolution);
+            $one->readImage($pdfPath . '[' . $page . ']');
         } catch (\Throwable $e) {
             $one = null;
         } finally {
@@ -1577,41 +1748,6 @@ final class ImagickEngine implements EngineInterface
         set_transient(self::GS_OPTIONS_TRANSIENT, 'yes', WEEK_IN_SECONDS);
 
         return $one;
-    }
-
-    /**
-     * Read one page by whichever route this server has been seen to manage
-     *
-     * @return \Imagick|null Null when neither route produced anything.
-     */
-    private function readAnyRoute(string $pdfPath, int $page, int $resolution): ?\Imagick
-    {
-        $suffixBroken = get_transient(self::PAGE_SUFFIX_TRANSIENT);
-
-        if ('yes' !== $suffixBroken) {
-            try {
-                $one = new \Imagick();
-                $one->setResolution($resolution, $resolution);
-                $one->readImage($pdfPath . '[' . $page . ']');
-
-                if (!$this->looksEmpty($one)) {
-                    return $one;
-                }
-
-                $one->clear();
-            } catch (\Throwable $e) {
-                // Fall through to the whole-document route.
-            }
-
-            // As in readPageDirect(): where the suffix is known to work, the
-            // whole document would only draw the same flat page, every page
-            // of it.
-            if ('no' === $suffixBroken) {
-                return null;
-            }
-        }
-
-        return $this->readWholePage($pdfPath, $page, $resolution);
     }
 
     /**
@@ -1649,18 +1785,15 @@ final class ImagickEngine implements EngineInterface
     }
 
     /**
-     * Is the page uniformly white?
+     * Is a page already found to be one flat colour (looksEmpty()) white?
      *
      * Uniform is not the same as blank: a page of solid ink is one colour and
-     * is a legitimate page. Only white counts here, and only when the whole
-     * raster is that one value.
+     * is a legitimate page. Only white counts here. The flatness is the
+     * caller's to know: asked again here, the whole raster was scanned a
+     * third time for every page with anything on it (review after 1.4.33).
      */
-    private function looksBlankWhite(\Imagick $imagick): bool
+    private function looksWhite(\Imagick $imagick): bool
     {
-        if (!$this->looksEmpty($imagick)) {
-            return false;
-        }
-
         try {
             $width = $imagick->getImageWidth();
             $height = $imagick->getImageHeight();
@@ -1952,13 +2085,19 @@ final class ImagickEngine implements EngineInterface
      * Can this server render a page other than the first?
      *
      * The setting to pick a page has been here since the beginning, and until
-     * now nothing checked that it worked. It is a plain readImage with an
-     * index, so it fails the ways any read fails -- but a site owner who sets
-     * page 3 and gets page 1 has no way to tell whether the setting is broken,
-     * the PDF is odd, or the server is.
+     * now nothing checked that it worked. A site owner who sets page 3 and
+     * gets page 1 has no way to tell whether the setting is broken, the PDF is
+     * odd, or the server is.
      *
-     * Two pages, one white and one black. If both renders come back the same
-     * colour, the index was ignored.
+     * Two pages, one white and one black, each read the way a conversion
+     * reads a page: from a file, with the page number on the end. If both
+     * come back the same colour, the number was ignored.
+     *
+     * From a file because readImageBlob() ignores a page number on the name
+     * it is given and returns every page. Until 1.4.34 this read the blob
+     * whole and stepped through the pages, which showed that Ghostscript can
+     * draw two different pages -- and said nothing about the page number,
+     * which is what this row is about (review after 1.4.33).
      *
      * @return array{ok: bool|null, error: string}
      */
@@ -1975,74 +2114,54 @@ final class ImagickEngine implements EngineInterface
         // null means "could not be tested", which is not the same as "does not
         // work" and must not be shown as though it were.
         $result = ['ok' => null, 'error' => ''];
+        $file = '';
 
         try {
-            $pdf = self::twoPagePdf();
+            $file = self::probeFile(self::twoPagePdf());
             $signatures = [];
 
-            // Read the whole file and step through the pages, rather than
-            // asking for one page at a time.
-            //
-            // Two reasons, both measured. readImageBlob() ignores a [n] scene
-            // specifier in the filename it is given -- it returns every page
-            // regardless, so the first version of this probe compared one
-            // two-page read against another and reported page selection broken
-            // on every server in the world. And reading once costs one
-            // Ghostscript run instead of two.
-            $imagick = new \Imagick();
-            $imagick->setResolution(36, 36);
-            $imagick->readImageBlob($pdf, 'rapls-pic-page-probe.pdf');
+            foreach ([0, 1] as $index) {
+                $page = new \Imagick();
+                $page->setResolution(36, 36);
+                // A build that ignores the number hands back every page, and
+                // does so for both reads: the two then come out the same,
+                // which is the answer this check exists to give.
+                $page->readImage($file . '[' . $index . ']');
 
-            $pages = $imagick->getNumberImages();
+                // Flatten first, as the conversion does. A page arrives
+                // from the PDF delegate with an alpha channel, and an
+                // unpainted area sampled straight out of that raster is
+                // transparent black -- the same #000000 as a page painted
+                // black.
+                $page->setImageBackgroundColor(new \ImagickPixel('white'));
 
-            if ($pages < 2) {
-                // One image back from a two-page file means the pages were
-                // merged or the second was dropped. Either way a page number
-                // cannot pick between them here.
-                $imagick->clear();
-                $result['ok'] = false;
-                $result['error'] = sprintf('%d page(s) from a 2-page file', $pages);
-            } else {
-                foreach ([0, 1] as $index) {
-                    $imagick->setIteratorIndex($index);
-                    $page = $imagick->getImage();
-
-                    // Flatten first, as the conversion does. A page arrives
-                    // from the PDF delegate with an alpha channel, and an
-                    // unpainted area sampled straight out of that raster is
-                    // transparent black -- the same #000000 as a page painted
-                    // black.
-                    $page->setImageBackgroundColor(new \ImagickPixel('white'));
-
-                    if (method_exists($page, 'mergeImageLayers')) {
-                        $flat = $page->mergeImageLayers(\Imagick::LAYERMETHOD_FLATTEN);
-                        $page->clear();
-                        $page = $flat;
-                    }
-
-                    $pixel = $page->getImagePixelColor(
-                        (int) ($page->getImageWidth() / 2),
-                        (int) ($page->getImageHeight() / 2)
-                    );
-                    $rgb = $pixel->getColor();
-                    $signatures[$index] = sprintf('%02X%02X%02X', $rgb['r'], $rgb['g'], $rgb['b']);
-
+                if (method_exists($page, 'mergeImageLayers')) {
+                    $flat = $page->mergeImageLayers(\Imagick::LAYERMETHOD_FLATTEN);
                     $page->clear();
+                    $page = $flat;
                 }
 
-                $imagick->clear();
+                $pixel = $page->getImagePixelColor(
+                    (int) ($page->getImageWidth() / 2),
+                    (int) ($page->getImageHeight() / 2)
+                );
+                $rgb = $pixel->getColor();
+                $signatures[$index] = sprintf('%02X%02X%02X', $rgb['r'], $rgb['g'], $rgb['b']);
 
-                $result['ok'] = $signatures[0] !== $signatures[1];
-                $result['error'] = $signatures[0] . ' / ' . $signatures[1];
+                $page->clear();
             }
-        } catch (\Exception $e) {
+
+            $result['ok'] = $signatures[0] !== $signatures[1];
+            $result['error'] = $signatures[0] . ' / ' . $signatures[1];
+        } catch (\Throwable $e) {
             // On a server with no PDF support this is the expected answer, and
             // the PDF Support row has already said so. Nothing to add.
             $result['ok'] = null;
             $result['error'] = $e->getMessage();
-        } catch (\Throwable $e) {
-            $result['ok'] = null;
-            $result['error'] = $e->getMessage();
+        } finally {
+            if ('' !== $file) {
+                @unlink($file);
+            }
         }
 
         set_transient(
@@ -2052,6 +2171,42 @@ final class ImagickEngine implements EngineInterface
         );
 
         return $result;
+    }
+
+    /**
+     * Write a test PDF to a file of its own in the temporary folder
+     *
+     * Created, not opened: a name someone else made first -- a link left in
+     * a shared /tmp -- is refused rather than written through.
+     *
+     * @param string      $pdf  The document.
+     * @param string|null $file Where to write it; a fresh name in the
+     *                          temporary folder unless a test says.
+     * @return string The path; the caller deletes it.
+     * @throws \RuntimeException When it cannot be written.
+     */
+    private static function probeFile(string $pdf, ?string $file = null): string
+    {
+        if (null === $file) {
+            $dir = function_exists('get_temp_dir') ? (string) get_temp_dir() : sys_get_temp_dir();
+            $file = rtrim($dir, '/\\') . '/rapls-pic-page-probe-' . bin2hex(random_bytes(8)) . '.pdf';
+        }
+        $handle = @fopen($file, 'xb');
+
+        if (false === $handle) {
+            throw new \RuntimeException('The test file could not be written to the temporary folder.');
+        }
+
+        $written = fwrite($handle, $pdf);
+        fclose($handle);
+
+        if (strlen($pdf) !== $written) {
+            @unlink($file);
+
+            throw new \RuntimeException('The test file could not be written to the temporary folder.');
+        }
+
+        return $file;
     }
 
     /**
@@ -2402,8 +2557,10 @@ final class ImagickEngine implements EngineInterface
 
         // Calculate new dimensions
         $ratio = min($maxWidth / $width, $maxHeight / $height);
-        $newWidth = (int) round($width * $ratio);
-        $newHeight = (int) round($height * $ratio);
+        // At least a pixel: a page a thousand times wider than it is tall
+        // rounded its height to 0, which ImageMagick refuses.
+        $newWidth = max(1, (int) round($width * $ratio));
+        $newHeight = max(1, (int) round($height * $ratio));
 
         // Use Lanczos filter for high quality
         $imagick->resizeImage($newWidth, $newHeight, \Imagick::FILTER_LANCZOS, 1);

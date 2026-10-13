@@ -131,7 +131,7 @@ final class Generator
         }
 
         return [
-            'code' => 'no_engine',
+            'code' => FailureCode::NO_ENGINE,
             'label' => __('No conversion engine', 'rapls-pdf-image-creator'),
             'summary' => __('No PDF conversion engine is registered.', 'rapls-pdf-image-creator'),
             'action' => '',
@@ -170,6 +170,10 @@ final class Generator
     /**
      * Get thumbnail ID for a PDF
      *
+     * Only an attachment counts, as limitPdfsToThumbnailed() asks in SQL: a
+     * key naming a post or a page let the PDF through here and not there
+     * (review of 1.4.33).
+     *
      * @param int $pdfId PDF attachment ID
      * @return int|null Thumbnail attachment ID or null
      */
@@ -179,7 +183,7 @@ final class Generator
         $thumbnailId = get_post_meta($pdfId, self::THUMBNAIL_META_KEY, true);
         if ($thumbnailId) {
             // Verify the thumbnail still exists
-            if (get_post($thumbnailId)) {
+            if (self::isAttachment($thumbnailId)) {
                 return (int) $thumbnailId;
             }
             // Clean up stale meta
@@ -188,11 +192,23 @@ final class Generator
 
         // Fall back to _thumbnail_id (WordPress standard)
         $thumbnailId = get_post_meta($pdfId, '_thumbnail_id', true);
-        if ($thumbnailId && get_post($thumbnailId)) {
+        if ($thumbnailId && self::isAttachment($thumbnailId)) {
             return (int) $thumbnailId;
         }
 
         return null;
+    }
+
+    /**
+     * Whether an id names an attachment that exists
+     *
+     * @param mixed $id
+     */
+    private static function isAttachment($id): bool
+    {
+        $post = get_post((int) $id);
+
+        return is_object($post) && 'attachment' === ($post->post_type ?? '');
     }
 
     /**
@@ -358,8 +374,11 @@ final class Generator
 
             // Bulk Generate calls this in a loop; only write when the answer
             // actually changed.
+            // Autoloaded: the admin notice asks for it on every admin page,
+            // and while it is there the answer is in memory (review after
+            // 1.4.33). It is only there while this server cannot draw.
             if (get_option(self::UNAVAILABLE_OPTION) !== $status['code']) {
-                update_option(self::UNAVAILABLE_OPTION, $status['code'], false);
+                update_option(self::UNAVAILABLE_OPTION, $status['code'], true);
             }
 
             return $this->fail($pdfId, $status['code'], $status['summary']);

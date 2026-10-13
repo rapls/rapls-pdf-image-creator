@@ -40,6 +40,7 @@ namespace {
     function get_option($key, $default = false) { return $GLOBALS['options'][$key] ?? $default; }
     function update_option($key, $value, $autoload = null) {
         $GLOBALS['option_writes'][] = $key;
+        $GLOBALS['option_autoload'][$key] = $autoload;
         // As core: false when nothing changes, and when the write fails.
         if (($GLOBALS['options'][$key] ?? null) === $value || !empty($GLOBALS['option_write_fails'])) { return false; }
         $GLOBALS['options'][$key] = $value;
@@ -51,8 +52,14 @@ namespace {
         return $GLOBALS['posts'][(int) $id] ?? null;
     }
     function get_post_mime_type($id) { return $GLOBALS['mimes'][(int) $id] ?? false; }
-    function get_post_meta($id, $key, $single = false) { return $GLOBALS['meta'][(int) $id][$key] ?? ''; }
+    // This request's object cache: a value read earlier stays until the
+    // post's meta is evicted or written, as core's does.
+    function get_post_meta($id, $key, $single = false) {
+        if (isset($GLOBALS['meta_cache'][(int) $id]) && array_key_exists($key, $GLOBALS['meta_cache'][(int) $id])) { return $GLOBALS['meta_cache'][(int) $id][$key]; }
+        return $GLOBALS['meta'][(int) $id][$key] ?? '';
+    }
     function update_post_meta($id, $key, $value) {
+        unset($GLOBALS['meta_cache'][(int) $id]);
         if ($key === $GLOBALS['fail_meta'] || (is_array($GLOBALS['fail_meta']) && in_array($key . ':' . $value, $GLOBALS['fail_meta'], true))) { return false; }
         $GLOBALS['meta'][(int) $id][$key] = $value;
         return true;
@@ -216,6 +223,26 @@ namespace {
         }
     };
 
+    // Review after 1.4.33: run again in a child that dies while drawing, as a
+    // request does at max_execution_time. The shutdown function this
+    // registered deletes the reserved file; nothing else runs.
+    if ('1' === getenv('RAPLS_PIC_DIE_WHILE_DRAWING')) {
+        $pdf(207);
+        $engine->during = static function () use ($uploadsGlob, $abs): void {
+            echo 'drawing:', count(glob($uploadsGlob . '/doc-207-pdf-thumbnail*')), "\n";
+            register_shutdown_function(static function () use ($uploadsGlob, $abs): void {
+                echo 'after:', count(glob($uploadsGlob . '/doc-207-pdf-thumbnail*'));
+                $tree = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($abs, \FilesystemIterator::SKIP_DOTS), \RecursiveIteratorIterator::CHILD_FIRST);
+                foreach ($tree as $node) { $node->isDir() ? @rmdir($node->getPathname()) : @unlink($node->getPathname()); }
+                @rmdir($abs);
+            });
+            exit(1);
+        };
+        $generator->generate(207, true);
+        echo 'survived';
+        exit(0);
+    }
+
     echo "--- R55-03: the old thumbnail stays until the new one is the PDF's ---\n";
 
     $pdf(10, 11, false);   // the PDF's file is missing
@@ -366,6 +393,10 @@ namespace {
     $kept = $generator->generate(206, true);
     \Rapls\PDFImageCreator\Generator::releaseHeld();
     check('a request that dies while drawing leaves no reserved file; one that finished keeps its image', [$reservedSeen, is_int($kept) && is_file($GLOBALS['files'][$kept] ?? '')], [[1, 0], true]);
+    // ...by the shutdown function itself, in a request that really dies.
+    $died = [];
+    exec('RAPLS_PIC_DIE_WHILE_DRAWING=1 ' . escapeshellarg(PHP_BINARY) . ' -d ' . escapeshellarg('error_reporting=E_ALL & ~E_DEPRECATED') . ' ' . escapeshellarg(__FILE__) . ' 2>&1', $died);
+    check('  ...and in a request that dies there, the shutdown function deletes it', implode("\n", $died), "drawing:1\nafter:0");
     $pdf(210, 211);
     $engine->renders = false;
     $leftBefore = glob($uploadsGlob . '/doc-210-pdf-thumbnail*');
@@ -654,10 +685,11 @@ namespace {
     // Review after 1.4.31: asked to fill a gap, and another request filled it
     // while this one drew -- the upload hook and Bulk Generate at once. Theirs
     // stands, this one's image goes, and nothing is left as nobody's.
-    if (!function_exists('wp_cache_delete')) { function wp_cache_delete($key, $group = '') { return true; } }
+    if (!function_exists('wp_cache_delete')) { function wp_cache_delete($key, $group = '') { if ('post_meta' === $group) { unset($GLOBALS['meta_cache'][(int) $key]); } return true; } }
     $pdf(9090);
     $GLOBALS['deleted'] = [];
-    $engine->during = static function () use ($pdf): void { $pdf(9090, 9091); };
+    // This request's cache still holds the empty answer it read at the start.
+    $engine->during = static function () use ($pdf): void { $pdf(9090, 9091); $GLOBALS['meta_cache'][9090] = ['_rapls_pic_thumbnail_id' => '']; };
     $raced = $generator->generate(9090, false);
     $engine->during = null;
     check('a gap filled by another request meanwhile: theirs stands, this image is deleted', [$raced, $GLOBALS['meta'][9090]['_rapls_pic_thumbnail_id'] ?? null, count($GLOBALS['deleted']), in_array(9091, $GLOBALS['deleted'], true)], [9091, 9091, 1, false]);
@@ -729,7 +761,10 @@ namespace {
     $generator->generate(606, false);
     $generator->generate(606, false);
     $enginesProp->setValue($generator, $enginesWere);
-    check('  ...with no engine, "unavailable" is written once', count(array_keys($GLOBALS['option_writes'], $G::UNAVAILABLE_OPTION, true)), 1);
+    check('  ...with no engine, "unavailable" is written once, autoloaded (the admin notice reads it on every page)', [count(array_keys($GLOBALS['option_writes'], $G::UNAVAILABLE_OPTION, true)), $GLOBALS['option_autoload'][$G::UNAVAILABLE_OPTION] ?? null], [1, true]);
+    // ...under a code the vocabulary knows (review after 1.4.33), and one a
+    // retry with the same settings will not change.
+    check('  ...the code it fails with is no_engine, known and permanent', [$generator->outcomeFor(606)['code'] ?? null, in_array('no_engine', \Rapls\PDFImageCreator\FailureCode::all(), true), \Rapls\PDFImageCreator\FailureCode::isPermanent('no_engine')], ['no_engine', true, true]);
 
     // Review after 1.4.31: an engines listener answering something that is
     // not a list leaves the plugin's own; a list keeps only its engines.
