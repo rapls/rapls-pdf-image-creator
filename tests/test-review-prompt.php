@@ -126,6 +126,23 @@ ready();
 $GLOBALS['options']['rapls_pic_engine_unavailable'] = 'pdf_unsupported';
 check('いまサムネイルを作れないサーバーでは表示しない', shows(), false);
 
+// 1.4.34 のレビュー: 失敗の記録が無くても、ステータスのタブが「作れない」と言っているあいだは出さない。
+$withServer = static function (string $code): bool {
+    $generator = (new ReflectionClass(\Rapls\PDFImageCreator\Generator::class))->newInstanceWithoutConstructor();
+    $engines = new ReflectionProperty(\Rapls\PDFImageCreator\Generator::class, 'engines');
+    if (PHP_VERSION_ID < 80100) { $engines->setAccessible(true); }
+    $engines->setValue($generator, ['imagick' => new class ($code) {
+        private $code;
+        public function __construct($code) { $this->code = $code; }
+        public function getAvailabilityStatus() { return ['code' => $this->code, 'label' => '', 'summary' => '', 'action' => '', 'detail' => '']; }
+    }]);
+    ob_start();
+    (new ReviewPrompt($generator))->render();
+    return '' !== trim((string) ob_get_clean());
+};
+ready();
+check('ステータスが「作れない」なら、失敗の記録が無くても表示しない', [$withServer('pdf_unsupported'), $withServer('ok')], [false, true]);
+
 ready();
 $GLOBALS['screen'] = new Screen('dashboard');
 check('ダッシュボードには出さない', shows(), false);

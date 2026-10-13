@@ -107,7 +107,8 @@ final class Plugin
         // Register AJAX handlers early (needed for admin-ajax.php requests)
         $this->bulkProcessor->init();
 
-        // Admin only (non-AJAX)
+        // Admin screens, and admin-ajax.php too: is_admin() is true there,
+        // and ReviewPrompt's dismissal is an AJAX request.
         if (is_admin()) {
             $this->admin = new Admin($this->settings, $this->generator);
             $this->admin->init();
@@ -115,7 +116,7 @@ final class Plugin
             $this->siteHealth = new SiteHealth($this->settings, $this->generator);
             $this->siteHealth->init();
 
-            $this->reviewPrompt = new ReviewPrompt();
+            $this->reviewPrompt = new ReviewPrompt($this->generator);
             $this->reviewPrompt->init();
         }
 
@@ -221,13 +222,27 @@ final class Plugin
 
     /**
      * Whether whoever is reading may see this attachment
+     *
+     * Behind a password, only someone who may edit it. read_post was asked
+     * there, and core maps it to plain "read" for a published post without
+     * looking at the password, so any logged-in Subscriber was shown what
+     * the password hid (review of 1.4.34). Core's own content asks for the
+     * password of everyone; editing it is where this stops short of that.
+     *
+     * Not asked whether the parent's type has public pages: a PDF attached
+     * to a reusable block, or to a post that no longer exists, was shown
+     * before and went missing for every visitor (review after 1.4.34).
      */
     private static function viewable(int $id): bool
     {
-        $status = get_post_status_object((string) get_post_status($id));
         $parent = (int) wp_get_post_parent_id($id);
 
-        if ($status && !empty($status->public) && !($parent && post_password_required($parent))) {
+        if ($parent && post_password_required($parent)) {
+            return current_user_can('edit_post', $id);
+        }
+
+        $status = get_post_status_object((string) get_post_status($id));
+        if ($status && !empty($status->public)) {
             return true;
         }
 

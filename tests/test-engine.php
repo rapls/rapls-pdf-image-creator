@@ -272,6 +272,29 @@ check(
     null
 );
 
+// Review after 1.4.34: only switches that set a value, and none that
+// loosens Ghostscript's sandbox or sends its output elsewhere.
+foreach (['-Ifonts', '-dNOSAFER', '-DNOSAFER', '-dNOTRANSPARENCY -dDELAYSAFER', '-dSAFER=false', '-dDOPS', '-dPermitFileReading=/', '-sOutputFile=/tmp/x', '-sDEVICE=txtwrite', '-sstdout=/tmp/x', '-sSTDERR=/tmp/x', '-c quit', '-f/tmp/x.ps', '-r300', '-g9000x9000', '-dDEVICEWIDTH=90000', '-dDEVICEHEIGHTPOINTS=90000', '-dDEVICEXRESOLUTION=9000', '-dFIXEDMEDIA', '-dFIXEDRESOLUTION', '-sPAPERSIZE=a0', '-dUseArtBox', '-dUSECROPBOX', '-q -dNOSAFER', '-sFONTPATH=/srv/fonts', '-sGenericResourceDir=/tmp/', '-sICCProfilesDir=/tmp/', '-sDefaultRGBProfile=/tmp/x.icc', '-SOutputICCProfile=/tmp/x.icc', '-sFoo_File=/tmp/x', '-dFooPath', '-sFONTMAP=/tmp/Fontmap', '-sCIDFMAP=/tmp/cidfmap', '-dFONTMAP=/tmp/Fontmap', '-dCIDFMAP=x', '-dWRITESYSTEMDICT', '-dDELAYBIND', '-dNOOUTERSAVE', '-sPageList=2', '-dFirstPage=2', '-dLastPage=9', '-I/tmp', '@/tmp/args'] as $flags) {
+    reset_state();
+    add_filter('rapls_pdf_image_creator_ghostscript_options', function () use ($flags) { return $flags; });
+    check('refused: ' . $flags, [priv($engine, $ref, 'readWithGhostscriptOptions', '/tmp/none.pdf', 0, 150), Imagick::$log], [null, []]);
+}
+reset_state();
+Imagick::$blankWithoutGsOptions = true;
+Imagick::$gsOptionsSeen = [];
+add_filter('rapls_pdf_image_creator_ghostscript_options', function () { return ' -dNOTRANSPARENCY  -dNOINTERPOLATE -dMaxBitmap=500000000 '; });
+$rescued = priv($engine, $ref, 'readWithGhostscriptOptions', '/tmp/none.pdf', 0, 150);
+check('  ...switches that set a value are used, spaced as they come', [null !== $rescued, Imagick::$gsOptionsSeen], [true, ['-dNOTRANSPARENCY  -dNOINTERPOLATE -dMaxBitmap=500000000']]);
+// Review after 1.4.34: -dSAFER and -q are harmless, and a site that handed
+// them lost the retry altogether.
+foreach (['-dSAFER -dNOTRANSPARENCY', '-q -dNOTRANSPARENCY', '-DSAFER -q -dNOTRANSPARENCY', '-dNOTRANSPARENCY -dMaxBitmap=500000000', '-dNOTRANSPARENCY -dMaxBitmap'] as $flags) {
+    Imagick::$gsOptionsSeen = [];
+    add_filter('rapls_pdf_image_creator_ghostscript_options', function () use ($flags) { return $flags; });
+    $rescued = priv($engine, $ref, 'readWithGhostscriptOptions', '/tmp/none.pdf', 0, 150);
+    check('  ...taken: ' . $flags, [null !== $rescued, Imagick::$gsOptionsSeen], [true, [$flags]]);
+}
+Imagick::$blankWithoutGsOptions = false;
+
 reset_state();
 putenv('GS_OPTIONS=-dFirstPage=2');
 priv($engine, $ref, 'readWithGhostscriptOptions', '/tmp/none.pdf', 0, 150);
@@ -352,6 +375,9 @@ Imagick::$blobError = null;
 check('the page check: a page number ignored fails, honoured passes', [$ignored['ok'], $two['ok'], $two['error']], [false, true, 'FFFFFF / 000000']);
 check('  ...read from a file, by page number, flattened as a conversion is', [count($probePaths), (bool) preg_match('/\[0\]$/', $probePaths[0] ?? ''), (bool) preg_match('/\[1\]$/', $probePaths[1] ?? ''), Imagick::$probeFilesSeen, in_array('mergeImageLayers', Imagick::$log, true)], [2, true, true, [true, true], true]);
 check('  ...and the file is deleted afterwards', file_exists(substr($probePaths[0] ?? 'x[0]', 0, -3)), false);
+$tracked = new ReflectionProperty(ImagickEngine::class, 'probeFiles');
+if (PHP_VERSION_ID < 80100) { $tracked->setAccessible(true); }
+check('  ...and nothing is left for shutdown to delete', $tracked->getValue(), []);
 // A name someone made first -- a link left in a shared /tmp pointing at a
 // file of theirs -- is refused, not written through.
 $victim = RAPLS_PIC_TEST_TMP . '/victim.txt';
@@ -366,6 +392,25 @@ try {
     $plantedOutcome = 'refused';
 }
 check('  ...a test file whose name is already taken by a link is refused, and its target left alone', [$plantedOutcome, file_get_contents($victim)], ['refused', 'keep me']);
+// Review after 1.4.34: a request that dies inside the check's read --
+// max_execution_time on a slow Ghostscript -- runs no finally, and the test
+// file stayed in the temporary folder. It is deleted at shutdown.
+$orphan = RAPLS_PIC_TEST_TMP . '/orphan-probe-' . getmypid() . '.pdf';
+@unlink($orphan);
+$dyingProbe = RAPLS_PIC_TEST_TMP . '/probe-dies-' . getmypid() . '.php';
+file_put_contents($dyingProbe, '<?php require ' . var_export(__DIR__ . '/harness.php', true) . ';'
+    . ' require ' . var_export(RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/EngineInterface.php', true) . ';'
+    . ' require ' . var_export(RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/ConversionResult.php', true) . ';'
+    . ' require ' . var_export(RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/ImagickEngine.php', true) . ';'
+    . ' $m = new ReflectionMethod(Rapls\\PDFImageCreator\\Engine\\ImagickEngine::class, "probeFile"); if (PHP_VERSION_ID < 80100) { $m->setAccessible(true); }'
+    . ' $f = $m->invoke(null, "%PDF-1.4 test", ' . var_export($orphan, true) . ');'
+    . ' register_shutdown_function(static function () use ($f) { echo "at shutdown: ", var_export(is_file($f), true), "\\n"; });'
+    . ' echo "written: ", var_export(is_file($f), true), "\\n"; exit(1);');
+$probeOut = [];
+exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($dyingProbe) . ' 2>&1', $probeOut);
+@unlink($dyingProbe);
+check('  ...and one left by a request that dies inside the read is deleted at shutdown', [implode("\n", $probeOut), file_exists($orphan)], ["written: true\nat shutdown: false", false]);
+@unlink($orphan);
 @unlink($planted);
 @unlink($victim);
 reset_state();

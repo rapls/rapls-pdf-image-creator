@@ -35,7 +35,17 @@ namespace {
     function get_post_status_object($status) { return in_array($status, ['publish', 'private', 'draft', 'future'], true) ? (object) ['public' => 'publish' === $status] : null; }
     function wp_get_post_parent_id($id) { return $GLOBALS['parent_of'][(int) $id] ?? 0; }
     function post_password_required($post = null) { return !empty($GLOBALS['password'][(int) $post]); }
-    function current_user_can($cap, ...$args) { return 'read_post' === $cap && !empty($GLOBALS['can_read'][(int) ($args[0] ?? 0)]); }
+    // As core's map_meta_cap() answers: read_post on a published post is plain
+    // "read", whatever its password, so any logged-in user has it.
+    function current_user_can($cap, ...$args) {
+        $id = (int) ($args[0] ?? 0);
+        if ('read_post' === $cap) {
+            return 'publish' === get_post_status($id) ? !empty($GLOBALS['logged_in']) : !empty($GLOBALS['can_read'][$id]);
+        }
+        return 'edit_post' === $cap && !empty($GLOBALS['can_edit'][$id]);
+    }
+    function get_post_type($id) { return 99 === (int) $id ? false : ($GLOBALS['type_of'][(int) $id] ?? 'post'); }
+    function get_intermediate_image_sizes() { return ['thumbnail', 'medium', 'large']; }
     function add_shortcode($tag, $cb) { $GLOBALS['shortcodes'][$tag] = $cb; }
     function shortcode_atts($pairs, $atts, $tag = '') { return array_merge($pairs, array_intersect_key((array) $atts, $pairs)); }
     function wp_get_attachment_image($id, $size = 'thumbnail', $icon = false, $attr = '') {
@@ -143,8 +153,23 @@ namespace {
     $GLOBALS['parent_of'][7] = 5;
     $GLOBALS['password'][5] = true;
     check('attached to a post behind a password: nothing', $all(), [false, false, false, false]);
+    $GLOBALS['logged_in'] = true;
+    check('  ...nor to a logged-in reader who has not given it', $all(), [false, false, false, false]);
+    $GLOBALS['can_edit'][7] = true;
+    check('  ...but to someone who may edit it', $all(), [true, true, true, true]);
+    $GLOBALS['can_edit'] = [];
+    $GLOBALS['logged_in'] = false;
     $GLOBALS['password'][5] = false;
     check('  ...once the password is given: shown', $all(), [true, true, true, true]);
+    // Review after 1.4.34: a PDF attached to a reusable block, or to a post
+    // that is gone, was shown before and is shown still -- whether a type
+    // has public pages is not whether its attachments are hidden.
+    $GLOBALS['type_of'][5] = 'wp_block';
+    check('attached to a published post of a type with no public pages: shown, as before', $all(), [true, true, true, true]);
+    $GLOBALS['parent_of'][7] = 99;
+    check('attached to a post that no longer exists: shown, as before', $all(), [true, true, true, true]);
+    $GLOBALS['parent_of'][7] = 5;
+    $GLOBALS['type_of'] = [];
     $GLOBALS['status_of'][7] = 'no-such-status';
     check('a status WordPress does not know: nothing', $all(), [false, false, false, false]);
     $GLOBALS['status_of'] = [];
@@ -172,6 +197,30 @@ namespace {
     check('an image: the window\'s link wins over the setting\'s None', 0 === strpos($insert($image, ['id' => 7, 'url' => 'https://example.test/doc.pdf']), '<a href="https://example.test/doc.pdf" class="rapls-pic-pdf-link" data-pdf-id="7"><img '), true);
     check('  ...and its None over the setting\'s file', 0 === strpos($insert(['insert_type' => 'image', 'insert_link' => 'file', 'insert_size' => 'medium'], ['id' => 7]), '<img '), true);
     check('a custom template with none set falls back to the image, same link', 0 === strpos($insert(['insert_type' => 'custom', 'custom_html' => '', 'insert_size' => 'medium'], ['id' => 7, 'url' => 'https://example.test/p']), '<a href="https://example.test/p" '), true);
+    $GLOBALS['options'][Settings::OPTION_NAME] = $asTitle;
+    $loose = new Inserter($generator, new Settings());
+    set_error_handler(static function (int $no, string $message): bool { throw new \ErrorException($message, 0, $no); });
+    try {
+        $handedOn = [$loose->filterMediaSendToEditor(null, new \stdClass(), []), $loose->filterMediaSendToEditor('core', 7, 'not an array'), $loose->filterMediaSendToEditor('core', '7')];
+    } catch (\Throwable $e) {
+        $handedOn = get_class($e);
+    } finally {
+        restore_error_handler();
+    }
+    check('another plugin\'s odd arguments: no fatal error', $handedOn, [null, '<a href="https://example.test/doc.pdf" class="rapls-pic-pdf-link" data-pdf-id="7">Doc</a>', '<a href="https://example.test/doc.pdf" class="rapls-pic-pdf-link" data-pdf-id="7">Doc</a>']);
+    $GLOBALS['title'] = '<script>x</script>';
+    check('no link: the title alone, escaped', $insert(['insert_type' => 'title', 'insert_link' => 'none'], []), '&lt;script&gt;x&lt;/script&gt;');
+    unset($GLOBALS['title']);
+
+    echo "\n--- \"Insert into post\" honours the media window's Size ---\n";
+    $sizeOf = static function (array $attachment) use ($insert): string {
+        preg_match('/ class="[^"]*size-([\w-]+)"/', $insert(['insert_type' => 'image', 'insert_link' => 'none', 'insert_size' => 'medium'], $attachment), $m);
+        return $m[1] ?? '';
+    };
+    check('the window picked Large', $sizeOf(['id' => 7, 'image-size' => 'large']), 'large');
+    check('  ...or Full Size', $sizeOf(['id' => 7, 'image-size' => 'full']), 'full');
+    check('a size that does not exist, or none sent: the setting', [$sizeOf(['id' => 7, 'image-size' => 'huge"x']), $sizeOf(['id' => 7, 'image-size' => ['large']]), $sizeOf(['id' => 7])], ['medium', 'medium', 'medium']);
+    check('a custom template\'s image fallback takes it too', false !== strpos($insert(['insert_type' => 'custom', 'custom_html' => '', 'insert_size' => 'medium'], ['id' => 7, 'image-size' => 'large']), 'size-large'), true);
 
     echo "\n--- The window's Link To starts at the setting ---\n";
     define('RAPLS_PIC_PLUGIN_URL', 'https://example.test/wp-content/plugins/rapls-pdf-image-creator/');
@@ -189,7 +238,7 @@ namespace {
     $hooked = new Inserter($generator, new Settings());
     $hooked->init();
     check('init() hooks it to wp_enqueue_media', in_array([$hooked, 'enqueueInsertLink'], $GLOBALS['actions']['wp_enqueue_media'] ?? [], true), true);
-    check('insert-link.js after media-views, given the setting', [$GLOBALS['enqueued']['pic-insert-link'] ?? null, $GLOBALS['localized']['pic-insert-link'] ?? null], [['insert-link.js', ['media-views']], ['raplsPicInsertLink', ['link' => 'attachment']]]);
+    check('insert-link.js after the media window and editor, given the settings', [$GLOBALS['enqueued']['pic-insert-link'] ?? null, $GLOBALS['localized']['pic-insert-link'] ?? null], [['insert-link.js', ['media-views', 'media-editor']], ['raplsPicInsertLink', ['link' => 'attachment', 'size' => 'medium']]]);
 
     echo "\n$pass passed, $fail failed\n";
     exit($fail ? 1 : 0);

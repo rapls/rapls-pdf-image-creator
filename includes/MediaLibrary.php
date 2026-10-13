@@ -25,6 +25,11 @@ final class MediaLibrary
     private Settings $settings;
 
     /**
+     * Whether the Media Library list's images have been read in one go
+     */
+    private bool $listPrimed = false;
+
+    /**
      * Constructor
      *
      * @param Generator $generator Thumbnail generator
@@ -133,16 +138,21 @@ final class MediaLibrary
      * user has explicitly disabled auto-generation, we must also strip these
      * core-created sizes so no thumbnail appears.
      *
-     * @param array<string, mixed> $metadata     Generated attachment metadata.
-     * @param int                  $attachmentId Attachment ID.
-     * @param string               $context      Metadata generation context.
-     * @return array<string, mixed>
+     * Untyped, as the other filters here are: another plugin's filter
+     * returning a non-array, or a call with one argument, was a fatal
+     * error (review of 1.4.34).
+     *
+     * @param mixed $metadata     Generated attachment metadata.
+     * @param mixed $attachmentId Attachment ID.
+     * @param mixed $context      Metadata generation context.
+     * @return mixed
      */
-    public function maybeSuppressCorePdfPreview(array $metadata, int $attachmentId, string $context = ''): array
+    public function maybeSuppressCorePdfPreview($metadata, $attachmentId = 0, $context = '')
     {
-        if ($this->settings->isAutoGenerateEnabled()) {
+        if (!is_array($metadata) || !is_numeric($attachmentId) || $this->settings->isAutoGenerateEnabled()) {
             return $metadata;
         }
+        $attachmentId = (int) $attachmentId;
 
         if (get_post_mime_type($attachmentId) !== 'application/pdf') {
             return $metadata;
@@ -381,13 +391,19 @@ final class MediaLibrary
     /**
      * Filter attachment data for JavaScript (Media Library & Block Editor)
      *
-     * @param array $response Attachment response data
-     * @param \WP_Post $attachment Attachment post object
+     * Untyped, as the other filters here are (review of 1.4.34).
+     *
+     * @param mixed $response Attachment response data
+     * @param mixed $attachment Attachment post object
      * @param array|bool $meta Attachment meta data
-     * @return array Modified response
+     * @return mixed Modified response
      */
-    public function filterAttachmentForJs(array $response, \WP_Post $attachment, $meta): array
+    public function filterAttachmentForJs($response, $attachment = null, $meta = false)
     {
+        if (!is_array($response) || !$attachment instanceof \WP_Post) {
+            return $response;
+        }
+
         // Check if this is a generated thumbnail - show source PDF URL instead
         $isThumbnail = get_post_meta($attachment->ID, '_rapls_pic_is_thumbnail', true);
         $sourcePdfId = get_post_meta($attachment->ID, '_rapls_pic_source_pdf', true);
@@ -681,11 +697,16 @@ final class MediaLibrary
     /**
      * Add custom columns to media library
      *
-     * @param array $columns Existing columns
-     * @return array Modified columns
+     * Untyped, as the other filters here are (review of 1.4.34).
+     *
+     * @param mixed $columns Existing columns
+     * @return mixed Modified columns
      */
-    public function addMediaColumns(array $columns): array
+    public function addMediaColumns($columns)
     {
+        if (!is_array($columns)) {
+            return $columns;
+        }
         $columns['rapls_pic_thumbnail'] = __('PDF Thumbnail', 'rapls-pdf-image-creator');
         return $columns;
     }
@@ -708,6 +729,8 @@ final class MediaLibrary
             echo '—';
             return;
         }
+
+        $this->primeListRows();
 
         // The stylesheet's class names (they were "pic-status", so the marks
         // were never styled), and the words for a screen reader, which reads
@@ -740,6 +763,8 @@ final class MediaLibrary
             return $actions;
         }
 
+        $this->primeListRows();
+
         // Add regenerate action
         $url = wp_nonce_url(
             admin_url('upload.php?action=rapls_pic_regenerate&attachment_id=' . $post->ID),
@@ -761,6 +786,55 @@ final class MediaLibrary
         }
 
         return $actions;
+    }
+
+    /**
+     * Read the images the list's PDFs name, in one query, the first time
+     *
+     * hasThumbnail() asks whether each PDF's image still exists, and in the
+     * Media Library's list view that was a query per PDF row, twice over
+     * with the row actions (review of 1.4.34). The list is the screen's main
+     * query; its meta is read already, so this adds one query, not one a row.
+     */
+    private function primeListRows(): void
+    {
+        if ($this->listPrimed) {
+            return;
+        }
+        $this->listPrimed = true;
+
+        global $wp_query;
+        if (!is_object($wp_query) || !isset($wp_query->posts) || !is_array($wp_query->posts) || !function_exists('_prime_post_caches')) {
+            return;
+        }
+
+        $pdfs = [];
+        foreach ($wp_query->posts as $post) {
+            if (is_object($post) && isset($post->ID, $post->post_mime_type) && 'application/pdf' === $post->post_mime_type) {
+                $pdfs[] = (int) $post->ID;
+            }
+        }
+        if ([] === $pdfs) {
+            return;
+        }
+
+        if (function_exists('update_postmeta_cache')) {
+            update_postmeta_cache($pdfs);
+        }
+
+        $named = [];
+        foreach ($pdfs as $pdf) {
+            foreach ([Generator::THUMBNAIL_META_KEY, '_thumbnail_id'] as $key) {
+                $image = (int) get_post_meta($pdf, $key, true);
+                if ($image > 0) {
+                    $named[$image] = $image;
+                }
+            }
+        }
+
+        if ([] !== $named) {
+            _prime_post_caches(array_values($named), false, false);
+        }
     }
 
     /**
@@ -829,12 +903,21 @@ final class MediaLibrary
     /**
      * Allow PDFs with thumbnails in image selection queries and hide generated thumbnails
      *
-     * @param array $query Query arguments
-     * @return array Modified query arguments
+     * Untyped, as the other filters here are (review of 1.4.34).
+     *
+     * @param mixed $query Query arguments
+     * @return mixed Modified query arguments
      */
-    public function allowPdfsInImageSelection(array $query): array
+    public function allowPdfsInImageSelection($query)
     {
-        // Hide generated thumbnails from AJAX media queries
+        if (!is_array($query)) {
+            return $query;
+        }
+
+        // Hide generated thumbnails from the media window's queries: every
+        // one, wherever the window was opened -- another plugin's included,
+        // since it is the same window. Other attachment queries are left
+        // alone (filterMediaLibrary()).
         $hideThumbnails = $this->settings->shouldHideGeneratedImages();
         $hideThumbnails = apply_filters('rapls_pdf_image_creator_hide_thumbnails_in_library', $hideThumbnails);
 

@@ -86,11 +86,15 @@ $GLOBALS['switches'] = [];
 // [ID => content], the attachments that exist, and what was deleted.
 $GLOBALS['sites'] = [
     1 => ['options' => seed_options(['rapls_pic_settings' => ['keep_on_uninstall' => false]]), 'transients' => seed_transients(), 'meta' => [[10, '_rapls_pic_thumbnail_id', '11'], [11, '_rapls_pic_is_thumbnail', '1'], [11, '_rapls_pic_source_pdf', '10']], 'posts' => [], 'attachments' => [11], 'deleted' => []],
-    2 => ['options' => seed_options(['rapls_pic_settings' => ['keep_on_uninstall' => true]]), 'transients' => seed_transients(), 'meta' => [[20, '_rapls_pic_thumbnail_id', '21'], [21, '_rapls_pic_is_thumbnail', '1'], [21, '_rapls_pic_source_pdf', '20'], [25, '_thumbnail_id', '20']], 'posts' => [], 'attachments' => [21], 'deleted' => []],
+    2 => ['options' => seed_options(['rapls_pic_settings' => ['keep_on_uninstall' => true]]), 'transients' => seed_transients(), 'meta' => [[20, '_rapls_pic_thumbnail_id', '21'], [21, '_rapls_pic_is_thumbnail', '1'], [21, '_rapls_pic_source_pdf', '20'], [25, '_thumbnail_id', '20'], [22, '_rapls_pic_thumbnail_id', '23'], [23, '_rapls_pic_is_thumbnail', '1'], [23, '_rapls_pic_source_pdf', '22']], 'posts' => [], 'attachments' => [21, 23], 'deleted' => []],
 ];
 $GLOBALS['user_meta_deleted'] = [];
-// A query whose SQL contains this fails, as a database error would.
+// A query whose SQL contains this fails, as a database error would: wpdb
+// sets last_error and hands back an empty list, not null -- so the
+// last_error checks are what stand between a failed query and a deletion.
+// 'fail_returns' = null tries the other form too.
 $GLOBALS['fail_on'] = null;
+$GLOBALS['fail_returns'] = [];
 
 function is_multisite() { return !empty($GLOBALS['multisite']); }
 function get_sites($args = []) { return array_keys($GLOBALS['sites']); }
@@ -132,15 +136,17 @@ $GLOBALS['wpdb'] = new class {
     public function prepare($sql, ...$args) { return vsprintf($sql, $args); }
     public function get_col($sql) {
         if ($this->failing($sql)) {
-            return null;
+            return $GLOBALS['fail_returns'];
         }
         if (false !== strpos($sql, "used.meta_key IN ('_thumbnail_id', '_rapls_pic_thumbnail_id')")) {
-            // A thumbnail some post other than its PDF names, as the SQL asks.
+            // A thumbnail some post other than its PDF names, when the SQL
+            // asks for that; without the clause, the PDF's own record counts.
+            $otherThanPdf = false !== strpos($sql, 'used.post_id <> CAST(source.meta_value AS UNSIGNED)');
             $used = [];
             foreach (site()['meta'] as $row) {
                 if (in_array($row[1], ['_thumbnail_id', '_rapls_pic_thumbnail_id'], true)) {
                     $source = meta_value((int) $row[2], '_rapls_pic_source_pdf');
-                    if (null !== $source && $row[0] !== (int) $source) {
+                    if (null !== $source && (!$otherThanPdf || $row[0] !== (int) $source)) {
                         $used[] = $row[2];
                     }
                 }
@@ -151,7 +157,7 @@ $GLOBALS['wpdb'] = new class {
     }
     public function get_results($sql, $output = null) {
         if ($this->failing($sql)) {
-            return null;
+            return $GLOBALS['fail_returns'];
         }
         if (false !== strpos($sql, "marker.meta_key = '_rapls_pic_is_thumbnail'")) {
             $rows = [];
@@ -182,9 +188,11 @@ $GLOBALS['wpdb'] = new class {
         }
         if (preg_match('/WHERE ID > (\d+) .* LIMIT (\d+)/', $sql, $m)) {
             $GLOBALS['post_reads'] = ($GLOBALS['post_reads'] ?? 0) + 1;
+            // Attachments' own descriptions left out, when the SQL says so.
+            $skip = false !== strpos($sql, "post_type <> 'attachment'") ? (site()['attachment_posts'] ?? []) : [];
             $rows = [];
             foreach (site()['posts'] as $id => $content) {
-                if ($id > (int) $m[1] && count($rows) < (int) $m[2]) {
+                if ($id > (int) $m[1] && count($rows) < (int) $m[2] && !in_array($id, $skip, true)) {
                     $rows[] = ['ID' => (string) $id, 'post_content' => $content];
                 }
             }
@@ -214,6 +222,7 @@ require dirname(__DIR__) . '/uninstall.php';
 
 check('site 1 (keep off): its generated image deleted', $GLOBALS['sites'][1]['deleted'], [11]);
 check('site 2 (keep on): its generated image kept', $GLOBALS['sites'][2]['deleted'], []);
+check('  ...and its unused one too', in_array(23, $GLOBALS['sites'][2]['deleted'], true), false);
 check('both sites: every option gone', [array_keys($GLOBALS['sites'][1]['options']), array_keys($GLOBALS['sites'][2]['options'])], [[], []]);
 check('both sites: every transient gone', [array_keys($GLOBALS['sites'][1]['transients']), array_keys($GLOBALS['sites'][2]['transients'])], [[], []]);
 check('both sites: markers gone, a post\'s featured image kept', [$GLOBALS['sites'][1]['meta'], $GLOBALS['sites'][2]['meta']], [[], [[25, '_thumbnail_id', '21']]]);
@@ -239,6 +248,8 @@ function seed_site(): void
     }
     $posts[330] = '<!-- wp:image {"id":40} --><figure><img src="https://example.test/wp-content/uploads/2026/10/b-pdf-thumbnail-300x200.jpg" alt=""/></figure><!-- /wp:image -->';
     $posts[120] = '<!-- wp:image {"id":60} --><figure><img src="https://cdn.example.test/x" class="wp-image-60"/></figure><!-- /wp:image -->';
+    // An attachment's own description is not a post showing it.
+    $posts[345] = '<img src="https://example.test/wp-content/uploads/2026/10/d-pdf-thumbnail.jpg">';
 
     $meta = [[90, '_thumbnail_id', '30']];
     foreach ([30 => 'a', 40 => 'b', 60 => 'c', 70 => 'd'] as $pdf => $name) {
@@ -248,7 +259,7 @@ function seed_site(): void
         $meta[] = [$pdf + 1, '_wp_attached_file', "2026/10/$name-pdf-thumbnail.jpg"];
     }
 
-    $GLOBALS['sites'][1] = ['options' => ['rapls_pic_settings' => ['keep_on_uninstall' => false]], 'transients' => [], 'meta' => $meta, 'posts' => $posts, 'attachments' => [31, 41, 61, 71], 'deleted' => []];
+    $GLOBALS['sites'][1] = ['options' => ['rapls_pic_settings' => ['keep_on_uninstall' => false]], 'transients' => [], 'meta' => $meta, 'posts' => $posts, 'attachment_posts' => [345], 'attachments' => [31, 41, 61, 71], 'deleted' => []];
     $GLOBALS['blog'] = 1;
 }
 
@@ -263,12 +274,42 @@ foreach ([
     'the used-elsewhere lookup' => "used.meta_key IN ('_thumbnail_id', '_rapls_pic_thumbnail_id')",
     'reading the posts' => 'post_content <>',
 ] as $label => $sql) {
-    seed_site();
-    $GLOBALS['fail_on'] = $sql;
-    rapls_pic_uninstall_site();
-    $GLOBALS['fail_on'] = null;
-    check("when $label fails, nothing is deleted", $GLOBALS['sites'][1]['deleted'], []);
+    foreach ([[], null] as $returned) {
+        seed_site();
+        $GLOBALS['fail_on'] = $sql;
+        $GLOBALS['fail_returns'] = $returned;
+        rapls_pic_uninstall_site();
+        $GLOBALS['fail_on'] = null;
+        $GLOBALS['fail_returns'] = [];
+        check("when $label fails (" . json_encode($returned) . '), nothing is deleted', $GLOBALS['sites'][1]['deleted'], []);
+    }
 }
+
+echo "\n--- Names a post's content gives ---\n";
+
+// A WebP thumbnail, shown by its address.
+seed_site();
+foreach ($GLOBALS['sites'][1]['meta'] as &$rapls_row) {
+    if (71 === $rapls_row[0] && '_wp_attached_file' === $rapls_row[1]) {
+        $rapls_row[2] = '2026/10/d-pdf-thumbnail.webp';
+    }
+}
+unset($rapls_row);
+$GLOBALS['sites'][1]['posts'][200] = '<img src="https://example.test/wp-content/uploads/2026/10/d-pdf-thumbnail-300x200.webp">';
+rapls_pic_uninstall_site();
+check('a WebP thumbnail a post shows is kept', $GLOBALS['sites'][1]['deleted'], []);
+
+// A name that is not ASCII, percent-encoded in the address.
+seed_site();
+foreach ($GLOBALS['sites'][1]['meta'] as &$rapls_row) {
+    if (71 === $rapls_row[0] && '_wp_attached_file' === $rapls_row[1]) {
+        $rapls_row[2] = '2026/10/資料-pdf-thumbnail.jpg';
+    }
+}
+unset($rapls_row);
+$GLOBALS['sites'][1]['posts'][200] = '<img src="https://example.test/wp-content/uploads/2026/10/%E8%B3%87%E6%96%99-pdf-thumbnail-300x212.jpg">';
+rapls_pic_uninstall_site();
+check('a percent-encoded name a post shows is kept', $GLOBALS['sites'][1]['deleted'], []);
 
 echo "\n--- Featured images: only to an attachment, and only if unchanged ---\n";
 

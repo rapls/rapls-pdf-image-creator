@@ -663,6 +663,7 @@ if (!defined('ABSPATH')) {
             </tbody>
         </table>
 
+        <?php if (\Rapls\PDFImageCreator\Admin::showsSupportBox($capabilities)) : ?>
         <!-- Support -->
         <div class="rapls-pic-support-section">
             <h3><?php esc_html_e('Support This Plugin', 'rapls-pdf-image-creator'); ?></h3>
@@ -681,5 +682,6 @@ if (!defined('ABSPATH')) {
             </div>
             <p class="rapls-pic-review-note"><?php esc_html_e('Your reviews help other users discover this plugin. Thank you!', 'rapls-pdf-image-creator'); ?></p>
         </div>
+        <?php endif; ?>
     </div>
 </div>

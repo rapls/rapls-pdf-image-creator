@@ -543,13 +543,25 @@ final class BulkProcessor
     /**
      * The next PDF after a cursor that needs drawing
      *
-     * Every PDF with $force; otherwise one without a thumbnail. Looks through
-     * SEARCH_PAGES pages at most.
+     * Every PDF with $force; otherwise one without a thumbnail, looking
+     * through SEARCH_PAGES pages at most.
      *
      * @return array{pdf_id: int|null, after: int, done: bool}
      */
     public function nextToGenerate(int $after, bool $force): array
     {
+        // With $force the first PDF is the answer: one row, not a page of
+        // 200 with their meta and images read, every PDF of the run (review
+        // of 1.4.34).
+        if ($force) {
+            $ids = $this->idsAfter($after, 1);
+            $this->release($ids);
+
+            return [] === $ids
+                ? ['pdf_id' => null, 'after' => $after, 'done' => true]
+                : ['pdf_id' => $ids[0], 'after' => $ids[0], 'done' => false];
+        }
+
         for ($i = 0; $i < self::SEARCH_PAGES; ++$i) {
             $ids = $this->idsAfter($after, self::PAGE);
 

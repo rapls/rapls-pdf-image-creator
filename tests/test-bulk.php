@@ -246,7 +246,10 @@ namespace {
     $library(450, 3);
     check('The first PDF without a thumbnail', $call([$bulk, 'ajaxNext'], ['after' => 0])[1], ['pdf_id' => 1002, 'filename' => 'doc-1002.pdf', 'after' => 1002, 'done' => false]);
     check('  ...then the one after it, skipping those with thumbnails', $call([$bulk, 'ajaxNext'], ['after' => 1003])[1]['pdf_id'], 1005);
+    $GLOBALS['queries'] = [];
     check('  ...with force, the very next PDF', $call([$bulk, 'ajaxNext'], ['after' => 1003, 'force' => 1])[1]['pdf_id'], 1004);
+    check('  ...asked for as one row, not a page', array_column($GLOBALS['queries'], 'posts_per_page'), [1]);
+    check('  ...and past the last one with force: done', $call([$bulk, 'ajaxNext'], ['after' => 1450, 'force' => 1])[1], ['pdf_id' => null, 'filename' => '', 'after' => 1450, 'done' => true]);
     check('  ...past the last one: done', $call([$bulk, 'ajaxNext'], ['after' => 1450])[1], ['pdf_id' => null, 'filename' => '', 'after' => 1450, 'done' => true]);
 
     // 1,500 PDFs that all have thumbnails: one request looks through five
@@ -284,6 +287,9 @@ namespace {
     $GLOBALS['posts'][1500] = (object) ['ID' => 1500, 'post_type' => 'post'];
     $GLOBALS['caps'] = ['manage_options' => true, 'edit_post' => true];
     check('a failed PDF says why, in the plugin\'s words', $call([$bulk, 'ajaxGenerate'], ['pdf_id' => 1500]), [false, ['pdf_id' => 1500, 'message' => 'Not a PDF file.']]);
+    $GLOBALS['mime_of'][1501] = 'image/jpeg';
+    $GLOBALS['posts'][1501] = (object) ['ID' => 1501, 'post_type' => 'attachment'];
+    check('an image is refused before anything is drawn', $call([$bulk, 'ajaxGenerate'], ['pdf_id' => 1501]), [false, ['message' => 'Not a PDF file.']]);
     check('an ID that is not a number is no PDF at all', $call([$bulk, 'ajaxGenerate'], ['pdf_id' => 'abc']), [false, ['message' => 'Invalid PDF ID.']]);
     check('  ...nor is a cursor that is not a number read as anything but the start', $call([$bulk, 'ajaxNext'], ['after' => 'abc'])[1]['pdf_id'] ?? null, 1002);
     $GLOBALS['caps'] = ['manage_options' => true];

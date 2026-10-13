@@ -114,7 +114,7 @@ if (PHP_VERSION_ID < 80100) { $settingsProp->setAccessible(true); }
 $settingsProp->setValue($inserter, new \Rapls\PDFImageCreator\Settings());
 $custom = new ReflectionMethod(\Rapls\PDFImageCreator\Inserter::class, 'generateCustomHtml');
 if (PHP_VERSION_ID < 80100) { $custom->setAccessible(true); }
-$made = (string) $custom->invoke($inserter, 7, 'https://e.test/a"b.pdf', 'He said "hi"', 'https://e.test/?attachment_id=7"x', 'https://e.test/t"h.jpg', '');
+$made = (string) $custom->invoke($inserter, 7, 'https://e.test/a"b.pdf', 'He said "hi"', 'https://e.test/?attachment_id=7"x', 'https://e.test/t"h.jpg', '', 'medium');
 unset($GLOBALS['options'][\Rapls\PDFImageCreator\Settings::OPTION_NAME]);
 check('a custom template gets escaped placeholders (verification of the change)', [
     false !== strpos($made, 'title="He said &quot;hi&quot;"'),
@@ -168,6 +168,15 @@ $enqueueOn = static function (string $hook) use ($admin): array {
     return $GLOBALS['enqueued'];
 };
 check('the Media Library gets the stylesheet only; the settings page the script too', [$enqueueOn('upload.php'), in_array('script:rapls-pic-admin', $enqueueOn('settings_page_' . Admin::PAGE_SLUG), true), $enqueueOn('index.php')], [['style:rapls-pic-admin'], true, []]);
+// Review of 1.4.34: admin_enqueue_scripts run by hand, with no argument.
+$GLOBALS['enqueued'] = [];
+try {
+    $admin->enqueueAssets();
+    $bare = $GLOBALS['enqueued'];
+} catch (\Throwable $e) {
+    $bare = get_class($e);
+}
+check('  ...and called with nothing, nothing and no fatal error', $bare, []);
 
 echo "\n=== Review of 1.4.32: what an update clears, and when it says so ===\n";
 if (!defined('RAPLS_PIC_VERSION')) { define('RAPLS_PIC_VERSION', '9.9.9'); }
@@ -229,6 +238,11 @@ $GLOBALS['admin_can'] = false;
 $authorNotice = $regenNotice('render_error');
 unset($GLOBALS['admin_can']);
 check('  ...someone who cannot manage options gets the reason without the Status tab link', [false !== strpos($authorNotice, 'ImageMagick could not render the page.'), false !== strpos($authorNotice, '#tab-status')], [true, false]);
+// A translation is printed escaped too (review of 1.4.34).
+$GLOBALS['translations']['ImageMagick could not render the page.'] = 'Le <b>rendu</b> a échoué.';
+$translatedNotice = $regenNotice('render_error');
+unset($GLOBALS['translations']);
+check('  ...and the reason is escaped, translated or not', [false !== strpos($translatedNotice, 'Le &lt;b&gt;rendu&lt;/b&gt; a échoué.'), false !== strpos($translatedNotice, '<b>')], [true, false]);
 
 echo "\n=== Review of 1.4.32: markup a screen reader and the stylesheet rely on ===\n";
 $viewNow = (string) file_get_contents(RAPLS_PIC_PLUGIN_DIR . 'admin/views/settings-page.php');
@@ -284,6 +298,9 @@ if (!function_exists('sanitize_hex_color')) { function sanitize_hex_color($v) { 
 $saved = $admin->sanitizeSettings(['format' => 'gif', 'insert_size' => 'huge', 'custom_html' => '<script>steal()</script><p>%TITLE%</p>', 'bgcolor' => 'white']);
 $savedOk = $admin->sanitizeSettings(['format' => 'webp', 'insert_size' => 'large']);
 check('a format or size not on the list is the default; a template loses scripts', [$saved['format'], $saved['insert_size'], $saved['custom_html'], $savedOk['format'], $savedOk['insert_size']], ['jpeg', 'medium', '<p>%TITLE%</p>', 'webp', 'large']);
+// in_array() without strict: true matched any non-empty string and was saved as true.
+$savedTrue = $admin->sanitizeSettings(['format' => true, 'bgcolor' => true, 'insert_link' => true]);
+check('  ...a true is not on any list', [$savedTrue['format'], $savedTrue['bgcolor'], $savedTrue['insert_link']], ['jpeg', 'white', 'file']);
 if (!function_exists('get_post_mime_type')) { function get_post_mime_type($id) { return $GLOBALS['mime_of'][(int) $id] ?? false; } }
 if (!function_exists('get_post_meta')) { function get_post_meta($id, $k, $single = false) { return $GLOBALS['meta_of'][(int) $id][$k] ?? ''; } }
 if (!function_exists('get_post')) { function get_post($id) { return isset($GLOBALS['mime_of'][(int) $id]) ? (object) ['ID' => (int) $id, 'post_type' => 'attachment'] : null; } }
@@ -323,6 +340,27 @@ try {
 }
 $GLOBALS['admin_can'] = true;
 check('someone without manage_options is not told about the server', (string) ob_get_clean(), '');
+
+echo "\n=== Review of 1.4.34: the settings page and its Support box ===\n";
+$GLOBALS['admin_can'] = false;
+ob_start();
+try {
+    $admin->renderSettingsPage();
+    $drawn = (string) ob_get_clean();
+} catch (\Throwable $e) {
+    ob_end_clean();
+    $drawn = get_class($e);
+}
+$GLOBALS['admin_can'] = true;
+check('someone without manage_options gets no settings page', $drawn, '');
+check('the Support box only while this server can make thumbnails', [
+    Admin::showsSupportBox(['availability' => ['code' => 'ok']]),
+    Admin::showsSupportBox(['availability' => ['code' => 'pdf_unsupported']]),
+    Admin::showsSupportBox(['availability' => null]),
+    Admin::showsSupportBox(null),
+], [true, false, false, false]);
+check('  ...as the view asks it', substr_count($viewNow, '<?php if (\\Rapls\\PDFImageCreator\\Admin::showsSupportBox($capabilities)) : ?>'), 1);
+check('the tabs are hidden only where JavaScript runs', [(bool) preg_match('/^\.rapls-pic-tab-content \{[^}]*display: none/m', $cssNow), false !== strpos($cssNow, ".js .rapls-pic-tab-content {\n    display: none;"), false !== strpos($cssNow, ".js .rapls-pic-tab-content.active {\n    display: block;")], [false, true, true]);
 
 printf("\n%d passed, %d failed\n", $pass, $fail);
 exit($fail === 0 ? 0 : 1);

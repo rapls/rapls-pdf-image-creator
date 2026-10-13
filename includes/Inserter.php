@@ -51,41 +51,54 @@ final class Inserter
         // query, and no script read either (review after 1.4.31). The HTML
         // is made when "Insert into post" is pressed, above.
 
-        // The media window's Link To starts at the "Link To" setting.
+        // The media window's Link To and Size start at the settings.
         add_action('wp_enqueue_media', [$this, 'enqueueInsertLink']);
     }
 
     /**
-     * Start the media window's Link To at the "Link To" setting, for PDFs
+     * Start the media window's Link To and Size at the settings, for PDFs
      *
-     * The window's choice is what linkFor() follows; this makes the setting
-     * that choice until someone changes it there (review of 1.4.33).
+     * The window's choice is what linkFor() and sizeFor() follow; this makes
+     * the setting that choice until someone changes it there (review of
+     * 1.4.33). The script also sends the window's Size, which core sends
+     * for images only (review of 1.4.34), so it needs media-editor.
      */
     public function enqueueInsertLink(): void
     {
         wp_enqueue_script(
             'pic-insert-link',
             RAPLS_PIC_PLUGIN_URL . 'admin/js/insert-link.js',
-            ['media-views'],
+            ['media-views', 'media-editor'],
             RAPLS_PIC_VERSION,
             true
         );
         wp_localize_script('pic-insert-link', 'raplsPicInsertLink', [
             'link' => $this->settings->getInsertLink(),
+            'size' => $this->settings->getInsertSize(),
         ]);
     }
 
     /**
      * Filter media being sent to editor
      *
-     * @param string $html HTML to be sent to editor
-     * @param int $attachmentId Attachment ID
-     * @param array $attachment Attachment data, as the media window sent it
-     *                          ('url' is its Link To; see linkFor())
-     * @return string Modified HTML
+     * Untyped: another plugin's filter returning a non-string, or a call
+     * with fewer arguments, was a fatal error (review of 1.4.34).
+     *
+     * @param mixed $html HTML to be sent to editor
+     * @param mixed $attachmentId Attachment ID
+     * @param mixed $attachment Attachment data, as the media window sent it
+     *                          ('url' is its Link To, 'image-size' its Size;
+     *                          see linkFor() and sizeFor())
+     * @return mixed Modified HTML
      */
-    public function filterMediaSendToEditor(string $html, int $attachmentId, array $attachment): string
+    public function filterMediaSendToEditor($html, $attachmentId = 0, $attachment = [])
     {
+        if (!is_numeric($attachmentId)) {
+            return $html;
+        }
+        $attachmentId = (int) $attachmentId;
+        $attachment = is_array($attachment) ? $attachment : [];
+
         // Only process PDFs
         $mimeType = get_post_mime_type($attachmentId);
         if ($mimeType !== 'application/pdf') {
@@ -110,7 +123,7 @@ final class Inserter
     public function generateInsertHtml(int $pdfId, array $attachment = []): string
     {
         $insertType = $this->settings->getInsertType();
-        $insertSize = $this->settings->getInsertSize();
+        $insertSize = $this->sizeFor($attachment);
 
         // Get PDF data
         // Cast: either can be false (a file gone, a permalink filter), and
@@ -130,7 +143,7 @@ final class Inserter
                 return $this->generateTitleHtml($pdfId, $pdfTitle, $href);
 
             case 'custom':
-                return $this->generateCustomHtml($pdfId, $pdfUrl, $pdfTitle, $attachmentUrl, $thumbnailUrl, $href);
+                return $this->generateCustomHtml($pdfId, $pdfUrl, $pdfTitle, $attachmentUrl, $thumbnailUrl, $href, $insertSize);
 
             case 'image':
             default:
@@ -170,6 +183,27 @@ final class Inserter
             default:
                 return $pdfUrl;
         }
+    }
+
+    /**
+     * The image size to insert
+     *
+     * The media window's Size when it sent one that exists. The window
+     * showed the control for a PDF and its choice was dropped, so the
+     * "Insert size" setting always decided (review of 1.4.34);
+     * admin/js/insert-link.js sends it as 'image-size', core's name for it
+     * on an image. Without it -- another caller -- the setting decides.
+     *
+     * @param array<string, mixed> $attachment What came with the request
+     */
+    private function sizeFor(array $attachment): string
+    {
+        $size = $attachment['image-size'] ?? null;
+        if (is_string($size) && in_array($size, array_merge((array) get_intermediate_image_sizes(), ['full']), true)) {
+            return $size;
+        }
+
+        return $this->settings->getInsertSize();
     }
 
     /**
@@ -246,9 +280,10 @@ final class Inserter
      * @param string $attachmentUrl Attachment page URL
      * @param string $thumbnailUrl Thumbnail URL
      * @param string $href Where the fallback links to; '' for no link
+     * @param string $insertSize Image size for the fallback
      * @return string Generated HTML
      */
-    private function generateCustomHtml(int $pdfId, string $pdfUrl, string $pdfTitle, string $attachmentUrl, string $thumbnailUrl, string $href): string
+    private function generateCustomHtml(int $pdfId, string $pdfUrl, string $pdfTitle, string $attachmentUrl, string $thumbnailUrl, string $href, string $insertSize): string
     {
         $template = $this->settings->getCustomHtml();
 
@@ -258,7 +293,7 @@ final class Inserter
                 $pdfId,
                 $pdfTitle,
                 $thumbnailUrl,
-                $this->settings->getInsertSize(),
+                $insertSize,
                 $href
             );
         }

@@ -4,10 +4,10 @@
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: Rapls PDF Image Creator 1.4.32\n"
+"Project-Id-Version: Rapls PDF Image Creator 1.4.35\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-09-11 08:48+0900\n"
-"PO-Revision-Date: 2026-10-12 21:30+0900\n"
+"PO-Revision-Date: 2026-10-13 15:00+0900\n"
 "Last-Translator: \n"
 "Language-Team: Japanese\n"
 "Language: ja\n"
@@ -249,7 +249,7 @@ msgid "Start Generation"
 msgstr "生成開始"
 
 msgid "Stop after the current PDF"
-msgstr "いまの PDF が終わったら停止"
+msgstr "現在の PDF の処理後に停止"
 
 msgid "Scan Results"
 msgstr "スキャン結果"
@@ -301,7 +301,7 @@ msgid ""
 "Results below are measured, then remembered: most for twelve hours, some for "
 "up to a week. Use this after your host changes something."
 msgstr ""
-"以下の結果は実際に測ったもので、多くは12時間、一部は最長1週間記憶します。"
+"以下の結果は実際に測ったもので、多くは12時間、一部は最長1週間保存します。"
 "ホスティング事業者側で設定が変わったときに使ってください。"
 
 msgid "What to do:"
@@ -780,7 +780,7 @@ msgid ""
 "Asked once. Whichever you choose — including closing this notice — it will "
 "not come back."
 msgstr ""
-"お尋ねするのは一度だけです。どれを選んでも——この通知を閉じた場合も——二度と表"
+"お尋ねするのは一度だけです。どれを選んでも (この通知を閉じた場合も) 二度と表"
 "示しません。"
 
 msgid "PDF thumbnail generation"
@@ -843,7 +843,7 @@ msgid "Stopped"
 msgstr "停止しました"
 
 msgid "Stopping after the current PDF..."
-msgstr "いまの PDF が終わったら停止します..."
+msgstr "現在の PDF の処理後に停止します..."
 
 msgid "Continue"
 msgstr "続ける"
@@ -945,7 +945,7 @@ msgstr "サムネイル"
 
 msgid "The only PDF in the Media Library is in the trash (%d). Restore it to generate its thumbnail."
 msgid_plural "All the PDFs in the Media Library are in the trash (%d). Restore them to generate their thumbnails."
-msgstr[0] "メディアライブラリの PDF はゴミ箱にあります (%d件)。サムネイルを生成するには、ゴミ箱から戻してください。"
+msgstr[0] "メディアライブラリの PDF はすべてゴミ箱にあります (%d件)。サムネイルを生成するには、ゴミ箱から戻してください。"
 
 msgid "Your PDFs have been getting thumbnails from this plugin. If it has been working out, would you leave a review? It is the main way other people find the plugin."
 msgstr "このプラグインで PDF のサムネイルが作られています。うまく動いていれば、レビューを書いていただけませんか ? ほかの人がこのプラグインを見つける、いちばんの手がかりになります。"
@@ -979,7 +979,7 @@ msgid "This server cannot make PDF thumbnails at the moment."
 msgstr "このサーバーでは、いまは PDF のサムネイルを作れません。"
 
 msgid "Imagick Extension"
-msgstr "Imagick 拡張機能"
+msgstr "Imagick 拡張"
 
 #, php-format
 msgid "No PDF here is an ordinary Media Library item (%s). Bulk Generate handles those only; a PDF with any other status — private, in the trash, or one another plugin gave it — is left out until it is an ordinary item again."

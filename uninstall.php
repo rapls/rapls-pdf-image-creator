@@ -71,7 +71,9 @@ function rapls_pic_uninstall_site(): void
                AND used.post_id <> CAST(source.meta_value AS UNSIGNED)"
         );
         $rapls_pic_failed = $rapls_pic_failed || !$rapls_pic_moved || !is_array($rapls_pic_used) || '' !== (string) $wpdb->last_error;
-        $rapls_pic_used = is_array($rapls_pic_used) ? array_map('intval', $rapls_pic_used) : [];
+        // Keyed by ID: looked up once per thumbnail below, and in_array() over
+        // a list made that thumbnails x used (review of 1.4.34).
+        $rapls_pic_used = is_array($rapls_pic_used) ? array_fill_keys(array_map('intval', $rapls_pic_used), true) : [];
 
         // Also kept: those a post's content shows. An image or gallery block
         // given the PDF holds the thumbnail's address, and the classic editor's
@@ -79,17 +81,17 @@ function rapls_pic_uninstall_site(): void
         // Only the ones not already kept are looked for, and the reading
         // stops once every one of them has been found.
         $rapls_pic_unused = array_values(array_filter($rapls_pic_thumbnails, static function ($rapls_pic_row) use ($rapls_pic_used): bool {
-            return !in_array((int) $rapls_pic_row['id'], $rapls_pic_used, true);
+            return !isset($rapls_pic_used[(int) $rapls_pic_row['id']]);
         }));
         $rapls_pic_shown = $rapls_pic_failed ? null : rapls_pic_uninstall_shown_in_content($rapls_pic_unused);
         $rapls_pic_failed = $rapls_pic_failed || null === $rapls_pic_shown;
 
         if (!$rapls_pic_failed) {
-            $rapls_pic_used = array_merge($rapls_pic_used, $rapls_pic_shown);
+            $rapls_pic_used += array_fill_keys($rapls_pic_shown, true);
 
             foreach ($rapls_pic_thumbnails as $rapls_pic_thumbnail) {
                 $rapls_pic_thumbnail_id = (int) $rapls_pic_thumbnail['id'];
-                if (in_array($rapls_pic_thumbnail_id, $rapls_pic_used, true)) {
+                if (isset($rapls_pic_used[$rapls_pic_thumbnail_id])) {
                     continue;
                 }
 
@@ -227,7 +229,7 @@ function rapls_pic_uninstall_shown_in_content(array $thumbnails): ?array
         return [];
     }
 
-    $rapls_pic_shown = [];
+    $rapls_pic_shown = []; // Keyed by ID.
     $rapls_pic_after = 0;
     do {
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Uninstall cleanup requires direct query
@@ -248,29 +250,32 @@ function rapls_pic_uninstall_shown_in_content(array $thumbnails): ?array
 
             if (preg_match_all('/([^\/\s"\'<>()=]+)\.(?:jpe?g|png|gif|webp|avif)\b/i', $rapls_pic_content, $rapls_pic_files)) {
                 foreach ($rapls_pic_files[0] as $rapls_pic_file) {
-                    $rapls_pic_stem = rapls_pic_uninstall_stem($rapls_pic_file);
+                    // Decoded: an address percent-encodes a name that is not
+                    // ASCII, and the attached file holds it as it is, so a
+                    // post showing "%E8%B3%87%E6%96%99-pdf-thumbnail.jpg" did
+                    // not keep 資料-pdf-thumbnail.jpg (review of 1.4.34).
+                    $rapls_pic_stem = rapls_pic_uninstall_stem(rawurldecode($rapls_pic_file));
                     if (isset($rapls_pic_by_stem[$rapls_pic_stem])) {
-                        array_push($rapls_pic_shown, ...$rapls_pic_by_stem[$rapls_pic_stem]);
+                        $rapls_pic_shown += array_fill_keys($rapls_pic_by_stem[$rapls_pic_stem], true);
                     }
                 }
             }
             if (preg_match_all('/wp-image-(\d+)/', $rapls_pic_content, $rapls_pic_classes)) {
                 foreach ($rapls_pic_classes[1] as $rapls_pic_class) {
                     if (isset($rapls_pic_by_id[(int) $rapls_pic_class])) {
-                        array_push($rapls_pic_shown, ...$rapls_pic_by_id[(int) $rapls_pic_class]);
+                        $rapls_pic_shown += array_fill_keys($rapls_pic_by_id[(int) $rapls_pic_class], true);
                     }
                 }
             }
         }
 
         // Every thumbnail found: the rest of the site cannot keep any more.
-        $rapls_pic_shown = array_values(array_unique($rapls_pic_shown));
         if (count($rapls_pic_shown) >= count($thumbnails)) {
             break;
         }
     } while (200 === count($rapls_pic_posts));
 
-    return array_values(array_unique($rapls_pic_shown));
+    return array_keys($rapls_pic_shown);
 }
 
 if (is_multisite() && function_exists('get_sites')) {

@@ -47,16 +47,22 @@
     margin-bottom: -1px;
 }
 
-/* Tab Content */
+/* Tab Content. Hidden only where JavaScript runs -- core swaps the admin
+   body's "no-js" for "js" as the page opens -- since only admin.js switches
+   tabs; without it, the Status tab could not be reached (review of 1.4.34),
+   so every tab shows, one under the other. */
 .rapls-pic-tab-content {
-    display: none;
     background: #fff;
     border: 1px solid #c3c4c7;
     border-top: none;
     padding: 20px;
 }
 
-.rapls-pic-tab-content.active {
+.js .rapls-pic-tab-content {
+    display: none;
+}
+
+.js .rapls-pic-tab-content.active {
     display: block;
 }
 

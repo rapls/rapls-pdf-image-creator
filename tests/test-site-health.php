@@ -78,5 +78,28 @@ foreach (['null' => null, 'a string' => 'info'] as $label => $answer) {
 $info = $health->registerDebugInformation(['wp-core' => ['label' => 'WordPress']]);
 check('an array gains this plugin\'s section, with no engine reported as such', [array_keys($info), $info['rapls-pdf-image-creator']['fields']['availability']['debug'] ?? null], [['wp-core', 'rapls-pdf-image-creator'], 'no_engine']);
 
+
+echo "\n--- the failure, escaped (review after 1.4.34) ---\n";
+// The summary, action and detail come from ImageMagick's own words and the
+// server's paths: none of it is markup.
+$enginesProp->setValue($generator, [new class implements \Rapls\PDFImageCreator\Engine\EngineInterface {
+    public function getName(): string { return 'stub'; }
+    public function getDisplayName(): string { return 'Stub'; }
+    public function isAvailable(): bool { return false; }
+    public function getAvailabilityStatus(): array {
+        return ['code' => 'pdf_unsupported', 'label' => 'x', 'summary' => 'Summary <b>bold</b>', 'action' => 'Action <i>x</i>', 'detail' => 'Detail <script>y</script>'];
+    }
+    public function getRequirements(): array { return []; }
+    public function convert(string $pdfPath, string $outputPath, array $options = []): \Rapls\PDFImageCreator\Engine\ConversionResult { throw new \RuntimeException('not here'); }
+}]);
+$result = $health->runTest();
+check('the summary, the action and the detail are escaped', [
+    false !== strpos($result['description'], 'Summary &lt;b&gt;bold&lt;/b&gt;'),
+    false !== strpos($result['description'], 'Action &lt;i&gt;x&lt;/i&gt;'),
+    false !== strpos($result['description'], 'Detail &lt;script&gt;y&lt;/script&gt;'),
+    false === strpos($result['description'], '<b>') && false === strpos($result['description'], '<script>'),
+    $result['status'],
+], [true, true, true, true, 'critical']);
+
 printf("\n%d passed, %d failed\n", $pass, $fail);
 exit(0 === $fail ? 0 : 1);

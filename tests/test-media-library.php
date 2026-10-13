@@ -85,20 +85,41 @@ namespace {
     $coreMeta = ['sizes' => [
         'full' => ['file' => 'doc-pdf.jpg', 'width' => 1088, 'height' => 1408],
         'thumbnail' => ['file' => 'doc-pdf-116x150.jpg', 'width' => 116, 'height' => 150],
+        // A name with a path in it reaches only the PDF's own folder.
+        'odd' => ['file' => '../doc-pdf.jpg', 'width' => 1, 'height' => 1],
     ]];
+    file_put_contents($uploads . '/2026/doc-pdf.jpg', 'someone else');
     $out = $library->maybeSuppressCorePdfPreview($coreMeta, 20, 'create');
     check('auto-generate off: sizes removed from metadata', $out['sizes'], []);
     check('auto-generate off: preview in year/month folder deleted', file_exists($uploads . '/2026/09/doc-pdf.jpg') || file_exists($uploads . '/2026/09/doc-pdf-116x150.jpg'), false);
     check('auto-generate off: same name in uploads root kept', file_exists($uploads . '/doc-pdf.jpg'), true);
+    check('auto-generate off: a "../" in a size\'s file goes no higher', file_exists($uploads . '/2026/doc-pdf.jpg'), true);
     check('auto-generate off: the PDF itself kept', file_exists($uploads . '/2026/09/doc.pdf'), true);
 
     // Nothing to tell where the PDF is: delete nothing rather than guess.
     file_put_contents($uploads . '/2026/09/doc-pdf.jpg', 'preview');
     $GLOBALS['mimes'][21] = 'application/pdf';
+    // From the uploads root, where a bare file name would land.
+    $cwd = getcwd();
+    chdir($uploads);
     $out = $library->maybeSuppressCorePdfPreview($coreMeta, 21, 'create');
+    chdir($cwd);
     check('no attached file: nothing deleted', file_exists($uploads . '/doc-pdf.jpg') && file_exists($uploads . '/2026/09/doc-pdf.jpg'), true);
 
-    foreach (['2026/09/doc.pdf', '2026/09/doc-pdf.jpg', '2026/09/doc-pdf-116x150.jpg', 'doc-pdf.jpg'] as $f) {
+    // Another plugin's filter handing on something that is not metadata.
+    $odd = [];
+    set_error_handler(static function (int $no, string $message): bool { throw new \ErrorException($message, 0, $no); });
+    foreach ([[null, 20], ['x', 20], [$coreMeta, null], [$coreMeta, new \stdClass()]] as [$given, $id]) {
+        try {
+            $odd[] = $library->maybeSuppressCorePdfPreview($given, $id) === $given;
+        } catch (\Throwable $e) {
+            $odd[] = get_class($e);
+        }
+    }
+    restore_error_handler();
+    check('not metadata, or no ID: handed back, no fatal error', $odd, [true, true, true, true]);
+
+    foreach (['2026/09/doc.pdf', '2026/09/doc-pdf.jpg', '2026/09/doc-pdf-116x150.jpg', 'doc-pdf.jpg', '2026/doc-pdf.jpg'] as $f) {
         @unlink($uploads . '/' . $f);
     }
     @rmdir($uploads . '/2026/09');
@@ -275,6 +296,23 @@ namespace {
     $withEdit = $library->addRowActions(['edit' => 'Edit'], new WP_Post(10, 0, 'application/pdf'));
     check('  ...the regenerate link only for someone who may edit the PDF', [array_keys($withoutEdit), isset($withEdit['rapls_pic_regenerate'])], [['edit'], true]);
 
+    // Review of 1.4.34: the list view's rows read their images in one query.
+    if (!function_exists('_prime_post_caches')) { function _prime_post_caches($ids, $terms = true, $meta = true) { $GLOBALS['primed_posts'][] = array_values($ids); } }
+    if (!function_exists('update_postmeta_cache')) { function update_postmeta_cache($ids) { $GLOBALS['primed_meta'][] = array_values($ids); return []; } }
+    if (!function_exists('esc_attr__')) { function esc_attr__($s, $d = null) { return $s; } }
+    $GLOBALS['primed_posts'] = [];
+    $GLOBALS['primed_meta'] = [];
+    $GLOBALS['wp_query'] = (object) ['posts' => [new WP_Post(10, 0, 'application/pdf'), new WP_Post(30, 0, 'image/jpeg'), new WP_Post(20, 0, 'application/pdf')]];
+    $listView = new \Rapls\PDFImageCreator\MediaLibrary($generator, $settings);
+    ob_start();
+    foreach ([10, 20] as $row) {
+        $listView->addRowActions(['edit' => 'Edit'], new WP_Post($row, 0, 'application/pdf'));
+        $listView->renderMediaColumn('rapls_pic_thumbnail', $row);
+    }
+    ob_end_clean();
+    unset($GLOBALS['wp_query']);
+    check('  ...the list\'s PDFs and the images they name are read once, together', [$GLOBALS['primed_meta'], $GLOBALS['primed_posts']], [[[10, 20]], [[11]]]);
+
     // Review of 1.4.32: core hands these filters what its caller gave it --
     // '' from an empty post meta, null for $icon -- and a typed parameter made
     // that a fatal error on any page. Called as core calls them, not strictly.
@@ -392,6 +430,33 @@ namespace {
         [[300, 200], 'medium', 'thumbnail'],
         [['src' => 'https://example.test/doc-40-thumbnail.png'], ['src' => 'https://example.test/doc-40-thumbnail.png'], ['src' => 'https://example.test/doc-40-thumbnail.png'], ['src' => 'core.png']],
     ]);
+    $GLOBALS['src_sizes'] = [];
+    $iconOn->filterAttachmentImageAttributes(['src' => 'core.png'], new WP_Post(40, 0, 'application/pdf'), '');
+    try {
+        $stringAttr = $iconOn->filterAttachmentImageAttributes('class=x', new WP_Post(40, 0, 'application/pdf'), 'medium');
+    } catch (\Throwable $e) {
+        $stringAttr = get_class($e);
+    }
+    check('  ...an empty size is the thumbnail; attributes as a string, untouched', [$GLOBALS['src_sizes'], $stringAttr], [['thumbnail'], 'class=x']);
+
+    // Core's filters, handed something else by another plugin (review of 1.4.34).
+    $handed = [];
+    // A warning counts: reading ->ID off null is one before it is anything else.
+    set_error_handler(static function (int $no, string $message): bool { throw new \ErrorException($message, 0, $no); });
+    foreach ([
+        static function () use ($library) { return $library->filterAttachmentForJs(null, new WP_Post(40, 0, 'application/pdf'), []); },
+        static function () use ($library) { return $library->filterAttachmentForJs(['id' => 40], null, []); },
+        static function () use ($library) { return $library->addMediaColumns(null); },
+        static function () use ($library) { return $library->allowPdfsInImageSelection('x'); },
+    ] as $call) {
+        try {
+            $handed[] = $call();
+        } catch (\Throwable $e) {
+            $handed[] = get_class($e);
+        }
+    }
+    restore_error_handler();
+    check('  ...JS data, columns and media queries that are not arrays: handed back', $handed, [null, ['id' => 40], null, 'x']);
     unset($GLOBALS['options'][\Rapls\PDFImageCreator\Settings::OPTION_NAME]);
 
 

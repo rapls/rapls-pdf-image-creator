@@ -67,6 +67,22 @@ final class Admin
     }
 
     /**
+     * Whether the Status tab's "Support This Plugin" box is shown
+     *
+     * Only while this server can make thumbnails. It sat under the failure
+     * notices too, asking for a coffee and a review beside "this server
+     * cannot render PDFs" (review of 1.4.34) -- the same reason the review
+     * request waits for a working server.
+     *
+     * @param mixed $capabilities Generator::checkCapabilities()
+     */
+    public static function showsSupportBox($capabilities): bool
+    {
+        return is_array($capabilities) && is_array($capabilities['availability'] ?? null)
+            && 'ok' === ($capabilities['availability']['code'] ?? '');
+    }
+
+    /**
      * Whether the Status tab's CMYK box belongs under the CMYK row
      *
      * Only where the row does not say it works: tested broken, or not
@@ -224,9 +240,12 @@ final class Admin
     /**
      * Enqueue admin assets
      *
-     * @param string $hook Current admin page
+     * Untyped: a plugin running admin_enqueue_scripts by hand, with no
+     * argument, was a fatal error (review of 1.4.34).
+     *
+     * @param mixed $hook Current admin page
      */
-    public function enqueueAssets(string $hook): void
+    public function enqueueAssets($hook = ''): void
     {
         // Only on our settings page or media library
         if ($hook !== 'settings_page_' . self::PAGE_SLUG && $hook !== 'upload.php') {

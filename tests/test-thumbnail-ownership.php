@@ -53,9 +53,12 @@ namespace {
         public function get_var($q) {
             $this->last_error = $this->fail ? 'simulated failure' : '';
             if ($this->fail) { return null; }
-            [$metaA, $metaB, $value, $except] = $q[1];
+            // As MySQL would: the PDF itself is left out only by the clause
+            // that says so (mutation testing after 1.4.34).
+            [$metaA, $metaB, $value] = $q[1];
+            $except = preg_match('/\bAND post_id <> %d\b/', $q[0]) ? ($q[1][3] ?? null) : null;
             foreach ($GLOBALS['meta'] as $post => $keys) {
-                if ((int) $post === (int) $except) { continue; }
+                if (null !== $except && (int) $post === (int) $except) { continue; }
                 foreach ([$metaA, $metaB] as $key) {
                     if (isset($keys[$key]) && (string) $keys[$key] === $value) { return (string) $post; }
                 }

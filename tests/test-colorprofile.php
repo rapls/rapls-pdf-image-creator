@@ -65,6 +65,17 @@ add_filter('rapls_pdf_image_creator_icc_paths', function ($p, $t) use ($dir) { r
 check('a valid profile named .txt is refused', (new ColorProfile())->findProfilePath('srgb'), null);
 @unlink("$dir/profile-as.txt");
 
+// ...and so is one reached through a link named .icc: the file is judged
+// where it really is (mutation testing after 1.4.34).
+reset_state();
+copy($goodSrgb, "$dir/profile-behind.txt");
+@unlink("$dir/link-to-txt.icc");
+$linked = @symlink("$dir/profile-behind.txt", "$dir/link-to-txt.icc");
+add_filter('rapls_pdf_image_creator_icc_paths', function ($p, $t) use ($dir) { return ["$dir/link-to-txt.icc"]; });
+check('  ...as is one behind a link named .icc', [$linked, (new ColorProfile())->findProfilePath('srgb')], [true, null]);
+@unlink("$dir/link-to-txt.icc");
+@unlink("$dir/profile-behind.txt");
+
 // Under the minimum size even with the signature in place: refused by size.
 reset_state();
 file_put_contents("$dir/short.icc", str_repeat("\0", 36) . 'acsp' . str_repeat("\0", 60));
@@ -202,7 +213,7 @@ $GLOBALS['filters'] = [];
 $GLOBALS['transients'] = [];
 
 $ref = new ReflectionMethod('Rapls\PDFImageCreator\Engine\ColorProfile', 'getCandidates');
-$ref->setAccessible(true);
+if (PHP_VERSION_ID < 80100) { $ref->setAccessible(true); }
 $cmykList = $ref->invoke(new Rapls\PDFImageCreator\Engine\ColorProfile(), 'cmyk');
 $srgbList = $ref->invoke(new Rapls\PDFImageCreator\Engine\ColorProfile(), 'srgb');
 
@@ -240,7 +251,7 @@ check('no Ghostscript profile is used as the destination', $srgbFromGs, false);
 echo "\n--- wildcard expansion ---\n";
 
 $expand = new ReflectionMethod('Rapls\PDFImageCreator\Engine\ColorProfile', 'expandCandidates');
-$expand->setAccessible(true);
+if (PHP_VERSION_ID < 80100) { $expand->setAccessible(true); }
 $cp2 = new Rapls\PDFImageCreator\Engine\ColorProfile();
 
 $gsRoot = RAPLS_PIC_TEST_TMP . '/gs';

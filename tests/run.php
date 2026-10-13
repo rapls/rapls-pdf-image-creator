@@ -34,6 +34,8 @@ $suites = [
     'test-insert-link.js',
 ];
 $failed = [];
+// Seconds one suite may take; RAPLS_PIC_TEST_TIMEOUT changes it.
+$timeout = max(1, (int) (getenv('RAPLS_PIC_TEST_TIMEOUT') ?: 300));
 
 foreach ($suites as $suite) {
     echo str_repeat('=', 70) . "\n$suite\n" . str_repeat('=', 70) . "\n";
@@ -59,15 +61,94 @@ foreach ($suites as $suite) {
         continue;
     }
 
-    echo stream_get_contents($pipes[1]);
-    $stderr = stream_get_contents($pipes[2]);
+    // Read both pipes as they fill, until both close or the suite's time is
+    // up. A suite that never ends -- a loop that no longer stops -- hung the
+    // whole run before (mutation testing of 1.4.34); now it is stopped and
+    // counted as failed.
+    $deadline = microtime(true) + $timeout;
+    $open = [1 => $pipes[1], 2 => $pipes[2]];
+    $stderr = '';
+    $timedOut = false;
+    foreach ($open as $pipe) {
+        stream_set_blocking($pipe, false);
+    }
+    while ([] !== $open) {
+        if (microtime(true) >= $deadline) {
+            $timedOut = true;
+            break;
+        }
+        $read = array_values($open);
+        $write = null;
+        $except = null;
+        if (false === @stream_select($read, $write, $except, 1)) {
+            break;
+        }
+        foreach ($open as $n => $pipe) {
+            $chunk = (string) fread($pipe, 65536);
+            if (1 === $n) {
+                echo $chunk;
+            } else {
+                $stderr .= $chunk;
+            }
+            if (feof($pipe)) {
+                unset($open[$n]);
+            }
+        }
+    }
+
+    // The exit status, read while the process is still known: proc_close()
+    // answers -1 for one proc_get_status() has already seen end, before PHP 8.3.
+    $exit = null;
+    while (!$timedOut) {
+        $status = proc_get_status($process);
+        if (!$status['running']) {
+            $exit = $status['exitcode'];
+            break;
+        }
+        if (microtime(true) >= $deadline) {
+            $timedOut = true;
+            break;
+        }
+        usleep(10000);
+    }
+
+    if ($timedOut) {
+        // proc_terminate() reaches the suite's own process only, and a
+        // Ghostscript or PHP it started was left running (review after
+        // 1.4.34): its descendants are found by ps and stopped first. Not
+        // one whose parent has already exited -- it is then PID 1's child,
+        // and nothing here can tell it from anyone else's.
+        $pid = (int) (proc_get_status($process)['pid'] ?? 0);
+        if ($pid > 0 && function_exists('posix_kill')) {
+            $children = [];
+            foreach (preg_split('/\n/', (string) @shell_exec('ps -A -o pid= -o ppid= 2>/dev/null')) as $line) {
+                if (preg_match('/^\s*(\d+)\s+(\d+)\s*$/', $line, $m)) {
+                    $children[(int) $m[2]][] = (int) $m[1];
+                }
+            }
+            $kill = [];
+            $todo = [$pid];
+            while ([] !== $todo) {
+                foreach ($children[array_pop($todo)] ?? [] as $child) {
+                    $kill[] = $child;
+                    $todo[] = $child;
+                }
+            }
+            foreach (array_reverse($kill) as $child) {
+                posix_kill($child, 9);
+            }
+        }
+        proc_terminate($process, 9);
+        echo "\nTIMED OUT after {$timeout}s\n";
+    }
     array_map('fclose', $pipes);
 
     if ('' !== trim($stderr)) {
         echo "stderr:\n$stderr";
     }
 
-    if (0 !== proc_close($process)) {
+    $closed = proc_close($process);
+    if ($timedOut || 0 !== ($exit ?? $closed)) {
         $failed[] = $suite;
     }
 

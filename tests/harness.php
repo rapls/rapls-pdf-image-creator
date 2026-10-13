@@ -24,7 +24,8 @@ function set_transient($k, $v, $t = 0) { $GLOBALS['transients'][$k] = $v; $GLOBA
 function delete_transient($k) { $GLOBALS['transient_deletes'][] = $k; unset($GLOBALS['transients'][$k]); return true; }
 function get_option($k, $d = false) { return $GLOBALS['options'][$k] ?? $d; }
 function update_option($k, $v, $a = null) { $GLOBALS['options'][$k] = $v; $GLOBALS['autoload'][$k] = $a; return true; }
-function __($s, $d = null) { return $s; }
+// A translation can be given, to see that a translated string is escaped.
+function __($s, $d = null) { return $GLOBALS['translations'][$s] ?? $s; }
 if (!function_exists('_n')) { function _n($one, $many, $n, $d = null) { return 1 === (int) $n ? $one : $many; } }
 function _x($s, $c, $d = null) { return $s; }
 function esc_html($s) { return htmlspecialchars((string) $s, ENT_QUOTES); }

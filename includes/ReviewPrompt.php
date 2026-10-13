@@ -48,6 +48,14 @@ final class ReviewPrompt
     /** Where the review is left. */
     private const URL = 'https://wordpress.org/support/plugin/rapls-pdf-image-creator/reviews/#new-post';
 
+    /** Asked whether this server can make thumbnails now; null asks nobody. */
+    private ?Generator $generator;
+
+    public function __construct(?Generator $generator = null)
+    {
+        $this->generator = $generator;
+    }
+
     public function init(): void
     {
         add_action('admin_notices', [$this, 'render']);
@@ -208,6 +216,14 @@ final class ReviewPrompt
         // red then, and a request for a review beside it reads as not having
         // noticed (review of 1.4.32).
         if (false !== get_option(Generator::UNAVAILABLE_OPTION, false)) {
+            return false;
+        }
+
+        // ...and not while the Status tab says so either. The option above is
+        // written only when an upload fails, so a host that broke Imagick
+        // after the last upload left the request beside a red Status tab
+        // (review of 1.4.34). Measured, then remembered, as the tab is.
+        if (null !== $this->generator && 'ok' !== ($this->generator->getAvailabilityStatus()['code'] ?? '')) {
             return false;
         }
 
