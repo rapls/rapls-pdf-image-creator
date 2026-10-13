@@ -21,22 +21,22 @@ if (!defined('ABSPATH')) {
     </p>
 
     <div class="rapls-pic-tabs">
-        <?php // The tab pattern, so a screen reader says which tab is chosen; admin.js keeps the states and the arrow keys (Codex review of 1.4.26, 4). ?>
-        <nav class="nav-tab-wrapper" role="tablist">
-            <a href="#tab-settings" id="rapls-pic-tab-link-settings" class="nav-tab nav-tab-active" data-tab="settings" role="tab" aria-controls="tab-settings" aria-selected="true">
+        <?php // The tab pattern, so a screen reader says which tab is chosen; admin.js adds the roles and keeps the states and the arrow keys (Codex review of 1.4.26, 4). Without it every panel shows and these are links to them (review of 1.4.35). ?>
+        <nav class="nav-tab-wrapper">
+            <a href="#tab-settings" id="rapls-pic-tab-link-settings" class="nav-tab nav-tab-active" data-tab="settings" aria-controls="tab-settings">
                 <?php esc_html_e('Settings', 'rapls-pdf-image-creator'); ?>
             </a>
-            <a href="#tab-bulk" id="rapls-pic-tab-link-bulk" class="nav-tab" data-tab="bulk" role="tab" aria-controls="tab-bulk" aria-selected="false">
+            <a href="#tab-bulk" id="rapls-pic-tab-link-bulk" class="nav-tab" data-tab="bulk" aria-controls="tab-bulk">
                 <?php esc_html_e('Bulk Generate', 'rapls-pdf-image-creator'); ?>
             </a>
-            <a href="#tab-status" id="rapls-pic-tab-link-status" class="nav-tab" data-tab="status" role="tab" aria-controls="tab-status" aria-selected="false">
+            <a href="#tab-status" id="rapls-pic-tab-link-status" class="nav-tab" data-tab="status" aria-controls="tab-status">
                 <?php esc_html_e('Status', 'rapls-pdf-image-creator'); ?>
             </a>
         </nav>
     </div>
 
     <!-- Settings Tab -->
-    <div id="tab-settings" class="rapls-pic-tab-content active" role="tabpanel" aria-labelledby="rapls-pic-tab-link-settings">
+    <div id="tab-settings" class="rapls-pic-tab-content active" aria-labelledby="rapls-pic-tab-link-settings">
         <form method="post" action="options.php">
             <?php settings_fields('rapls_pic_settings_group'); ?>
 
@@ -237,7 +237,7 @@ if (!defined('ABSPATH')) {
                             <?php esc_html_e('Hide generated thumbnail images in the Media Library', 'rapls-pdf-image-creator'); ?>
                         </label>
                         <p class="description">
-                            <?php esc_html_e('This also decides what happens to the image when its PDF is deleted. Checked: the image is deleted with the PDF, unless another PDF or a post uses it as its featured image; an image placed in a post\'s content is not looked for, and goes. Unchecked: the image is kept as an ordinary image.', 'rapls-pdf-image-creator'); ?>
+                            <?php esc_html_e('This also decides what happens to the image when its PDF is deleted. Checked: the image is deleted with the PDF, unless another PDF or a post uses it as its featured image, or a post\'s content shows it; then it is kept as an ordinary image. Unchecked: the image is kept as an ordinary image.', 'rapls-pdf-image-creator'); ?>
                         </p>
                     </td>
                 </tr>
@@ -262,7 +262,7 @@ if (!defined('ABSPATH')) {
 
             <p class="description">
                 <?php esc_html_e('Configure how PDF thumbnails are inserted into content.', 'rapls-pdf-image-creator'); ?>
-                <?php esc_html_e('These settings are used by "Insert into post" in the classic editor\'s Add Media window. The block editor does not use them.', 'rapls-pdf-image-creator'); ?>
+                <?php esc_html_e('These settings are used by "Insert into post" in the classic editor\'s Add Media window, where Size and Link To start at them for a PDF with a thumbnail; what is chosen there is used instead. The block editor does not use them.', 'rapls-pdf-image-creator'); ?>
             </p>
 
             <table class="form-table">
@@ -322,7 +322,7 @@ if (!defined('ABSPATH')) {
                             <?php endforeach; ?>
                         </select>
                         <p class="description">
-                            <?php esc_html_e('Image size to use when inserting PDF thumbnails.', 'rapls-pdf-image-creator'); ?>
+                            <?php esc_html_e('In the Add Media window, Size starts at this choice for a PDF with a thumbnail, and a size chosen there is used instead. A size the window does not list is used while the window\'s Size is left as it is.', 'rapls-pdf-image-creator'); ?>
                         </p>
                     </td>
                 </tr>
@@ -383,7 +383,7 @@ if (!defined('ABSPATH')) {
     </div>
 
     <!-- Bulk Generate Tab -->
-    <div id="tab-bulk" class="rapls-pic-tab-content" role="tabpanel" aria-labelledby="rapls-pic-tab-link-bulk">
+    <div id="tab-bulk" class="rapls-pic-tab-content" aria-labelledby="rapls-pic-tab-link-bulk">
         <h2><?php esc_html_e('Bulk Generate Thumbnails', 'rapls-pdf-image-creator'); ?></h2>
 
         <p class="description">
@@ -402,7 +402,10 @@ if (!defined('ABSPATH')) {
             </tr>
         </table>
 
-        <p>
+        <noscript>
+            <p class="description"><?php esc_html_e('Bulk Generate and the statistics need JavaScript. Without it, use the "Generate Thumbnail" link under each PDF in the Media Library\'s list view.', 'rapls-pdf-image-creator'); ?></p>
+        </noscript>
+        <p class="rapls-pic-needs-js">
             <button type="button" id="rapls-pic-bulk-scan" class="button button-secondary">
                 <?php esc_html_e('Scan for PDFs', 'rapls-pdf-image-creator'); ?>
             </button>
@@ -468,7 +471,7 @@ if (!defined('ABSPATH')) {
     </div>
 
     <!-- Status Tab -->
-    <div id="tab-status" class="rapls-pic-tab-content" role="tabpanel" aria-labelledby="rapls-pic-tab-link-status">
+    <div id="tab-status" class="rapls-pic-tab-content" aria-labelledby="rapls-pic-tab-link-status">
         <h2><?php esc_html_e('Server Status', 'rapls-pdf-image-creator'); ?></h2>
 
         <p class="description">
@@ -639,7 +642,10 @@ if (!defined('ABSPATH')) {
 
         <h2><?php esc_html_e('Statistics', 'rapls-pdf-image-creator'); ?></h2>
 
-        <p>
+        <noscript>
+            <p class="description"><?php esc_html_e('Bulk Generate and the statistics need JavaScript. Without it, use the "Generate Thumbnail" link under each PDF in the Media Library\'s list view.', 'rapls-pdf-image-creator'); ?></p>
+        </noscript>
+        <p class="rapls-pic-needs-js">
             <button type="button" id="rapls-pic-refresh-stats" class="button button-secondary">
                 <?php esc_html_e('Refresh Statistics', 'rapls-pdf-image-creator'); ?>
             </button>

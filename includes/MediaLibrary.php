@@ -111,10 +111,18 @@ final class MediaLibrary
     /**
      * Handle new attachment upload
      *
+     * Untyped, as the other core hooks here are: do_action() can be called
+     * with no argument, or with a string (review of 1.4.35).
+     *
      * @param int $attachmentId Attachment ID
      */
-    public function onAttachmentAdded(int $attachmentId): void
+    public function onAttachmentAdded($attachmentId = 0): void
     {
+        $attachmentId = (int) $attachmentId;
+        if ($attachmentId < 1) {
+            return;
+        }
+
         // Check if auto-generate is enabled
         if (!$this->settings->isAutoGenerateEnabled()) {
             return;
@@ -221,9 +229,14 @@ final class MediaLibrary
      * @param int   $attachmentId Attachment ID.
      * @return mixed
      */
-    public function ensurePdfMetadataHasImageKeys($data, int $attachmentId)
+    public function ensurePdfMetadataHasImageKeys($data, $attachmentId = 0)
     {
-        if (!is_array($data) || empty($data['sizes']) || !is_array($data['sizes'])) {
+        // Untyped, with a default: this runs on every
+        // wp_get_attachment_metadata(), and another plugin applying that
+        // filter with one argument, or with '' for the ID, made it a fatal
+        // error (review of 1.4.35).
+        $attachmentId = (int) $attachmentId;
+        if ($attachmentId < 1 || !is_array($data) || empty($data['sizes']) || !is_array($data['sizes'])) {
             return $data;
         }
 
@@ -256,8 +269,13 @@ final class MediaLibrary
      *
      * @param int $attachmentId Attachment ID
      */
-    public function onAttachmentDeleted(int $attachmentId): void
+    public function onAttachmentDeleted($attachmentId = 0): void
     {
+        $attachmentId = (int) $attachmentId;
+        if ($attachmentId < 1) {
+            return;
+        }
+
         // Check if it's a PDF
         $mimeType = get_post_mime_type($attachmentId);
         if ($mimeType !== 'application/pdf') {
@@ -535,13 +553,22 @@ final class MediaLibrary
     /**
      * Filter REST API response for attachments (Block Editor)
      *
-     * @param \WP_REST_Response $response REST response object
-     * @param \WP_Post $post Attachment post object
-     * @param \WP_REST_Request $request REST request object
-     * @return \WP_REST_Response Modified response
+     * Untyped: an earlier listener can hand on a WP_Error or anything else,
+     * and a typed parameter made that a fatal error for the whole REST
+     * request. What is not a response for a post is handed on as it came
+     * (review of 1.4.35).
+     *
+     * @param mixed $response REST response object
+     * @param mixed $post Attachment post object
+     * @param mixed $request REST request object
+     * @return mixed Modified response
      */
-    public function filterRestAttachment(\WP_REST_Response $response, \WP_Post $post, \WP_REST_Request $request): \WP_REST_Response
+    public function filterRestAttachment($response, $post = null, $request = null)
     {
+        if (!$response instanceof \WP_REST_Response || !$post instanceof \WP_Post) {
+            return $response;
+        }
+
         // Check if this is a generated thumbnail - show source PDF URL instead
         $isThumbnail = get_post_meta($post->ID, '_rapls_pic_is_thumbnail', true);
         $sourcePdfId = get_post_meta($post->ID, '_rapls_pic_source_pdf', true);
@@ -652,9 +679,9 @@ final class MediaLibrary
      *
      * @param \WP_Query $query Query object
      */
-    public function filterMediaLibrary(\WP_Query $query): void
+    public function filterMediaLibrary($query = null): void
     {
-        if (!is_admin()) {
+        if (!$query instanceof \WP_Query || !is_admin()) {
             return;
         }
 
@@ -717,9 +744,10 @@ final class MediaLibrary
      * @param string $columnName Column name
      * @param int $postId Post ID
      */
-    public function renderMediaColumn(string $columnName, int $postId): void
+    public function renderMediaColumn($columnName = '', $postId = 0): void
     {
-        if ($columnName !== 'rapls_pic_thumbnail') {
+        $postId = (int) $postId;
+        if ('rapls_pic_thumbnail' !== $columnName || $postId < 1) {
             return;
         }
 
@@ -747,12 +775,19 @@ final class MediaLibrary
     /**
      * Add row actions to media library
      *
-     * @param array $actions Existing actions
-     * @param \WP_Post $post Post object
-     * @return array Modified actions
+     * Untyped: another plugin's earlier filter can hand on null for the
+     * actions, and what is not a post gets none (review of 1.4.35).
+     *
+     * @param mixed $actions Existing actions
+     * @param mixed $post Post object
+     * @return mixed Modified actions
      */
-    public function addRowActions(array $actions, \WP_Post $post): array
+    public function addRowActions($actions, $post = null)
     {
+        if (!is_array($actions) || !$post instanceof \WP_Post) {
+            return $actions;
+        }
+
         // Only for PDFs
         if (get_post_mime_type($post->ID) !== 'application/pdf') {
             return $actions;

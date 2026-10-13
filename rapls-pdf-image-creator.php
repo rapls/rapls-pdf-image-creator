@@ -12,11 +12,10 @@
  * Plugin Name: Rapls PDF Image Creator – PDF Thumbnails & Featured Images
  * Plugin URI:  https://raplsworks.com/plugins/rapls-pdf-image-creator/
  * Description: The first page of each uploaded PDF becomes an image in every registered size, ready to use as a post cover or inside content. Needs ImageMagick.
- * Version:     1.4.35
+ * Version:     1.4.36
  * Author:      Rapls Works
  * Author URI:  https://raplsworks.com
  * Text Domain: rapls-pdf-image-creator
- * Domain Path: /languages
  * License:     GPL v2 or later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
  * Requires at least: 5.0
@@ -46,7 +45,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Plugin constants
-define('RAPLS_PIC_VERSION', '1.4.35');
+define('RAPLS_PIC_VERSION', '1.4.36');
 define('RAPLS_PIC_PLUGIN_FILE', __FILE__);
 define('RAPLS_PIC_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('RAPLS_PIC_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -78,6 +77,11 @@ spl_autoload_register(function (string $class): void {
 // WordPress caches glob() results for up to 1 hour (wp_cache 'translation_files').
 // After plugin deactivation/deletion, stale cache entries cause
 // wp_get_l10n_php_file_data() to include() files that no longer exist.
+// The key is the one WP_Textdomain_Registry::get_language_files_from_path()
+// sets for WP_LANG_DIR/plugins/, and the one core deletes itself after a
+// language pack update (WordPress 6.5+; checked against 7.1, review of
+// 1.4.35). There is no "Domain Path": the plugin ships no catalogue, and the
+// header named a folder the zip leaves out.
 register_deactivation_hook(RAPLS_PIC_PLUGIN_FILE, function (): void {
     wp_cache_delete(md5(WP_LANG_DIR . '/plugins/'), 'translation_files');
     delete_transient(RAPLS_PIC_ACTIVATION_NOTICE);

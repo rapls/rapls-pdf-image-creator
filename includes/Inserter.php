@@ -72,9 +72,21 @@ final class Inserter
             RAPLS_PIC_VERSION,
             true
         );
+        // The sizes the window's Size offers: core lists only these, and
+        // turns a value it does not list into whatever it shows selected. An
+        // "Insert size" of medium_large or a theme's size became "medium"
+        // that way, where 1.4.20 inserted the setting (review of 1.4.35).
+        // The labels are core's to show; only the names are read here.
+        $offered = apply_filters('image_size_names_choose', [
+            'thumbnail' => 'Thumbnail',
+            'medium' => 'Medium',
+            'large' => 'Large',
+            'full' => 'Full Size',
+        ]);
         wp_localize_script('pic-insert-link', 'raplsPicInsertLink', [
             'link' => $this->settings->getInsertLink(),
             'size' => $this->settings->getInsertSize(),
+            'sizes' => array_values(array_map('strval', array_keys(is_array($offered) ? $offered : []))),
         ]);
     }
 

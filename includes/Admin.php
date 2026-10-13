@@ -72,14 +72,17 @@ final class Admin
      * Only while this server can make thumbnails. It sat under the failure
      * notices too, asking for a coffee and a review beside "this server
      * cannot render PDFs" (review of 1.4.34) -- the same reason the review
-     * request waits for a working server.
+     * request waits for a working server. The same two tests as the review
+     * request: the Status tab's answer, and the last upload not having found
+     * the server unable (review of 1.4.35).
      *
      * @param mixed $capabilities Generator::checkCapabilities()
      */
     public static function showsSupportBox($capabilities): bool
     {
         return is_array($capabilities) && is_array($capabilities['availability'] ?? null)
-            && 'ok' === ($capabilities['availability']['code'] ?? '');
+            && 'ok' === ($capabilities['availability']['code'] ?? '')
+            && false === get_option(Generator::UNAVAILABLE_OPTION, false);
     }
 
     /**
@@ -424,7 +427,9 @@ final class Admin
             // (review after 1.4.32). The Status tab, for administrators,
             // still shows the message itself.
             // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Display-only notice, no data processing
-            $code = sanitize_key(wp_unslash((string) $_GET['rapls_pic_error']));
+            // A string only: "?rapls_pic_error[]=x" made the cast an "Array to
+            // string conversion" warning (review of 1.4.35).
+            $code = is_string($_GET['rapls_pic_error']) ? sanitize_key(wp_unslash($_GET['rapls_pic_error'])) : '';
             $reason = self::failureReason($code);
 
             echo '<div class="notice notice-error is-dismissible">';

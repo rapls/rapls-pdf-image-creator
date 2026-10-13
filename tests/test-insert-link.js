@@ -26,7 +26,7 @@ function check(label, got, want) {
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'admin', 'js', 'insert-link.js'), 'utf8');
 
-function setup(data, userLink = 'none', userSize = 'medium') {
+function setup(data, userLink = 'none', userSize = 'medium', sendWith = null) {
     // Backbone's set(): every attribute first, then a change:key for each that changed.
     function Model(attrs) { this.attrs = Object.assign({}, attrs); this.handlers = {}; }
     Model.prototype.get = function (k) { return this.attrs[k]; };
@@ -40,7 +40,8 @@ function setup(data, userLink = 'none', userSize = 'medium') {
     function Library() { this._displays = {}; this._defaultDisplaySettings = { align: 'none', size: userSize, link: userLink }; }
     Library.prototype.defaultDisplaySettings = function (attachment) {
         const settings = Object.assign({}, this._defaultDisplaySettings);
-        if (attachment.get('type') !== 'image' && settings.link === 'none') { settings.link = 'file'; }
+        // Tolerant here, so that the script's own guard is what is tested.
+        if (attachment && 'function' === typeof attachment.get && attachment.get('type') !== 'image' && settings.link === 'none') { settings.link = 'file'; }
         return settings;
     };
     Library.prototype.display = function (attachment) {
@@ -50,7 +51,7 @@ function setup(data, userLink = 'none', userSize = 'medium') {
     const original = Library.prototype.defaultDisplaySettings;
     // media-editor.js: send.attachment sends the size for images only.
     const posted = [];
-    const send = {
+    const send = sendWith ? { attachment: sendWith } : {
         attachment(props, attachment) {
             const options = { id: attachment.id };
             if ('image' === attachment.type && props.size) { options['image-size'] = props.size; }
@@ -134,6 +135,62 @@ for (const [setting, want] of [['none', 'none'], ['attachment', 'post']]) {
     const failing = up.wp.media.post;
     try { up.wp.media.editor.send.attachment({ size: 'large' }, pdfJson); } catch (e) { raised = e.message; }
     check('  ...even when sending throws', [raised, up.wp.media.post === failing], ['offline', true]);
+}
+
+// A size the window does not list (review of 1.4.35): core turned an
+// "Insert size" of medium_large into "medium", where 1.4.20 inserted it.
+{
+    const names = ['thumbnail', 'medium', 'large', 'full'];
+    const up = setup({ link: 'none', size: 'medium_large', sizes: names });
+    const lib = new up.Library();
+    const shown = lib.display(attachment(up.Model, Object.assign({ sizes: { full: {}, medium: {}, medium_large: {} } }, pdf)));
+    check('a size core does not list: the window stays at core\'s start, noted', [shown.get('size'), shown.get('picSizeStart')], ['medium', 'medium']);
+    const pdfJson = { id: 7, type: 'application', mime: 'application/pdf', picThumbnailId: 70 };
+    up.wp.media.editor.send.attachment(Object.assign({}, shown.attrs), pdfJson);
+    check('  ...left alone there: no size sent, so the setting decides', up.posted[0][1], { attachment: { id: 7 } });
+    up.wp.media.editor.send.attachment(Object.assign({}, shown.attrs, { size: 'large' }), pdfJson);
+    check('  ...changed there: the window\'s size is sent', up.posted[1][1], { attachment: { id: 7, 'image-size': 'large' } });
+
+    const listed = setup({ link: 'none', size: 'large', sizes: names });
+    const noFile = new listed.Library().display(attachment(listed.Model, Object.assign({ sizes: { full: {}, medium: {} } }, pdf)));
+    check('a listed size the thumbnail has no file for: not shown either', [noFile.get('size'), noFile.get('picSizeStart')], ['medium', 'medium']);
+    const withFile = new listed.Library().display(attachment(listed.Model, Object.assign({ sizes: { full: {}, large: {} } }, pdf)));
+    check('  ...one it has: the window starts there', [withFile.get('size'), withFile.get('picSizeStart')], ['large', undefined]);
+
+    const emptyList = setup({ link: 'none', size: 'large', sizes: [] });
+    check('  ...an empty list from a broken filter does not stop it', new emptyList.Library().display(attachment(emptyList.Model, Object.assign({ sizes: { full: {}, large: {} } }, pdf))).get('size'), 'large');
+
+    const up2 = setup({ link: 'none', size: 'medium_large', sizes: names });
+    const lib2 = new up2.Library();
+    const file = attachment(up2.Model, { uploading: true, filename: 'Report.pdf', type: undefined });
+    lib2.display(file);
+    file.set({ uploading: false, type: 'application', mime: 'application/pdf', picThumbnailId: 71, sizes: { full: {} } });
+    check('  ...and for a PDF uploaded in the window', [lib2.display(file).get('size'), lib2.display(file).get('picSizeStart')], ['medium', 'medium']);
+    const up3 = setup({ link: 'none', size: 'large', sizes: names });
+    const lib3 = new up3.Library();
+    const noLarge = attachment(up3.Model, { uploading: true, filename: 'Small.pdf', type: undefined });
+    lib3.display(noLarge);
+    noLarge.set({ uploading: false, type: 'application', mime: 'application/pdf', picThumbnailId: 72, sizes: { full: {}, medium: {} } });
+    check('  ...uploaded, its thumbnail too small for the listed size: not shown', [lib3.display(noLarge).get('size'), lib3.display(noLarge).get('picSizeStart')], ['medium', 'medium']);
+}
+
+// Guards (mutation testing of 1.4.35): core or another plugin calling with
+// no attachment, or one that is not a model; a send that posts without a
+// request body.
+{
+    const up = setup({ link: 'none', size: 'large' });
+    const lib = new up.Library();
+    const asked = [];
+    for (const odd of [undefined, null, {}, { get: 'not a function' }]) {
+        try { asked.push(typeof up.Library.prototype.defaultDisplaySettings.call(lib, odd)); } catch (e) { asked.push(e.constructor.name); }
+    }
+    check('defaultDisplaySettings() with no attachment, or not a model: core\'s answer', asked, ['object', 'object', 'object', 'object']);
+
+    const bare = setup({ link: 'none', size: 'large' }, 'none', 'medium', function () { return wpRef.media.post('send-attachment-to-editor'); });
+    var wpRef = bare.wp;
+    let raised = null;
+    try { bare.wp.media.editor.send.attachment({ size: 'large' }, { id: 7, mime: 'application/pdf', picThumbnailId: 70 }); } catch (e) { raised = e.constructor.name; }
+    check('  ...and a send that posts no request: nothing thrown', [raised, bare.posted[0]], [null, ['send-attachment-to-editor', undefined]]);
 }
 
 let threw = null;

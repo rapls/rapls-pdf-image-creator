@@ -4,7 +4,7 @@
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: Rapls PDF Image Creator 1.4.35\n"
+"Project-Id-Version: Rapls PDF Image Creator 1.4.36\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-09-11 08:48+0900\n"
 "PO-Revision-Date: 2026-10-13 15:00+0900\n"
@@ -187,8 +187,8 @@ msgstr ""
 msgid "Default Insert Size"
 msgstr "デフォルト挿入サイズ"
 
-msgid "Image size to use when inserting PDF thumbnails."
-msgstr "PDF サムネイルを挿入する際に使用する画像サイズ。"
+msgid "In the Add Media window, Size starts at this choice for a PDF with a thumbnail, and a size chosen there is used instead. A size the window does not list is used while the window's Size is left as it is."
+msgstr "「メディアを追加」画面では、サムネイルのある PDF のサイズが最初にこの値になります。画面でサイズを選んだときは、そちらを使います。画面の一覧にないサイズは、画面のサイズを変えなければ、この値を使います。"
 
 msgid "Link To"
 msgstr "リンク先"
@@ -439,7 +439,7 @@ msgid ""
 "deactivating other plugins and scanning again."
 msgstr ""
 "データベースには PDF の添付ファイルが%1$d件 (%2$s) ありますが、クエリーは1件"
-"も返しませんでした。何かが絞り込んでいます — たいていは pre_get_posts に処理"
+"も返しませんでした。何かが絞り込んでいます。たいていは pre_get_posts に処理"
 "を追加した別のプラグインです。他のプラグインを停止して、もう一度スキャンして"
 "ください。"
 
@@ -451,7 +451,7 @@ msgid_plural ""
 "All %d PDFs already have thumbnails. Tick \"Include PDFs that already have "
 "thumbnails\" above to generate them again."
 msgstr[0] ""
-"%d件の PDF にはすでにサムネイルがあります。もう一度生成するには、上の「すでに"
+"%d件の PDF には、すべてサムネイルがあります。もう一度生成するには、上の「すでに"
 "サムネイルがある PDF も含める (再生成)」にチェックしてください。"
 
 msgid "Scan again, including these"
@@ -655,7 +655,7 @@ msgid "Color Management"
 msgstr "カラー管理"
 
 msgid "Disabled by filter — using simple conversion"
-msgstr "フィルターで無効化 — 簡易変換で動作中"
+msgstr "フィルターで無効化 (簡易変換で動作中)"
 
 msgid "Active (ICC)"
 msgstr "有効 (ICC)"
@@ -689,7 +689,7 @@ msgid "Colour conversion is switched off."
 msgstr "カラー変換は無効になっています。"
 
 msgid "Inactive — using simple conversion"
-msgstr "無効 — 簡易変換で動作中"
+msgstr "無効 (簡易変換で動作中)"
 
 msgid "The PDF file is missing from the uploads folder."
 msgstr "アップロードフォルダーに PDF ファイルがありません。"
@@ -893,7 +893,7 @@ msgid "The image was rendered but could not be set as this PDF's featured image,
 msgstr "画像は作成しましたが、この PDF のアイキャッチ画像に設定できなかったため、前のサムネイルをそのまま残しました。"
 
 msgid "ImageMagick 6 — CMYK PDFs may produce a blank image (not tested)"
-msgstr "ImageMagick 6 — CMYK の PDF で画像が真っ白になる場合があります (未確認)"
+msgstr "ImageMagick 6では、CMYK の PDF で画像が真っ白になる場合があります (未確認)"
 
 msgid "Some ImageMagick 6 builds render CMYK PDFs through Ghostscript's bmpsep8 device, which produces a separation BMP that ImageMagick cannot read back. ImageMagick 7 does not have this problem."
 msgstr "一部の ImageMagick 6は、CMYK の PDF を Ghostscript の bmpsep8 デバイスで描画します。これは ImageMagick が読み戻せない分版 BMP を出力します。ImageMagick 7にはこの問題はありません。"
@@ -907,11 +907,11 @@ msgstr "このサーバーでは WebP を使えません。5.8より前の WordP
 msgid "Where WordPress shows a file-type icon for a PDF, the generated thumbnail is shown instead. The Media Library's grid and list show a PDF's thumbnail whether or not this is on."
 msgstr "WordPress が PDF にファイル形式のアイコンを表示する場所で、代わりに生成したサムネイルを表示します。メディアライブラリのグリッドとリストでは、この設定に関係なく PDF のサムネイルを表示します。"
 
-msgid "This also decides what happens to the image when its PDF is deleted. Checked: the image is deleted with the PDF, unless another PDF or a post uses it as its featured image; an image placed in a post's content is not looked for, and goes. Unchecked: the image is kept as an ordinary image."
-msgstr "PDF を削除したときに画像をどうするかも、この設定で決まります。オンにすると、画像も PDF と一緒に削除します。ただし、ほかの PDF や投稿がアイキャッチ画像として使っている画像は残します。投稿の本文に入れた画像は探さないため、削除されます。オフにすると、画像は普通の画像として残ります。"
+msgid "This also decides what happens to the image when its PDF is deleted. Checked: the image is deleted with the PDF, unless another PDF or a post uses it as its featured image, or a post's content shows it; then it is kept as an ordinary image. Unchecked: the image is kept as an ordinary image."
+msgstr "PDF を削除したときに画像をどうするかも、この設定で決まります。オンにすると、画像も PDF と一緒に削除します。ただし、ほかの PDF や投稿がアイキャッチ画像として使っている画像や、投稿の本文に表示されている画像は、普通の画像として残します。オフにすると、画像は普通の画像として残ります。"
 
-msgid "These settings are used by \"Insert into post\" in the classic editor's Add Media window. The block editor does not use them."
-msgstr "これらの設定は、クラシックエディターの「メディアを追加」画面の「投稿に挿入」で使われます。ブロックエディターでは使われません。"
+msgid "These settings are used by \"Insert into post\" in the classic editor's Add Media window, where Size and Link To start at them for a PDF with a thumbnail; what is chosen there is used instead. The block editor does not use them."
+msgstr "これらの設定は、クラシックエディターの「メディアを追加」画面の「投稿に挿入」で使われます。サムネイルのある PDF では、画面のサイズとリンク先が最初にこの設定になり、画面で選んだものがあればそちらを使います。ブロックエディターでは使われません。"
 
 msgid "This PDF has no thumbnail, so it cannot be shown as an image. In Media > Library, in list view, use \"Generate Thumbnail\" under the PDF, then choose it again."
 msgstr "この PDF にはサムネイルがないため、画像として表示できません。「メディア」>「ライブラリ」をリスト表示にし、PDF の下の「サムネイル生成」を使ってから、もう一度選んでください。"
@@ -996,3 +996,6 @@ msgstr "選択が変わりました。開始する前にもう一度スキャン
 
 msgid "The statistics could not be read. Try again."
 msgstr "統計を読み込めませんでした。もう一度お試しください。"
+
+msgid "Bulk Generate and the statistics need JavaScript. Without it, use the \"Generate Thumbnail\" link under each PDF in the Media Library's list view."
+msgstr "一括生成と統計には JavaScript が必要です。JavaScript を使えないときは、メディアライブラリのリスト表示で、各 PDF の下にある「サムネイル生成」のリンクを使ってください。"

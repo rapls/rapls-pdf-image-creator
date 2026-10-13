@@ -298,7 +298,7 @@ final class Plugin
                 return '';
             }
 
-            return esc_url($this->generator->getThumbnailUrl($id, $atts['size']) ?? '');
+            return esc_url($this->generator->getThumbnailUrl($id, (string) $atts['size']) ?? '');
         });
 
         // [rapls_pdf_clickable_thumbnail id="123" size="medium"]
@@ -356,7 +356,7 @@ final class Plugin
 
             $content = '';
             if ($atts['show_thumbnail'] === 'true') {
-                $content .= $this->generator->getThumbnailImage($id, $atts['size']);
+                $content .= $this->generator->getThumbnailImage($id, (string) $atts['size']);
             }
 
             $text = $atts['text'] ?: get_the_title($id);

@@ -1452,12 +1452,22 @@ final class ImagickEngine implements EngineInterface
     /**
      * The resolution a page of this size in points is drawn at within the limit
      *
-     * @return float|null Null when even MIN_RESOLUTION is over the limit.
+     * A size of 0 or less is a guard, not a case: the boxes are at least
+     * Letter and A4 (largestPageBox()) and a measured page a pixel more each
+     * way (measurePage()), so none reaches here. A page whose box really is
+     * 0 by 0 fails in Ghostscript before anything is measured -- measured on
+     * Ghostscript 10.04: "/undefined in --runpdf--", "[/PageSize [0 0]]", a
+     * render error -- so the "too large" convert() would report for the null
+     * is never what a site sees for one.
+     *
+     * @return float|null Null when even MIN_RESOLUTION is over the limit, or
+     *                    the size is not one: a page of no width is not one
+     *                    to draw as asked, whatever said so.
      */
     private function fittedResolution(float $width, float $height, float $resolution, float $limit): ?float
     {
         if ($width <= 0 || $height <= 0) {
-            return $resolution;
+            return null;
         }
 
         // And within what this server's pixel cache can hold, where its disk
@@ -1584,18 +1594,31 @@ final class ImagickEngine implements EngineInterface
     /**
      * The largest page box anywhere in the file, from its bytes, with nothing run
      *
-     * Every /MediaBox, /CropBox, /BleedBox, /TrimBox and /ArtBox, in the file
+     * Every /MediaBox, /CropBox, /BleedBox, /TrimBox and /ArtBox in the file
      * and in its object streams, inflated: stale objects an update replaced,
-     * boxes of pages not asked for and all. An upper bound for any page --
-     * which is all boundedResolution() needs of it. At least Letter and A4
-     * together, the sizes Ghostscript gives a page with no box.
+     * boxes of pages not asked for, a box written in a comment or a content
+     * stream and all. An upper bound for any page -- which is all
+     * boundedResolution() needs of it; a box counted that is no page's only
+     * ever makes the answer larger. At least Letter and A4 together, the
+     * sizes Ghostscript gives a page with no box.
+     *
+     * The answer is only as good as the claim that no page box was missed,
+     * so the file is first read token by token (objectStreams()) to find the
+     * object streams Ghostscript would open: a dictionary found by searching
+     * back from its /First was cut short by a key ending in "obj" or by a
+     * value past a 4 KB window, its /Filter went unseen, the stream was
+     * taken as plain -- and a 14,400-point page inside it, beside a small box
+     * anywhere else, was drawn at 150 dpi in 97 s and 3.2 GB (review after
+     * 1.4.35).
      *
      * Null wherever the bytes could hide a larger page: a file not starting
-     * with "%PDF-" (ImageMagick would read it as something else), /UserUnit,
-     * a box that is not four plain numbers, a key spelt with #xx escapes, an
-     * object stream that is encrypted, filtered otherwise or too large, no
-     * box at all, a file past PAGE_TREE_MAX_BYTES. The page is then measured
-     * by drawing it.
+     * with "%PDF-" (ImageMagick would read it as something else), a file the
+     * token reading cannot follow to its end, a /First anywhere that reading
+     * did not see as a key (inside a stream, a string, a comment or where a
+     * value belongs, where a repaired file could still find it), /UserUnit, a box that is not four
+     * plain numbers, a key spelt with #xx escapes, an object stream that is
+     * encrypted, filtered otherwise or too large, no box at all, a file past
+     * PAGE_TREE_MAX_BYTES. The page is then measured by drawing it.
      *
      * @return array{0: float, 1: float}|null The largest area in square
      *         points, and the longest side in points.
@@ -1614,58 +1637,17 @@ final class ImagickEngine implements EngineInterface
             return null;
         }
 
+        $streams = self::objectStreams($bytes);
+
+        if (null === $streams) {
+            return null;
+        }
+
         $texts = [$bytes];
         $inflated = 0;
-        $from = 0;
-        $streams = 0;
 
-        // Object streams: Ghostscript reads one through its /First, so every
-        // stream with one is opened here, whatever its /Type says.
-        while (1 === preg_match('#/First(?![A-Za-z0-9])#', $bytes, $match, PREG_OFFSET_CAPTURE, $from)) {
-            $at = (int) $match[0][1];
-            $from = $at + 6;
-
-            if (++$streams > self::PAGE_TREE_MAX_NODES) {
-                return null;
-            }
-
-            $stream = preg_match('#stream\r?\n#', $bytes, $open, PREG_OFFSET_CAPTURE, $at) ? (int) $open[0][1] : -1;
-            $end = strpos($bytes, 'endobj', $at);
-
-            // An outline's /First, not a stream's.
-            if ($stream < 0 || (false !== $end && $end < $stream)) {
-                continue;
-            }
-
-            // From the "obj" that opens it, as far back as a dictionary
-            // reasonably reaches.
-            $low = max(0, $at - 4096);
-            $begin = strrpos(substr($bytes, $low, $at - $low), 'obj');
-            $begin = false === $begin ? $low : $low + $begin;
-            $dictionary = substr($bytes, $begin, $stream - $begin);
-
-            // Unfiltered, it is in the bytes already.
-            if (false === strpos($dictionary, '/Filter')) {
-                continue;
-            }
-
-            if (!preg_match('#/Filter\s*(?:/FlateDecode|\[\s*/FlateDecode\s*\])#', $dictionary) || false !== strpos($dictionary, '/DecodeParms')) {
-                return null;
-            }
-
-            $data = $stream + strlen($open[0][0]);
-            $length = preg_match('#/Length\s+(\d+)(?!\d)(?!\s+\d+\s+R)#', $dictionary, $declared) ? (int) $declared[1] : -1;
-
-            if ($length < 0) {
-                $close = strpos($bytes, 'endstream', $data);
-                $length = false === $close ? -1 : $close - $data;
-            }
-
-            if ($length < 1 || $data + $length > strlen($bytes)) {
-                return null;
-            }
-
-            $text = self::inflateWithin(substr($bytes, $data, $length), self::BOX_MAX_INFLATED - $inflated);
+        foreach ($streams as $data) {
+            $text = self::inflateWithin($data, self::BOX_MAX_INFLATED - $inflated);
 
             if (null === $text) {
                 return null;
@@ -1678,7 +1660,9 @@ final class ImagickEngine implements EngineInterface
         $area = 0.0;
         $side = 0.0;
         $count = 0;
+        $space = '[' . self::PDF_WHITESPACE . ']';
         $number = '([+-]?(?:\d+\.?\d*|\.\d+))';
+        $box = '#\G' . $space . '*\[' . $space . '*' . $number . $space . '+' . $number . $space . '+' . $number . $space . '+' . $number . $space . '*\]#';
 
         foreach ($texts as $text) {
             if (false !== strpos($text, '/UserUnit')) {
@@ -1686,31 +1670,28 @@ final class ImagickEngine implements EngineInterface
             }
 
             // "/Media#42ox" is /MediaBox to a reader.
-            if (false === preg_match_all('#/((?:[^\s/\[\]<>(){}%\#]|\#[0-9A-Fa-f]{2})*\#[0-9A-Fa-f]{2}(?:[^\s/\[\]<>(){}%\#]|\#[0-9A-Fa-f]{2})*)#', $text, $names)) {
+            if (false === preg_match_all('#/((?:[^' . self::PDF_WHITESPACE . '/\[\]<>(){}%\#]|\#[0-9A-Fa-f]{2})*\#[0-9A-Fa-f]{2}(?:[^' . self::PDF_WHITESPACE . '/\[\]<>(){}%\#]|\#[0-9A-Fa-f]{2})*)#', $text, $names)) {
                 return null;
             }
 
             foreach ($names[1] as $name) {
-                $decoded = (string) preg_replace_callback('/#([0-9A-Fa-f]{2})/', static function (array $hex): string {
-                    return chr((int) hexdec($hex[1]));
-                }, $name);
-
-                if (in_array($decoded, self::BOX_KEYS, true)) {
+                if (in_array(self::decodeName($name), self::BOX_KEYS, true)) {
                     return null;
                 }
             }
 
             $offset = 0;
 
-            while (1 === preg_match('#/(?:Media|Crop|Bleed|Trim|Art)Box(?![A-Za-z0-9])#', $text, $key, PREG_OFFSET_CAPTURE, $offset)) {
+            while (1 === preg_match('#/(?:Media|Crop|Bleed|Trim|Art)Box(?![^' . self::PDF_WHITESPACE . '/\[\]<>(){}%])#', $text, $key, PREG_OFFSET_CAPTURE, $offset)) {
                 $offset = (int) $key[0][1] + strlen($key[0][0]);
 
-                if (++$count > self::BOX_MAX_COUNT || 1 !== preg_match('#\G\s*\[\s*' . $number . '\s+' . $number . '\s+' . $number . '\s+' . $number . '\s*\]#', $text, $box, 0, $offset)) {
+                if (++$count > self::BOX_MAX_COUNT || 1 !== preg_match($box, $text, $found, 0, $offset)) {
                     return null;
                 }
 
-                $width = abs((float) $box[3] - (float) $box[1]);
-                $height = abs((float) $box[4] - (float) $box[2]);
+                // x1 - x0 and y1 - y0: [1] to [4] are the four numbers.
+                $width = abs((float) $found[3] - (float) $found[1]);
+                $height = abs((float) $found[4] - (float) $found[2]);
                 $area = max($area, $width * $height);
                 $side = max($side, $width, $height);
             }
@@ -1725,6 +1706,358 @@ final class ImagickEngine implements EngineInterface
         }
 
         return [max($area, 612.0 * 842.0), max($side, 842.0)];
+    }
+
+    /** The characters PDF counts as white space, for a character class: NUL, tab, LF, FF, CR, space. */
+    private const PDF_WHITESPACE = '\x00\t\n\x0C\r ';
+
+    /** The most tokens read from one file for its object streams (objectStreams()). */
+    private const TOKENS_MAX = 2000000;
+
+    /** A name with its #xx escapes decoded, as a reader sees it. */
+    private static function decodeName(string $name): string
+    {
+        return (string) preg_replace_callback('/#([0-9A-Fa-f]{2})/', static function (array $hex): string {
+            return chr((int) hexdec($hex[1]));
+        }, $name);
+    }
+
+    /**
+     * The compressed object streams in a file, found by reading it token by token
+     *
+     * Strings, comments and the data of every stream are stepped over as a
+     * reader steps over them, so nothing in them is taken for a key -- and a
+     * dictionary is read from its "<<", wherever that is, whatever its keys
+     * are called. An object stream (a stream whose dictionary has /First,
+     * whatever its /Type says: Ghostscript reads one by its /First) that is
+     * not filtered is read on, as part of the file, for the /First keys of
+     * the objects inside it.
+     *
+     * A dictionary is read key, value, key, value: a value is a number, a
+     * string, a name, an array, a dictionary, "true", "false", "null" or a
+     * reference ("12 0 R"), and anything else where a value belongs -- a
+     * brace, any other word -- or a value where a key belongs ends the
+     * reading. A value it did not take as one, "true" among them, left the
+     * dictionary waiting for a key, every key after it was read one place
+     * out, /Type and /First as values, and the stream was not opened: a
+     * 100,000-point page in it was drawn at 150 dpi (review after 1.4.35).
+     *
+     * @return array<int, string>|null The raw data of each one compressed
+     *         with /FlateDecode alone; null when the file cannot be followed
+     *         to its end, a stream is filtered otherwise, has parameters or is
+     *         an object stream with no /First, a /First sits anywhere this
+     *         reading did not see it as a key, or past TOKENS_MAX tokens or
+     *         PAGE_TREE_MAX_NODES object streams.
+     */
+    private static function objectStreams(string $bytes): ?array
+    {
+        $state = ['firsts' => 0, 'tokens' => 0, 'streams' => []];
+
+        if (!self::readTokens($bytes, false, $state)) {
+            return null;
+        }
+
+        // Every /First in the bytes must be one this reading met as a key: one
+        // inside a stream's data, a string or a comment is where a file
+        // repaired by Ghostscript, its objects found by scanning, could still
+        // hold an object stream this reading stepped over.
+        $firsts = preg_match_all('#/First(?![^' . self::PDF_WHITESPACE . '/\[\]<>(){}%])#', $bytes);
+
+        if (false === $firsts || $firsts !== $state['firsts']) {
+            return null;
+        }
+
+        return $state['streams'];
+    }
+
+    /**
+     * Read PDF tokens over some bytes, collecting what objectStreams() needs
+     *
+     * @param bool                 $inside Whether these bytes are an object
+     *                                     stream's own: no stream may open
+     *                                     there.
+     * @param array<string, mixed> $state  Counts and streams so far.
+     * @return bool False where the bytes cannot be followed.
+     */
+    private static function readTokens(string $bytes, bool $inside, array &$state): bool
+    {
+        $length = strlen($bytes);
+        $at = 0;
+        // Frames: ['dict', key pending, entries, last key, place in a
+        // reference] or ['array', items].
+        $stack = [];
+        // The top-level dictionary just closed, while nothing but white space
+        // and comments has followed it: what a "stream" keyword belongs to.
+        $closed = null;
+        $space = self::PDF_WHITESPACE;
+        $pattern = '~\G(?:([' . $space . ']+)|(%[^\r\n]*)|(<<)|(>>)|(\[)|(\])|(\()|(<)|/([^' . $space . '/\[\]<>(){}%]*)|([{}])|([^' . $space . '/\[\]<>(){}%]+))~';
+
+        while ($at < $length) {
+            if (++$state['tokens'] > self::TOKENS_MAX || 1 !== preg_match($pattern, $bytes, $token, 0, $at)) {
+                return false;
+            }
+
+            $text = $token[0];
+            $next = $at + strlen($text);
+            $value = null;
+            $has = false;
+
+            if ('' !== ($token[1] ?? '') || '' !== ($token[2] ?? '')) {
+                // White space or a comment: what came before still stands.
+                $at = $next;
+                continue;
+            }
+
+            $was = $closed;
+            $closed = null;
+
+            if ('<<' === $text) {
+                $stack[] = ['dict', null, []];
+            } elseif ('>>' === $text) {
+                $frame = array_pop($stack);
+
+                // A key left without its value is a dictionary read wrong.
+                if (!is_array($frame) || 'dict' !== $frame[0] || null !== $frame[1] || 2 === ($frame[4] ?? 0)) {
+                    return false;
+                }
+
+                $value = ['dict', $frame[2]];
+                $has = true;
+
+                if ([] === $stack) {
+                    $closed = $frame[2];
+                }
+            } elseif ('[' === $text) {
+                $stack[] = ['array', []];
+            } elseif (']' === $text) {
+                $frame = array_pop($stack);
+
+                if (!is_array($frame) || 'array' !== $frame[0]) {
+                    return false;
+                }
+
+                $value = ['array', $frame[1]];
+                $has = true;
+            } elseif ('(' === $text) {
+                $depth = 1;
+                $next = $at + 1;
+
+                while ($depth > 0) {
+                    if ($next >= $length) {
+                        return false;
+                    }
+
+                    $next += strcspn($bytes, '()\\', $next);
+
+                    if ($next >= $length) {
+                        return false;
+                    }
+
+                    $char = $bytes[$next];
+                    $next += '\\' === $char ? 2 : 1;
+                    $depth += '(' === $char ? 1 : ('\\' === $char ? 0 : -1);
+                }
+
+                $value = ['string'];
+                $has = true;
+            } elseif ('<' === $text) {
+                $end = strpos($bytes, '>', $at);
+
+                if (false === $end || 1 !== preg_match('~^[0-9A-Fa-f' . $space . ']*$~', substr($bytes, $at + 1, $end - $at - 1))) {
+                    return false;
+                }
+
+                $next = $end + 1;
+                $value = ['string'];
+                $has = true;
+            } elseif (isset($token[9]) && '' !== $token[9] && '/' === $text[0]) {
+                $name = self::decodeName($token[9]);
+
+                // A key this reading depends on, spelt with #xx escapes, is
+                // spelt so for no reason but to be missed.
+                if ($name !== $token[9] && in_array($name, self::BOX_KEYS, true)) {
+                    return false;
+                }
+
+                $top = count($stack) - 1;
+
+                // A name where a dictionary waits for a key is that key. Only
+                // a /First there is counted: one where a value belongs is not
+                // an object stream's, and leaves the count short of the
+                // bytes' (objectStreams()).
+                if ($top >= 0 && 'dict' === $stack[$top][0] && null === $stack[$top][1]) {
+                    // Two numbers with no "R" after them are no value.
+                    if (2 === ($stack[$top][4] ?? 0)) {
+                        return false;
+                    }
+
+                    if ('First' === $name) {
+                        ++$state['firsts'];
+                    }
+
+                    $stack[$top][1] = $name;
+                    $stack[$top][4] = 0;
+                    $at = $next;
+                    continue;
+                }
+
+                $value = ['name', $name];
+                $has = true;
+            } elseif ('/' === $text) {
+                // The empty name.
+                $value = ['name', ''];
+                $has = true;
+            } elseif ('stream' === $text) {
+                if ($inside || null === $was || [] !== $stack) {
+                    return false;
+                }
+
+                $next = self::streamEnd($bytes, $next, $was, $data);
+
+                if (null === $next || !self::takeStream($was, $data, $state)) {
+                    return false;
+                }
+
+                $at = $next;
+                continue;
+            } elseif ('endstream' === $text) {
+                return false;
+            } elseif (1 === preg_match('~^[+-]?(?:\d+\.?\d*|\.\d+)$~', $text)) {
+                $value = ['number', $text];
+                $has = true;
+            } elseif ('true' === $text || 'false' === $text || 'null' === $text) {
+                $value = ['keyword', $text];
+                $has = true;
+            } elseif ('R' === $text) {
+                // Makes the number before it, and the one before that, a
+                // reference -- which none of the keys read here may be.
+                $top = count($stack) - 1;
+
+                if ($top >= 0 && 'dict' === $stack[$top][0]) {
+                    if (null !== $stack[$top][1] || 2 !== ($stack[$top][4] ?? 0)) {
+                        return false;
+                    }
+
+                    $stack[$top][2][$stack[$top][3]] = ['ref'];
+                    $stack[$top][4] = 0;
+                }
+
+                $at = $next;
+                continue;
+            } elseif ([] !== $stack) {
+                // Any other word -- a brace, a keyword no value is spelt with,
+                // something unknown -- inside a dictionary or an array is not
+                // something this reading can follow.
+                return false;
+            }
+
+            if ($has && [] !== $stack) {
+                $top = count($stack) - 1;
+
+                if ('dict' === $stack[$top][0]) {
+                    if (null !== $stack[$top][1]) {
+                        $stack[$top][2][$stack[$top][1]] = $value;
+                        $stack[$top][3] = $stack[$top][1];
+                        $stack[$top][1] = null;
+                        // A number may be the start of "12 0 R".
+                        $stack[$top][4] = 'number' === $value[0] ? 1 : 0;
+                    } elseif ('number' === $value[0] && 1 === ($stack[$top][4] ?? 0)) {
+                        // The "0" of "12 0 R".
+                        $stack[$top][4] = 2;
+                    } else {
+                        // A value where a key belongs: the keys after it
+                        // would be read one place out.
+                        return false;
+                    }
+                } else {
+                    $stack[$top][1][] = $value;
+                }
+            }
+
+            $at = $next;
+        }
+
+        return [] === $stack;
+    }
+
+    /**
+     * Where a stream's data ends, and where reading goes on after it
+     *
+     * By its /Length when that lands on "endstream", as a reader takes it;
+     * otherwise at the first "endstream" after it, as one repairing the file
+     * would.
+     *
+     * @param array<string, array<int, mixed>> $dictionary The stream's dictionary.
+     * @param string|null                      $data       Set to the stream's data.
+     * @return int|null The offset after "endstream", or null when there is none.
+     */
+    private static function streamEnd(string $bytes, int $at, array $dictionary, ?string &$data = null): ?int
+    {
+        // The end of line after "stream": CRLF or LF, a lone CR at worst.
+        if ("\r\n" === substr($bytes, $at, 2)) {
+            $at += 2;
+        } elseif (isset($bytes[$at]) && ("\n" === $bytes[$at] || "\r" === $bytes[$at])) {
+            ++$at;
+        }
+
+        $length = $dictionary['Length'] ?? null;
+
+        if (is_array($length) && 'number' === $length[0] && 1 === preg_match('~^\d+$~', $length[1])) {
+            $end = $at + (int) $length[1];
+
+            if ($end <= strlen($bytes) && 1 === preg_match('~\G[' . self::PDF_WHITESPACE . ']*endstream~', $bytes, $close, 0, $end)) {
+                $data = substr($bytes, $at, $end - $at);
+
+                return $end + strlen($close[0]);
+            }
+        }
+
+        $end = strpos($bytes, 'endstream', $at);
+
+        if (false === $end) {
+            return null;
+        }
+
+        $data = substr($bytes, $at, $end - $at);
+
+        return $end + 9;
+    }
+
+    /**
+     * Keep a stream objectStreams() has to open, if it is one
+     *
+     * @param array<string, array<int, mixed>> $dictionary The stream's dictionary.
+     * @param array<string, mixed>             $state      As readTokens()'s.
+     * @return bool False where the stream cannot be opened here.
+     */
+    private static function takeStream(array $dictionary, string $data, array &$state): bool
+    {
+        $type = $dictionary['Type'] ?? null;
+
+        if (!isset($dictionary['First'])) {
+            // An object stream that cannot be read by its /First is not read
+            // here either; any other stream is not one.
+            return ['name', 'ObjStm'] !== $type;
+        }
+
+        if (count($state['streams']) >= self::PAGE_TREE_MAX_NODES || isset($dictionary['DecodeParms'])) {
+            return false;
+        }
+
+        $filter = $dictionary['Filter'] ?? null;
+
+        // Not filtered: in the file as it is, and read on as part of it.
+        if (null === $filter) {
+            return self::readTokens($data, true, $state);
+        }
+
+        if (['name', 'FlateDecode'] === $filter || ['array', [['name', 'FlateDecode']]] === $filter) {
+            $state['streams'][] = $data;
+
+            return true;
+        }
+
+        return false;
     }
 
     /**
@@ -1847,6 +2180,11 @@ final class ImagickEngine implements EngineInterface
      * read without. Otherwise by memory and disk (ImageMagick 6), which
      * refuse the pixel cache for it. A stricter limit the site set stays in
      * force. Put back by restoreLimits(), in a finally and at shutdown.
+     *
+     * The limits are the process's, and so is what is kept to put them
+     * back: one request at a time, as PHP-FPM, mod_php's prefork and the
+     * CLI run. Under a threaded server two reads at once would lower and
+     * restore each other's -- as GS_OPTIONS would (readWithGhostscriptOptions()).
      */
     private static function lowerLimits(int $side, float $pixels): void
     {

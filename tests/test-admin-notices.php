@@ -109,7 +109,17 @@ $_GET = ['rapls_pic_error' => '1'];
 $plain = $private('showRegenerateNotices');
 $_GET = ['rapls_pic_error' => FailureCode::PDF_BLOCKED_BY_POLICY];
 $server = $private('showRegenerateNotices');
+// Review of 1.4.35: an array in the address is no reason, and no warning.
+$_GET = ['rapls_pic_error' => ['x']];
+set_error_handler(static function (int $no, string $message): bool { throw new \ErrorException($message, 0, $no); });
+try {
+    $arrayed = $private('showRegenerateNotices');
+} catch (\Throwable $e) {
+    $arrayed = get_class($e) . ': ' . $e->getMessage();
+}
+restore_error_handler();
 $_GET = [];
+check('an array for the code: the plain notice, no warning', [false !== strpos($arrayed, 'Failed to generate PDF thumbnail.'), false !== strpos($arrayed, 'cannot make PDF thumbnails')], [true, false]);
 check('the regeneration notice for code 1 does not blame the server; for policy it does', [
     false !== strpos($plain, 'Failed to generate PDF thumbnail.'),
     false !== strpos($plain, 'cannot make PDF thumbnails'),

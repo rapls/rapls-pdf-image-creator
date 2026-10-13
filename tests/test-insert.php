@@ -25,7 +25,7 @@ namespace {
 
     function __($s, $d = null) { return $s; }
     function absint($v) { return abs((int) $v); }
-    function apply_filters($tag, $value, ...$args) { return $value; }
+    function apply_filters($tag, $value, ...$args) { return isset($GLOBALS['filtered'][$tag]) ? $GLOBALS['filtered'][$tag]($value, ...$args) : $value; }
     function get_option($key, $default = false) { return $GLOBALS['options'][$key] ?? $default; }
     function get_post($id) { return $GLOBALS['posts'][(int) $id] ?? null; }
     function get_post_meta($id, $key, $single = false) { return $GLOBALS['meta'][(int) $id][$key] ?? ''; }
@@ -111,6 +111,19 @@ namespace {
     check('[rapls_pdf_thumbnail class=""] too', $shortcode('rapls_pdf_thumbnail', ['id' => 7, 'class' => '  ']), '<img src="https://example.test/70.jpg" class="pic-thumbnail" alt="Doc">');
     check('[rapls_pdf_clickable_thumbnail] too', false !== strpos($shortcode('rapls_pdf_clickable_thumbnail', ['id' => 7]), 'class="pic-thumbnail"'), true);
     check('a class given replaces it', $shortcode('rapls_pdf_thumbnail', ['id' => 7, 'class' => 'a b']), '<img src="https://example.test/70.jpg" class="a b" alt="Doc">');
+
+    // A size that a shortcode_atts_* filter hands back as a number (review
+    // of 1.4.35): two of the four passed it on uncast, a TypeError in this
+    // strict file, on the front end.
+    $numbered = [];
+    foreach (['rapls_pdf_thumbnail', 'rapls_pdf_thumbnail_url', 'rapls_pdf_clickable_thumbnail', 'rapls_pdf_download_link'] as $tag) {
+        try {
+            $numbered[$tag] = is_string($shortcode($tag, ['id' => 7, 'size' => 300]));
+        } catch (\Throwable $e) {
+            $numbered[$tag] = get_class($e);
+        }
+    }
+    check('a size given as a number: no TypeError in any shortcode', $numbered, array_fill_keys(array_keys($numbered), true));
 
     echo "\n--- What a contributor writes is escaped ---\n";
     $clickable = $shortcode('rapls_pdf_clickable_thumbnail', ['id' => 7, 'target' => 'x" onmouseover="y']);
@@ -238,7 +251,17 @@ namespace {
     $hooked = new Inserter($generator, new Settings());
     $hooked->init();
     check('init() hooks it to wp_enqueue_media', in_array([$hooked, 'enqueueInsertLink'], $GLOBALS['actions']['wp_enqueue_media'] ?? [], true), true);
-    check('insert-link.js after the media window and editor, given the settings', [$GLOBALS['enqueued']['pic-insert-link'] ?? null, $GLOBALS['localized']['pic-insert-link'] ?? null], [['insert-link.js', ['media-views', 'media-editor']], ['raplsPicInsertLink', ['link' => 'attachment', 'size' => 'medium']]]);
+    check('insert-link.js after the media window and editor, given the settings', [$GLOBALS['enqueued']['pic-insert-link'] ?? null, $GLOBALS['localized']['pic-insert-link'] ?? null], [['insert-link.js', ['media-views', 'media-editor']], ['raplsPicInsertLink', ['link' => 'attachment', 'size' => 'medium', 'sizes' => ['thumbnail', 'medium', 'large', 'full']]]]);
+    // The sizes the window lists, as image_size_names_choose says (review of
+    // 1.4.35), so the script can tell a setting it cannot show there.
+    $GLOBALS['filtered']['image_size_names_choose'] = static function ($sizes) { return $sizes + ['medium_large' => 'Medium Large']; };
+    (new Inserter($generator, new Settings()))->enqueueInsertLink();
+    $withTheme = $GLOBALS['localized']['pic-insert-link'][1]['sizes'] ?? null;
+    $GLOBALS['filtered']['image_size_names_choose'] = static function () { return 'not a list'; };
+    (new Inserter($generator, new Settings()))->enqueueInsertLink();
+    $broken = $GLOBALS['localized']['pic-insert-link'][1]['sizes'] ?? null;
+    unset($GLOBALS['filtered']['image_size_names_choose']);
+    check('  ...with the sizes the window lists, as filtered; none for a broken filter', [$withTheme, $broken], [['thumbnail', 'medium', 'large', 'full', 'medium_large'], []]);
 
     echo "\n$pass passed, $fail failed\n";
     exit($fail ? 1 : 0);

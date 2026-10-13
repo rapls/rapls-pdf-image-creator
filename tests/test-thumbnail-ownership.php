@@ -50,7 +50,23 @@ namespace {
         public $last_error = '';
         public $fail = false;
         public function prepare($sql, ...$args) { return [$sql, $args]; }
+        public $posts = 'wp_posts';
+        public $contentFails = false;
+        public function esc_like($text) { return addcslashes($text, '_%\\'); }
         public function get_var($q) {
+            // The content lookup (review of 1.4.35): a post whose content
+            // holds any of the LIKE patterns, as MySQL would, ignoring case.
+            if (false !== strpos($q[0], 'post_content')) {
+                $this->last_error = $this->contentFails ? 'simulated failure' : '';
+                if ($this->contentFails) { return null; }
+                foreach ($GLOBALS['content'] ?? [] as $id => $html) {
+                    foreach ($q[1] as $like) {
+                        $needle = stripslashes(substr($like, 1, -1));
+                        if (false !== stripos($html, $needle)) { return (string) $id; }
+                    }
+                }
+                return null;
+            }
             $this->last_error = $this->fail ? 'simulated failure' : '';
             if ($this->fail) { return null; }
             // As MySQL would: the PDF itself is left out only by the clause
@@ -143,6 +159,83 @@ namespace {
     $GLOBALS['meta'][80]['_rapls_pic_thumbnail_id'] = 82;
     check('no database object: kept', [$generator->deleteThumbnail(80), $GLOBALS['deleted']], [false, []]);
     $GLOBALS['wpdb'] = $saved;
+
+    // Review of 1.4.35: asking is read-only. A key naming an image that is
+    // gone is not deleted from a page view.
+    $GLOBALS['meta'][90]['_rapls_pic_thumbnail_id'] = 91;   // 91 does not exist
+    check('a thumbnail that is gone: none, and the key is left for the next generation', [$generator->getThumbnailId(90), $GLOBALS['meta'][90]['_rapls_pic_thumbnail_id'] ?? null], [null, 91]);
+    unset($GLOBALS['meta'][90]);
+
+    // Shown in a post's content (review of 1.4.35): an image block or the
+    // classic editor's insert holds the thumbnail's own address, and a
+    // forced regeneration or deleting the PDF deleted the file under it.
+    echo "\n--- A thumbnail a post's content shows ---\n";
+    $GLOBALS['wpdb']->fail = false;
+    $shown = static function (int $image, int $pdf, string $file) use ($own): void {
+        $own($image, $pdf);
+        $GLOBALS['meta'][$image]['_wp_attached_file'] = $file;
+        $GLOBALS['meta'][$pdf]['_rapls_pic_thumbnail_id'] = $image;
+    };
+
+    $GLOBALS['deleted'] = [];
+    $shown(102, 100, '2026/10/report-pdf-thumbnail.jpg');
+    $GLOBALS['content'] = [700 => '<!-- wp:image --><figure><img src="https://example.test/wp-content/uploads/2026/10/Report-PDF-Thumbnail-300x212.jpg" alt=""/></figure>'];
+    check('a post shows it in another size: kept', [$generator->deleteThumbnail(100), $GLOBALS['deleted'], isset($GLOBALS['posts'][102])], [false, [], true]);
+    check('  ...and made an ordinary image, which this PDF lets go of',
+        [$GLOBALS['meta'][102]['_rapls_pic_is_thumbnail'] ?? '', $GLOBALS['meta'][102]['_rapls_pic_source_pdf'] ?? '', $GLOBALS['meta'][100]['_rapls_pic_thumbnail_id'] ?? ''],
+        ['', '', '']);
+
+    $GLOBALS['deleted'] = [];
+    $shown(112, 110, '2026/10/a.jpg');
+    $GLOBALS['content'] = [701 => '<img class="wp-image-112" src="https://cdn.example.test/x.jpg">'];
+    check('a "wp-image-" class names it: kept', [$generator->deleteThumbnail(110), $GLOBALS['deleted']], [false, []]);
+
+    $GLOBALS['deleted'] = [];
+    $shown(122, 120, '2026/10/b.jpg');
+    $GLOBALS['content'] = [702 => '<img class="wp-image-1220" src="https://cdn.example.test/y.jpg"><img class="wp-image-12">'];
+    check('  ...another image\'s class that starts the same: deleted', [$generator->deleteThumbnail(120), $GLOBALS['deleted']], [true, [122]]);
+
+    $GLOBALS['deleted'] = [];
+    $shown(132, 130, '2026/10/資料-pdf-thumbnail.png');
+    $GLOBALS['content'] = [703 => '<img src="/wp-content/uploads/2026/10/' . rawurlencode('資料-pdf-thumbnail') . '-1024x724.png">'];
+    check('its name percent-encoded in the post: kept', [$generator->deleteThumbnail(130), $GLOBALS['deleted']], [false, []]);
+
+    $GLOBALS['deleted'] = [];
+    $shown(142, 140, '2026/10/c-pdf-thumbnail-scaled.webp');
+    $GLOBALS['content'] = [704 => '<img src="/wp-content/uploads/2026/10/c-pdf-thumbnail.webp">'];
+    check('"-scaled" on the file, not in the post: kept', [$generator->deleteThumbnail(140), $GLOBALS['deleted']], [false, []]);
+
+    $GLOBALS['deleted'] = [];
+    $shown(152, 150, '2026/10/d-pdf-thumbnail.jpg');
+    $GLOBALS['content'] = [705 => '<p>Nothing of this one.</p><img src="/e-pdf-thumbnail.jpg">'];
+    check('a post that shows something else: deleted', [$generator->deleteThumbnail(150), $GLOBALS['deleted']], [true, [152]]);
+
+    $GLOBALS['deleted'] = [];
+    $shown(162, 160, '2026/10/f-pdf-thumbnail.jpg');
+    $GLOBALS['content'] = [];
+    $GLOBALS['wpdb']->contentFails = true;
+    check('the content lookup fails: kept, tagged, and still linked',
+        [$generator->deleteThumbnail(160), $GLOBALS['deleted'], $GLOBALS['meta'][162]['_rapls_pic_is_thumbnail'] ?? '', $GLOBALS['meta'][160]['_rapls_pic_thumbnail_id'] ?? ''],
+        [false, [], '1', 162]);
+    $GLOBALS['wpdb']->contentFails = false;
+
+    // The meta lookup still comes first: a translation sharing it keeps the
+    // tags, whatever the content says.
+    $GLOBALS['deleted'] = [];
+    $shown(172, 170, '2026/10/g-pdf-thumbnail.jpg');
+    $GLOBALS['meta'][171]['_rapls_pic_thumbnail_id'] = 172;
+    $GLOBALS['content'] = [706 => '<img src="/g-pdf-thumbnail.jpg">'];
+    check('named by a translation and shown: kept with its tags', [$generator->deleteThumbnail(170), $GLOBALS['deleted'], $GLOBALS['meta'][172]['_rapls_pic_is_thumbnail'] ?? ''], [false, [], '1']);
+
+    // No posts table to ask: kept.
+    $GLOBALS['deleted'] = [];
+    $shown(182, 180, '2026/10/h-pdf-thumbnail.jpg');
+    $GLOBALS['content'] = [];
+    $postsTable = $GLOBALS['wpdb']->posts;
+    $GLOBALS['wpdb']->posts = null;
+    check('no posts table: kept and still linked', [$generator->deleteThumbnail(180), $GLOBALS['deleted'], $GLOBALS['meta'][180]['_rapls_pic_thumbnail_id'] ?? ''], [false, [], 182]);
+    $GLOBALS['wpdb']->posts = $postsTable;
+    $GLOBALS['content'] = [];
 
     // Uninstalling keeps what something else uses too, as deleteThumbnail()
     // does. test-uninstall.php runs uninstall.php for that, query failures

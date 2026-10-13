@@ -67,7 +67,14 @@ class Imagick
     public static $quantum = 16;
     public static function getConfigureOptions($pattern = '*') { return ['FEATURES' => self::$features]; }
     public static function getQuantumDepth() { return ['quantumDepthLong' => self::$quantum, 'quantumDepthString' => 'Q' . self::$quantum]; }
-    public static function getResourceLimit($type) { return self::$resourceLimits[$type] ?? self::UNLIMITED; }
+    /** Whether getResourceLimit() throws, as a build that will not say might. */
+    public static $limitThrows = false;
+    public static function getResourceLimit($type) {
+        if (self::$limitThrows) {
+            throw new ImagickException('unable to get resource limit');
+        }
+        return self::$resourceLimits[$type] ?? self::UNLIMITED;
+    }
     public static function setResourceLimit($type, $limit) {
         // As on PHP 7.4, where the parameter is an int: a float past
         // PHP_INT_MAX is refused, and the limit stays where it was.
@@ -910,6 +917,169 @@ check('  ...and one numbered 12', ImagickEngine::largestPageBox($boxFile($a4 . "
 // Inflated within BOX_MAX_INFLATED in all.
 $bomb = gzcompress(str_repeat(' ', 17 * 1048576));
 check('  ...an object stream that inflates past 16 MB: no answer', ImagickEngine::largestPageBox($boxFile($a4 . "\n" . $stream('/Type /ObjStm /N 1 /First 2 /Filter /FlateDecode', $bomb))), null);
+
+echo "\n=== Review after 1.4.35: the file read token by token for its object streams ===\n";
+// A 14,400-point page in an object stream whose dictionary was searched back
+// for "obj" from its /First: a key ending in "obj", a value past 4 KB, or
+// "obj" in a string cut the dictionary short, its /Filter went unseen, the
+// stream was taken as plain -- and with a small box anywhere else, the page
+// was drawn at 150 dpi in 97 s and 3.2 GB.
+$hidden = gzcompress('3 0 << /Type /Page /MediaBox [0 0 14400 14400] >>');
+$decoy = "% /MediaBox [0 0 612 792]\n";
+$objStm = static function (string $dictionary) use ($stream, $hidden): string {
+    return $stream($dictionary . ' /Length ' . strlen($hidden), $hidden);
+};
+$stream14400 = [207360000.0, 14400.0];
+check('  ...a key ending in "obj" before /First: the stream is still opened', ImagickEngine::largestPageBox($boxFile($decoy . str_replace(' /Length ' . strlen($hidden) . ' /Length', ' /Length', $objStm('/Type /ObjStm /Filter /FlateDecode /Nobj 1 /N 1 /First 4')))), $stream14400);
+check('  ...a value of more than 4 KB before /First: still opened', ImagickEngine::largestPageBox($boxFile($decoy . $objStm('/Type /ObjStm /Filter /FlateDecode /Pad <' . str_repeat('00', 2100) . '> /N 1 /First 4'))), $stream14400);
+check('  ..."obj" in a string before /First: still opened', ImagickEngine::largestPageBox($boxFile($decoy . $objStm('/Type /ObjStm /Filter /FlateDecode /Note (1 0 obj) /N 1 /First 4'))), $stream14400);
+check('  ...the numbers of a box apart by NUL, which PDF counts as white space', ImagickEngine::largestPageBox($boxFile("<< /MediaBox [0\x000\x003000\x003000] >>")), [9000000.0, 3000.0]);
+check('  ...a box that starts left of 0 is as wide as it reaches', ImagickEngine::largestPageBox($boxFile('<< /MediaBox [-300000 0 10 10] >>')), [3000100.0, 300010.0]);
+check('  ...a string with an escaped parenthesis is stepped over whole', ImagickEngine::largestPageBox($boxFile('<< /MediaBox [0 0 3000 3000] /T (a\) b (c) d) >>')), [9000000.0, 3000.0]);
+// Review of the token reading: a value it did not take as one -- true,
+// false, null -- left the dictionary waiting for a key, and every key after
+// it was read as a value, /Type and /First among them: the stream was not
+// taken for an object stream, and a 100,000-point page in it was drawn at
+// 150 dpi.
+$keywords = [];
+foreach (['true', 'false', 'null'] as $word) {
+    $keywords[] = ImagickEngine::largestPageBox($boxFile($decoy . $objStm('/Foo ' . $word . ' /Type /ObjStm /First 4 /N 1 /Filter /FlateDecode')));
+}
+check('  ...true, false and null are values: the keys after them are still keys', $keywords, [$stream14400, $stream14400, $stream14400]);
+check('  ...a brace, an unknown word, a value where a key belongs, a key with no value, a broken reference: no answer', [
+    ImagickEngine::largestPageBox($boxFile($decoy . $objStm('/Foo { /Type /ObjStm /First 4 /N 1 /Filter /FlateDecode'))),
+    ImagickEngine::largestPageBox($boxFile($decoy . $objStm('/Foo } /Type /ObjStm /First 4 /N 1 /Filter /FlateDecode'))),
+    ImagickEngine::largestPageBox($boxFile($decoy . $objStm('/Foo bar /Type /ObjStm /First 4 /N 1 /Filter /FlateDecode'))),
+    ImagickEngine::largestPageBox($boxFile($decoy . $objStm('/Foo 1 2 /Type /ObjStm /First 4 /N 1 /Filter /FlateDecode'))),
+    ImagickEngine::largestPageBox($boxFile($decoy . $objStm('/Foo (x) (y) /Type /ObjStm /First 4 /N 1 /Filter /FlateDecode'))),
+    ImagickEngine::largestPageBox($boxFile($decoy . $objStm('/Foo 1 R /Type /ObjStm /First 4 /N 1 /Filter /FlateDecode'))),
+    ImagickEngine::largestPageBox($boxFile($a4 . "\n<< /Foo >>")),
+    ImagickEngine::largestPageBox($boxFile($a4 . "\n<< /A [1 bar] >>")),
+    ImagickEngine::largestPageBox($boxFile($a4 . "\n<< /Foo 1 2 >>")),
+], [null, null, null, null, null, null, null, null, null]);
+check('  ...a /First where a value belongs is no object stream\'s, and leaves the count short: no answer', ImagickEngine::largestPageBox($boxFile($decoy . $objStm('/Foo /First /Type /ObjStm /N 1 /Filter /FlateDecode'))), null);
+check('  ...every kind of value is read past: numbers, reals, strings, hex strings, names, arrays, dictionaries, references, keywords', ImagickEngine::largestPageBox($boxFile($decoy . $objStm('/A 1 /B -2.5 /C (s) /D <00ff> /E /n /F [1 (x) /y [2] << /z 3 >> 4 0 R true] /G << /H null >> /I 12 0 R /J false /Type /ObjStm /First 4 /N 1 /Filter /FlateDecode'))), $stream14400);
+// A /First the token reading did not meet as a key: in a comment, a string or
+// a stream's data, where a repaired file could still find an object stream.
+check('  .../First in a comment, a string or a stream\'s data: no answer', [
+    ImagickEngine::largestPageBox($boxFile($a4 . "\n% /First 4\n")),
+    ImagickEngine::largestPageBox($boxFile($a4 . "\n<< /T (see /First) >>")),
+    ImagickEngine::largestPageBox($boxFile($a4 . "\n" . $stream('', 'q /First Q'))),
+], [null, null, null]);
+check('  ...an outline\'s /First, in a dictionary, is read past', ImagickEngine::largestPageBox($boxFile($a4 . "\n3 0 obj << /Type /Outlines /First 4 0 R /Count 1 >> endobj\n")), [612.0 * 842.0, 842.0]);
+check('  ...one in an object stream left unfiltered, read on as part of the file', ImagickEngine::largestPageBox($boxFile($a4 . "\n" . $stream('/Type /ObjStm /N 2 /First 8', '1 0 2 40 << /MediaBox [0 0 3000 3000] >> << /Type /Outlines /First 4 0 R >>'))), [9000000.0, 3000.0]);
+check('  ...a file the token reading cannot follow: no answer', [
+    ImagickEngine::largestPageBox($boxFile($a4 . "\n) stray")),
+    ImagickEngine::largestPageBox($boxFile($a4 . "\n<< /T (open")),
+    ImagickEngine::largestPageBox($boxFile($a4 . "\n<< /T <zz> >>")),
+    ImagickEngine::largestPageBox($boxFile($a4 . "\n<< /A [1 2 >>")),
+    ImagickEngine::largestPageBox($boxFile($a4 . "\n<< /A 1")),
+    ImagickEngine::largestPageBox($boxFile($a4 . "\nendobj\nstream\nq Q\nendstream")),
+    ImagickEngine::largestPageBox($boxFile($a4 . "\n<< /Length 3 >>\nstream\nq Q")),
+], [null, null, null, null, null, null, null]);
+check('  ...a stream inside an object stream, or an unfiltered one\'s /Filter given by reference: no answer', [
+    ImagickEngine::largestPageBox($boxFile($a4 . "\n" . $stream('/Type /ObjStm /N 1 /First 4', "1 0 << /Length 3 >>\nstream\nq Q\nendstream"))),
+    ImagickEngine::largestPageBox($boxFile($a4 . "\n" . $stream('/Type /ObjStm /N 1 /First 4 /Filter 9 0 R', '3 0 << /MediaBox [0 0 3000 3000] >>'))),
+    ImagickEngine::largestPageBox($boxFile($a4 . "\n" . $stream('/Type /ObjStm /N 1 /Fir#73t 4 /Filter /FlateDecode', $hidden))),
+], [null, null, null]);
+check('  ...an object stream with no /First, or a /Filter given by reference: no answer', [
+    ImagickEngine::largestPageBox($boxFile($a4 . "\n" . $stream('/Type /ObjStm /N 1 /Filter /FlateDecode', $hidden))),
+    ImagickEngine::largestPageBox($boxFile($a4 . "\n" . $stream('/Type /ObjStm /N 1 /First 4 /Filter 9 0 R', $hidden))),
+], [null, null]);
+// The data's end: by a /Length that lands on "endstream", otherwise by the
+// first "endstream" after it.
+check('  ...a /Length past the end of the file: read to its endstream', ImagickEngine::largestPageBox($boxFile($a4 . "\n7 0 obj << /Type /ObjStm /N 1 /First 4 /Filter /FlateDecode /Length 99999999 >>\nstream\n" . $hidden . "\nendstream\nendobj\n")), $stream14400);
+check('  ...a /Length that lands short of endstream: read to the endstream', ImagickEngine::largestPageBox($boxFile($a4 . "\n7 0 obj << /Type /ObjStm /N 1 /First 4 /Filter /FlateDecode /Length 3 >>\nstream\n" . $hidden . "\nendstream\nendobj\n")), $stream14400);
+// The file's size and the memory to read it in.
+$sparse = RAPLS_PIC_TEST_TMP . '/box-sparse.pdf';
+$handle = fopen($sparse, 'wb');
+fwrite($handle, "%PDF-1.4\n<< /MediaBox [0 0 595 842] >>\n");
+ftruncate($handle, 33554433);
+fclose($handle);
+$pastSize = ImagickEngine::largestPageBox($sparse);
+@unlink($sparse);
+$small = $boxFile($a4);
+$limitWas = ini_get('memory_limit');
+ini_set('memory_limit', (string) (memory_get_usage() + 20 * 1048576));
+$tight = ImagickEngine::largestPageBox($small);
+ini_set('memory_limit', $limitWas);
+check('  ...a file past 32 MB, or without the memory to read it and inflate 16 MB: no answer', [$pastSize, $tight, ImagickEngine::largestPageBox($small)], [null, null, [612.0 * 842.0, 842.0]]);
+$many = RAPLS_PIC_TEST_TMP . '/box-tokens.pdf';
+file_put_contents($many, "%PDF-1.4\n<< /MediaBox [0 0 595 842] >>\n" . str_repeat('1 ', 1000001));
+$tooMany = ImagickEngine::largestPageBox($many);
+file_put_contents($many, "%PDF-1.4\n<< /MediaBox [0 0 595 842] >>\n" . str_repeat('1 ', 990000));
+$enough = ImagickEngine::largestPageBox($many);
+@unlink($many);
+check('  ...past two million tokens: no answer; under, read', [$tooMany, $enough], [null, [612.0 * 842.0, 842.0]]);
+
+echo "\n=== Review after 1.4.35: the limits' edges ===\n";
+// A filter answering 1 pixel is a limit of 1 pixel; one answering less, or
+// nothing usable, is the default.
+[$r] = run(['format' => 'jpeg'], Imagick::COLORSPACE_CMYK, true, function () {
+    add_filter('rapls_pdf_image_creator_max_render_pixels', function () { return 1; });
+});
+$onePixel = $r->getCode();
+[$r, $log] = run(['format' => 'jpeg'], Imagick::COLORSPACE_CMYK, true, function () {
+    add_filter('rapls_pdf_image_creator_max_render_pixels', function () { return 0.5; });
+});
+check('a pixel limit of 1 is kept; one under 1 is the default', [$onePixel, $resolutionRead($log)], ['resource_limit', 'setResolution(150)']);
+// A width limit of 1 is no limit a page could be drawn within: left out, as
+// 0 (none) is.
+Imagick::$resourceLimits = [10 => 1];
+[$r, $log] = run(['format' => 'jpeg']);
+Imagick::$resourceLimits = [];
+check('  ...a side limit under 2 is not taken for the server\'s', [$r->isSuccess(), $resolutionRead($log)], [true, 'setResolution(150)']);
+// A build that will not say its limits: none known, and the page drawn.
+Imagick::$limitThrows = true;
+[$r, $log] = run(['format' => 'jpeg']);
+Imagick::$limitThrows = false;
+check('  ...a build that throws for its limits draws the page as asked', [$r->isSuccess(), $resolutionRead($log)], [true, 'setResolution(150)']);
+// A quantum depth the build does not give counts as Q16's.
+boxes([2384, 3370]);
+$page([2384, 3370]);
+Imagick::$resourceLimits = [6 => 67108864, 2 => 67108864];
+[, $log] = run(['format' => 'jpeg', 'max_width' => 4096, 'max_height' => 4096]);
+$q16 = $resolutionRead($log);
+Imagick::$quantum = 4;
+[, $log] = run(['format' => 'jpeg', 'max_width' => 4096, 'max_height' => 4096]);
+Imagick::$quantum = 16;
+Imagick::$resourceLimits = [];
+$page(null);
+boxes([595, 842]);
+check('  ...a quantum depth under 8 is counted as 16', $resolutionRead($log), $q16);
+// An Error after the page was read lets the page go, as an exception does.
+[$r, $log] = run(['format' => 'jpeg'], Imagick::COLORSPACE_CMYK, true, function () {
+    add_filter('rapls_pdf_image_creator_before_resize', function () { throw new \Error('a listener broke'); });
+});
+check('  ...an Error after the read: the instance is cleared', [$r->isSuccess(), end($log)], [false, 'clear']);
+// An ImageMagick 6 build with no width, height or map limit: the read is held
+// down by memory and disk, and the limit it lacks is passed over.
+$im6 = RAPLS_PIC_TEST_TMP . '/im6-limits.php';
+file_put_contents($im6, '<?php
+class Imagick {
+    const RESOURCETYPE_MEMORY = 6;
+    const RESOURCETYPE_DISK = 2;
+    public static $set = [];
+    public static function getResourceLimit($t) { return 0; }
+    public static function setResourceLimit($t, $v) { self::$set[] = "$t"; return true; }
+    public static function getQuantumDepth() { return ["quantumDepthLong" => 16]; }
+    public static function getConfigureOptions($p = "*") { return []; }
+}
+spl_autoload_register(function ($c) {
+    $p = "Rapls\\\\PDFImageCreator\\\\";
+    if (0 === strpos($c, $p)) { require ' . var_export(RAPLS_PIC_PLUGIN_DIR, true) . ' . "includes/" . str_replace("\\\\", "/", substr($c, strlen($p))) . ".php"; }
+});
+$m = new ReflectionMethod("Rapls\\\\PDFImageCreator\\\\Engine\\\\ImagickEngine", "lowerLimits");
+if (PHP_VERSION_ID < 80100) {
+    $m->setAccessible(true);
+}
+$m->invoke(null, 1000, 1000000.0);
+echo implode(",", Imagick::$set);
+');
+$im6Out = [];
+exec(escapeshellarg(PHP_BINARY) . ' -n ' . escapeshellarg($im6) . ' 2>&1', $im6Out);
+@unlink($im6);
+check('  ...ImageMagick 6 with no map limit: memory and disk lowered, nothing thrown', implode("\n", $im6Out), '6,2');
 // Review after 1.4.34: measured on Ghostscript 10.04, ImageMagick 7.1.1.
 // A 100,000-point page inside an object stream was pinged as Letter and
 // drawn at 150 dpi for over two minutes; it is now measured.
@@ -1299,8 +1469,10 @@ Imagick::$pageSize = null;
 @unlink($pdf);
 $pdf = $pdfWas;
 check('  ...and one whose header is not at the start is measured before it is drawn', array_values(preg_grep('/^setResolution/', $log)), ['setResolution(2)', 'setResolution(150)']);
-// A page that answers no size, either way round, is drawn as asked.
-check('a size of 0 either way is drawn as asked', [$priv('fittedResolution', 0.0, 100.0, 150.0, 1000.0), $priv('fittedResolution', 100.0, 0.0, 150.0, 1000.0)], [150.0, 150.0]);
+// A size of 0 is no size, and no reason to draw a page as asked with nothing
+// bounding it (review after 1.4.35; it was drawn as asked, and only the
+// sizes the callers pass, never 0, kept that harmless).
+check('a size of 0 either way is no resolution, not the one asked', [$priv('fittedResolution', 0.0, 100.0, 150.0, 1000.0), $priv('fittedResolution', 100.0, 0.0, 150.0, 1000.0), $priv('fittedResolution', -5.0, 100.0, 150.0, 1000.0)], [null, null, null]);
 // Exactly 2 dpi is drawn; less is not.
 check('  ...a page that fits at exactly 2 dpi is drawn at 2; one that fits at less, refused', [$priv('fittedResolution', 2592.0, 2592.0, 150.0, 5184.0), $priv('fittedResolution', 2592.0, 2592.0, 150.0, 5183.0)], [2.0, null]);
 // No pages counted is no answer, from ImageMagick or from the file.

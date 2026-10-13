@@ -19,7 +19,9 @@ namespace {
     $GLOBALS['srcs'] = [];
 
     function get_post_mime_type($id) { return $GLOBALS['mimes'][$id] ?? false; }
-    function get_post_meta($id, $key, $single = false) { return $GLOBALS['meta'][$id][$key] ?? ''; }
+    // As core answers: one value with $single, a list without (mutation
+    // testing of 1.4.35).
+    function get_post_meta($id, $key, $single = false) { $v = $GLOBALS['meta'][$id][$key] ?? null; return $single ? ($v ?? '') : (null === $v ? [] : [$v]); }
     function delete_post_meta($id, $key) { unset($GLOBALS['meta'][$id][$key]); return true; }
     function get_post($id) { return $GLOBALS['posts'][$id] ?? null; }
     function wp_get_attachment_image_src($id, $size = 'thumbnail', $icon = false) { $GLOBALS['src_sizes'][] = $size; return $GLOBALS['srcs'][$id] ?? false; }
@@ -312,6 +314,42 @@ namespace {
     ob_end_clean();
     unset($GLOBALS['wp_query']);
     check('  ...the list\'s PDFs and the images they name are read once, together', [$GLOBALS['primed_meta'], $GLOBALS['primed_posts']], [[[10, 20]], [[11]]]);
+    // Each of the two asks on its own (mutation testing of 1.4.35): a list
+    // whose row actions another plugin removed still has the column, and
+    // the other way round.
+    $primedBy = [];
+    foreach (['column' => static function ($view, $row) { $view->renderMediaColumn('rapls_pic_thumbnail', $row); }, 'actions' => static function ($view, $row) { $view->addRowActions(['edit' => 'Edit'], new WP_Post($row, 0, 'application/pdf')); }] as $by => $ask) {
+        $GLOBALS['primed_posts'] = [];
+        $GLOBALS['primed_meta'] = [];
+        $GLOBALS['wp_query'] = (object) ['posts' => [new WP_Post(10, 0, 'application/pdf'), new WP_Post(20, 0, 'application/pdf')]];
+        $view = new \Rapls\PDFImageCreator\MediaLibrary($generator, $settings);
+        ob_start();
+        $ask($view, 10);
+        $ask($view, 20);
+        ob_end_clean();
+        unset($GLOBALS['wp_query']);
+        $primedBy[$by] = [$GLOBALS['primed_meta'], $GLOBALS['primed_posts']];
+    }
+    check('  ...by the column alone, and by the row actions alone', $primedBy, ['column' => [[[10, 20]], [[11]]], 'actions' => [[[10, 20]], [[11]]]]);
+    $GLOBALS['primed_posts'] = [];
+    $GLOBALS['primed_meta'] = [];
+    set_error_handler(static function (int $no, string $message): bool { throw new \ErrorException($message, 0, $no); });
+    try {
+        ob_start();
+        (new \Rapls\PDFImageCreator\MediaLibrary($generator, $settings))->renderMediaColumn('rapls_pic_thumbnail', 10);
+        ob_end_clean();
+        $GLOBALS['wp_query'] = (object) ['posts' => 'not a list'];
+        ob_start();
+        (new \Rapls\PDFImageCreator\MediaLibrary($generator, $settings))->renderMediaColumn('rapls_pic_thumbnail', 10);
+        ob_end_clean();
+        $noQuery = [$GLOBALS['primed_meta'], $GLOBALS['primed_posts']];
+    } catch (\Throwable $e) {
+        ob_end_clean();
+        $noQuery = get_class($e) . ': ' . $e->getMessage();
+    }
+    restore_error_handler();
+    unset($GLOBALS['wp_query']);
+    check('  ...no main query, or one without a list: nothing read, no warning', $noQuery, [[], []]);
 
     // Review of 1.4.32: core hands these filters what its caller gave it --
     // '' from an empty post meta, null for $icon -- and a typed parameter made
@@ -457,6 +495,36 @@ namespace {
     }
     restore_error_handler();
     check('  ...JS data, columns and media queries that are not arrays: handed back', $handed, [null, ['id' => 40], null, 'x']);
+
+    // The rest of them (review of 1.4.35): the metadata filter that runs on
+    // every wp_get_attachment_metadata(), the REST filter after a listener
+    // that returned a WP_Error, the list's column and row actions, and the
+    // upload and delete actions, called with nothing or with ''.
+    $notAResponse = new \stdClass();
+    $pdfMeta = ['sizes' => ['full' => ['file' => 'x.jpg', 'width' => 10, 'height' => 20]]];
+    $GLOBALS['mimes'][978] = 'application/pdf';
+    $rest = [];
+    set_error_handler(static function (int $no, string $message): bool { throw new \ErrorException($message, 0, $no); });
+    foreach ([
+        'metadata, one argument' => [static function () use ($library, $pdfMeta) { return $library->ensurePdfMetadataHasImageKeys($pdfMeta); }, $pdfMeta],
+        "metadata, '' for the ID" => [static function () use ($library, $pdfMeta) { return $library->ensurePdfMetadataHasImageKeys($pdfMeta, ''); }, $pdfMeta],
+        'REST, a WP_Error from an earlier listener' => [static function () use ($library, $notAResponse) { return $library->filterRestAttachment($notAResponse, new WP_Post(978, 0, 'application/pdf'), new WP_REST_Request()); }, $notAResponse],
+        'REST, no post' => [static function () use ($library) { return $library->filterRestAttachment(new WP_REST_Response(['id' => 1]), null, null)->get_data(); }, ['id' => 1]],
+        'row actions, null' => [static function () use ($library) { return $library->addRowActions(null, new WP_Post(978, 0, 'application/pdf')); }, null],
+        'row actions, no post' => [static function () use ($library) { return $library->addRowActions(['edit' => 'Edit'], null); }, ['edit' => 'Edit']],
+        "column, '' for the ID" => [static function () use ($library) { ob_start(); $library->renderMediaColumn('rapls_pic_thumbnail', ''); return ob_get_clean(); }, ''],
+        'upload action, no argument' => [static function () use ($library) { $library->onAttachmentAdded(); return 'ok'; }, 'ok'],
+        "delete action, ''" => [static function () use ($library) { $library->onAttachmentDeleted(''); return 'ok'; }, 'ok'],
+        'pre_get_posts, not a query' => [static function () use ($library) { $library->filterMediaLibrary(null); return 'ok'; }, 'ok'],
+    ] as $label => [$call, $want]) {
+        try {
+            $rest[$label] = $call() === $want;
+        } catch (\Throwable $e) {
+            $rest[$label] = get_class($e);
+        }
+    }
+    restore_error_handler();
+    check('  ...metadata, REST, list and upload hooks given nothing or the wrong thing: no fatal error', $rest, array_fill_keys(array_keys($rest), true));
     unset($GLOBALS['options'][\Rapls\PDFImageCreator\Settings::OPTION_NAME]);
 
 

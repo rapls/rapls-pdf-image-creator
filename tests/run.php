@@ -40,7 +40,9 @@ $timeout = max(1, (int) (getenv('RAPLS_PIC_TEST_TIMEOUT') ?: 300));
 foreach ($suites as $suite) {
     echo str_repeat('=', 70) . "\n$suite\n" . str_repeat('=', 70) . "\n";
 
-    $command = [PHP_BINARY, '-d', 'error_reporting=E_ALL & ~E_DEPRECATED', __DIR__ . '/' . $suite];
+    // Every notice, deprecations included: leaving those out hid the
+    // plugin's own along with the tests' (review of 1.4.35).
+    $command = [PHP_BINARY, '-d', 'error_reporting=E_ALL', __DIR__ . '/' . $suite];
 
     if ('.js' === substr($suite, -3)) {
         $node = trim((string) @shell_exec('command -v node 2>/dev/null'));
@@ -80,8 +82,11 @@ foreach ($suites as $suite) {
         $read = array_values($open);
         $write = null;
         $except = null;
+        // A select that fails is waited out and the pipes read anyway: giving
+        // up on them left a suite that writes a lot blocked on a full pipe,
+        // and reported as timed out (review of 1.4.35).
         if (false === @stream_select($read, $write, $except, 1)) {
-            break;
+            usleep(10000);
         }
         foreach ($open as $n => $pipe) {
             $chunk = (string) fread($pipe, 65536);
@@ -121,7 +126,13 @@ foreach ($suites as $suite) {
         $pid = (int) (proc_get_status($process)['pid'] ?? 0);
         if ($pid > 0 && function_exists('posix_kill')) {
             $children = [];
-            foreach (preg_split('/\n/', (string) @shell_exec('ps -A -o pid= -o ppid= 2>/dev/null')) as $line) {
+            $listing = (string) @shell_exec('ps -A -o pid= -o ppid= 2>/dev/null');
+            // No ps, or one this process may not run (a sandbox): said, since
+            // whatever the suite started may still be running.
+            if ('' === trim($listing)) {
+                echo "\n(could not list the suite's child processes; anything it started may still be running)\n";
+            }
+            foreach (preg_split('/\n/', $listing) as $line) {
                 if (preg_match('/^\s*(\d+)\s+(\d+)\s*$/', $line, $m)) {
                     $children[(int) $m[2]][] = (int) $m[1];
                 }

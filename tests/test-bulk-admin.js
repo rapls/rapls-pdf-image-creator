@@ -137,6 +137,11 @@ ready();
 // Review of 1.4.32: the script itself takes the tabs that are not chosen out
 // of the Tab order (the markup leaves them in, for when it does not run).
 check('Before anything is pressed, only the chosen tab is in the Tab order', tabs.map((t) => t.attr('tabindex')), [undefined, '-1', '-1']);
+// Review of 1.4.35: the roles come from the script, so a page without it is
+// not announced as three tabs of which one is chosen while all three show.
+check('The script gives the tab pattern its roles, the chosen tab selected',
+    [$('.rapls-pic-tabs .nav-tab-wrapper').attr('role'), tabs.map((t) => [t.attr('role'), t.attr('aria-selected')]), $('.rapls-pic-tab-content').attr('role')],
+    ['tablist', [['tab', 'true'], ['tab', 'false'], ['tab', 'false']], 'tabpanel']);
 // The range slider's number follows it, as text.
 $('input[type="range"].rapls-pic-range')._handlers.input.call({ value: '<b>150</b>' });
 check('The range slider\'s number is written as text', $('output-of-range').text(), '<b>150</b>');

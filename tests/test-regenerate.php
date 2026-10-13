@@ -159,11 +159,24 @@ namespace {
     }
 
     // Nobody else uses anything here, as far as the reverse lookup can tell.
+    // No post's content shows anything either, unless a test says so.
+    $GLOBALS['content'] = [];
     $GLOBALS['wpdb'] = new class {
         public $postmeta = 'wp_postmeta';
+        public $posts = 'wp_posts';
         public $last_error = '';
         public function prepare($sql, ...$args) { return [$sql, $args]; }
-        public function get_var($q) { return null; }
+        public function esc_like($text) { return addcslashes($text, '_%\\'); }
+        public function get_var($q) {
+            if (false === strpos($q[0], 'post_content')) { return null; }
+            foreach ($GLOBALS['content'] as $id => $html) {
+                foreach ($q[1] as $like) {
+                    $needle = stripslashes(substr($like, 1, -1));
+                    if (false !== stripos($html, $needle)) { return (string) $id; }
+                }
+            }
+            return null;
+        }
     };
 
     final class StandInEngine implements \Rapls\PDFImageCreator\Engine\EngineInterface {
@@ -264,6 +277,24 @@ namespace {
     $GLOBALS['deleted'] = [];
     $new = $generator->generate(40, true);
     check('success: the PDF names the new one, the old one is deleted after', [is_int($new) && 41 !== $new, $GLOBALS['meta'][40]['_rapls_pic_thumbnail_id'] ?? null, $GLOBALS['deleted']], [true, $new, [41]]);
+
+    // A post shows the old one (review of 1.4.35): an image block given the
+    // PDF holds its address. Regenerating deleted the file under the post.
+    $pdf(45, 46);
+    $GLOBALS['meta'][46]['_wp_attached_file'] = '2026/10/doc-45-pdf-thumbnail.jpg';
+    $GLOBALS['content'] = [900 => '<img src="/wp-content/uploads/2026/10/doc-45-pdf-thumbnail-300x212.jpg" class="wp-image-46">'];
+    $GLOBALS['deleted'] = [];
+    $keptLog = sys_get_temp_dir() . '/rapls-pic-regen-log-' . bin2hex(random_bytes(4));
+    $keptLogWas = ini_set('error_log', $keptLog);
+    $new = $generator->generate(45, true);
+    ini_set('error_log', (string) $keptLogWas);
+    $keptLogged = is_file($keptLog) ? (string) file_get_contents($keptLog) : '';
+    @unlink($keptLog);
+    check('a post shows the old one: the PDF takes the new one, the old one stays',
+        [is_int($new) && 46 !== $new, $GLOBALS['meta'][45]['_rapls_pic_thumbnail_id'] ?? null, $GLOBALS['deleted'], isset($GLOBALS['posts'][46]), $GLOBALS['meta'][46]['_rapls_pic_is_thumbnail'] ?? ''],
+        [true, $new, [], true, '']);
+    check('  ...kept on purpose, so not logged as a delete that failed', false !== strpos($keptLogged, 'could not be deleted'), false);
+    $GLOBALS['content'] = [];
 
     echo "\n--- R55-02: a featured image this plugin did not make is left alone ---\n";
 
@@ -747,10 +778,11 @@ namespace {
     $GLOBALS['posts'][604] = (object) ['ID' => 604, 'post_type' => 'attachment'];
     $generator->generate(604, true);
     check('  ...a success clears the last failure; asking for a non-PDF records none', [$clearedOnSuccess, isset($GLOBALS['options'][$G::LAST_FAILURE_OPTION])], [false, false]);
-    // A thumbnail record naming an image that is gone is removed when read.
+    // A thumbnail record naming an image that is gone answers none, and is
+    // left for the next generation: reading it on a page view deleted it,
+    // a write from the front end (review of 1.4.35).
     $GLOBALS['meta'][605][$G::THUMBNAIL_META_KEY] = 99999;
-    $generator->getThumbnailId(605);
-    check('  ...a record naming a deleted image is removed', isset($GLOBALS['meta'][605][$G::THUMBNAIL_META_KEY]), false);
+    check('  ...a record naming a deleted image: none, and left as it is', [$generator->getThumbnailId(605), isset($GLOBALS['meta'][605][$G::THUMBNAIL_META_KEY])], [null, true]);
     // With no engine, "unavailable" is written once, not on every PDF of a run.
     $enginesProp = new ReflectionProperty($G, 'engines');
     if (PHP_VERSION_ID < 80100) { $enginesProp->setAccessible(true); }

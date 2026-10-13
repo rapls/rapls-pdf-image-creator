@@ -181,13 +181,14 @@ final class Generator
     {
         // First check our custom meta
         $thumbnailId = get_post_meta($pdfId, self::THUMBNAIL_META_KEY, true);
-        if ($thumbnailId) {
-            // Verify the thumbnail still exists
-            if (self::isAttachment($thumbnailId)) {
-                return (int) $thumbnailId;
-            }
-            // Clean up stale meta
-            delete_post_meta($pdfId, self::THUMBNAIL_META_KEY);
+        // Verify the thumbnail still exists. A key naming one that is gone is
+        // left as it is: this is asked on the front end -- shortcodes, image
+        // filters -- and deleting it there wrote to the database, and
+        // emptied the object cache's meta for the PDF, from a page view
+        // (review of 1.4.35). The next generation writes the key again, and
+        // uninstalling removes it.
+        if ($thumbnailId && self::isAttachment($thumbnailId)) {
+            return (int) $thumbnailId;
         }
 
         // Fall back to _thumbnail_id (WordPress standard)
@@ -757,13 +758,24 @@ final class Generator
     }
 
     /**
+     * Whether anything but this PDF still needs this image
+     *
+     * Named by something else (namedElsewhere()), or shown in some post's
+     * content (shownInContent()).
+     */
+    private function usedElsewhere(int $thumbnailId, int $pdfId): bool
+    {
+        return $this->namedElsewhere($thumbnailId, $pdfId) || false !== $this->shownInContent($thumbnailId);
+    }
+
+    /**
      * Whether anything but this PDF names this image as its thumbnail
      *
      * This plugin's own meta on another attachment, or `_thumbnail_id` on any
      * post. When the database does not answer, the answer is yes: an image
      * kept is recoverable, an image deleted is not.
      */
-    private function usedElsewhere(int $thumbnailId, int $pdfId): bool
+    private function namedElsewhere(int $thumbnailId, int $pdfId): bool
     {
         global $wpdb;
 
@@ -783,6 +795,76 @@ final class Generator
         ));
 
         return null !== $found || '' !== (string) $wpdb->last_error;
+    }
+
+    /**
+     * Whether some post's content shows this image
+     *
+     * An image or gallery block given the PDF, and the classic editor's
+     * "Insert into post", put the thumbnail's own address into the post. A
+     * forced regeneration or deleting the PDF deleted the file, and the
+     * picture in the post became a broken link; uninstalling has looked for
+     * this since 1.4.34, regenerating did not (review of 1.4.35).
+     *
+     * The same test uninstall.php makes, as one query: the file name in any
+     * size ("a-pdf-thumbnail" finds "a-pdf-thumbnail-300x212.jpg"), as it is
+     * and percent-encoded, or a "wp-image-" class naming the image. A name
+     * another file shares keeps this one too; that errs towards keeping.
+     * Only post_content is read -- not widgets, options or a page builder's
+     * meta. It runs only when an image of this plugin's own is about to be
+     * deleted: a forced regeneration, or deleting a PDF.
+     *
+     * @return bool|null Null when the database did not answer, which keeps
+     *                   the image as surely as a yes.
+     */
+    private function shownInContent(int $thumbnailId): ?bool
+    {
+        global $wpdb;
+
+        if (!is_object($wpdb) || !isset($wpdb->posts) || !method_exists($wpdb, 'get_var') || !method_exists($wpdb, 'esc_like')) {
+            return null;
+        }
+
+        $patterns = [
+            '%' . $wpdb->esc_like('wp-image-' . $thumbnailId . '"') . '%',
+            '%' . $wpdb->esc_like('wp-image-' . $thumbnailId . ' ') . '%',
+        ];
+        $stem = self::fileStem((string) get_post_meta($thumbnailId, '_wp_attached_file', true));
+        if ('' !== $stem) {
+            $patterns[] = '%' . $wpdb->esc_like($stem) . '%';
+            if (rawurlencode($stem) !== $stem) {
+                $patterns[] = '%' . $wpdb->esc_like(rawurlencode($stem)) . '%';
+            }
+        }
+
+        $likes = implode(' OR ', array_fill(0, count($patterns), 'post_content LIKE %s'));
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- placeholders only
+        $found = $wpdb->get_var($wpdb->prepare(
+            "SELECT ID FROM {$wpdb->posts} WHERE post_type <> 'attachment' AND post_content <> '' AND ({$likes}) LIMIT 1",
+            ...$patterns
+        ));
+
+        if ('' !== (string) $wpdb->last_error) {
+            return null;
+        }
+
+        return null !== $found;
+    }
+
+    /**
+     * A file's name without folder, extension or size suffix
+     *
+     * "2026/10/a-pdf-thumbnail-300x200.jpg" and "a-pdf-thumbnail.jpg" both
+     * give "a-pdf-thumbnail", as rapls_pic_uninstall_stem() does.
+     */
+    private static function fileStem(string $file): string
+    {
+        // Not lowercased: MySQL's LIKE already ignores case, and strtolower()
+        // on PHP 7 follows the locale and can alter a UTF-8 name's bytes.
+        $name = basename(str_replace('\\', '/', $file));
+        $name = (string) preg_replace('/\.[a-z0-9]+$/i', '', $name);
+
+        return (string) preg_replace('/(?:-scaled|-rotated|-\d+x\d+)+$/', '', $name);
     }
 
     /**
@@ -828,16 +910,32 @@ final class Generator
         // a translation's copy of this PDF that shares its thumbnail, or a
         // post that took it as its featured image. Deleting it left them
         // pointing at an image that was gone; only this PDF lets go of it.
-        if ($this->isOwnThumbnail($thumbnailId, $pdfId) && !$this->usedElsewhere($thumbnailId, $pdfId)) {
-            // Delete the attachment (this also deletes the file)
-            $deleted = $this->deleteAttachment($thumbnailId);
-
-            // Not deleted: the PDF keeps its link, so the image is not left
-            // behind with nothing naming it, and the next attempt finds it
-            // again (R56-03). Kept on purpose -- used elsewhere -- it is only
-            // let go of, below.
-            if (!$deleted) {
+        if ($this->isOwnThumbnail($thumbnailId, $pdfId) && !$this->namedElsewhere($thumbnailId, $pdfId)) {
+            // Shown in a post's content and named by nothing else: kept, and
+            // made an ordinary image -- visible in the Media Library with
+            // "Hide Generated Images" on, and no longer this PDF's to delete
+            // later -- as uninstalling and deleting the PDF with that setting
+            // off already leave one.
+            $shown = $this->shownInContent($thumbnailId);
+            if (null === $shown) {
+                // Not known: kept, and still linked, as when the delete
+                // fails -- the next attempt asks again.
                 return false;
+            }
+            if ($shown) {
+                delete_post_meta($thumbnailId, '_rapls_pic_is_thumbnail');
+                delete_post_meta($thumbnailId, '_rapls_pic_source_pdf');
+            } else {
+                // Delete the attachment (this also deletes the file)
+                $deleted = $this->deleteAttachment($thumbnailId);
+
+                // Not deleted: the PDF keeps its link, so the image is not
+                // left behind with nothing naming it, and the next attempt
+                // finds it again (R56-03). Kept on purpose -- used elsewhere
+                // -- it is only let go of, below.
+                if (!$deleted) {
+                    return false;
+                }
             }
         }
 

@@ -21,7 +21,10 @@ $pass = $fail = 0;
 function call_private(object $object, string $method, array $args = [])
 {
     $ref = new ReflectionMethod($object, $method);
-    $ref->setAccessible(true);
+    // Needed before PHP 8.1 only, and deprecated from 8.5.
+    if (PHP_VERSION_ID < 80100) {
+        $ref->setAccessible(true);
+    }
     return $ref->invokeArgs($object, $args);
 }
 

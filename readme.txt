@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.1
-Stable tag: 1.4.35
+Stable tag: 1.4.36
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -58,7 +58,7 @@ When you upload `my-document.pdf`, the plugin creates:
 * my-document-pdf-thumbnail-150x150.jpg (Thumbnail)
 * Additional sizes based on your theme settings
 
-A thumbnail made again ("Regenerate Thumbnail", or Bulk Generate with "Include PDFs that already have thumbnails (regenerate)") gets a new name with a suffix, such as `my-document-pdf-thumbnail-6512a3f0.jpg`, so browsers do not keep showing the old image. The extension follows the output format you choose.
+A thumbnail made again ("Regenerate Thumbnail", or Bulk Generate with "Include PDFs that already have thumbnails (regenerate)") gets a new name with a suffix, such as `my-document-pdf-thumbnail-6512a3f0.jpg`, so browsers do not keep showing the old image. The old image is deleted, unless a post's content shows it, a post uses it as its featured image, or a translated copy of the PDF shares it; then it is kept as an ordinary image. The extension follows the output format you choose.
 
 = Shortcodes =
 
@@ -320,7 +320,7 @@ No other profile is bundled. CMYK profiles are read from the host when one is
 present and are never redistributed.
 
 == Changelog ==
-= 1.4.35 =
+= 1.4.36 =
 Choosing a PDF as an image
 * Changed: PDFs with a thumbnail are offered in WordPress's own image pickers only -- the image, gallery and Post Featured Image blocks, the block editor's featured image, and the classic editor's "Set featured image" and the featured image view of "Add Media". Other plugins' image pickers, core pickers that also take other media such as Cover and Media & Text, and the classic editor's "Create Gallery" (whose [gallery] shortcode shows images only) are not given PDFs
 * Fixed: a PDF in a gallery block, or chosen at a size its thumbnail has no file for, shows the thumbnail instead of a broken image
@@ -346,7 +346,7 @@ Making the thumbnail
 * New: a page number past the end of the PDF fails with its own reason, which says how many pages the file has, and is not retried. The pages are counted by ImageMagick, so a PDF that claims more pages than it has, or had pages deleted when it was last saved, is caught too
 * Fixed: an error from ImageMagick while drawing a page is reported as a drawing failure, not as a server that cannot render PDFs
 * Removed: the retry that read the whole document when the chosen page came back blank. It never rescued a page, and a PDF that understates its page count could make it draw every page -- 954 MB for one 60-page file. A blank page is still tried once more with Ghostscript's transparency handling switched off
-* Fixed: a page is drawn at a lower resolution when it would come out larger than 40 million pixels, or larger than this server's own ImageMagick limits on width, height, memory and disk. Its size is read from the PDF's page boxes, compressed object streams included; a page they cannot vouch for, or one in a document with a page over the limit, is drawn small to measure it first. A small PDF with a 200-inch page used to take 76 seconds and 2.9 GB; it now takes about two, and a 100,000-point page hidden in an object stream about one and a half. A page too large even at the lowest resolution is refused with its own reason. The filter rapls_pdf_image_creator_max_render_pixels changes the limit
+* Fixed: a page is drawn at a lower resolution when it would come out larger than 40 million pixels, or larger than this server's own ImageMagick limits on width, height, memory and disk. Its size is read from the PDF's page boxes, compressed object streams included, with the file read token by token as a PDF reader reads it, so that no key, string or comment can hide a page from it; a page they cannot vouch for, or one in a document with a page over the limit, is drawn small to measure it first. A small PDF with a 200-inch page used to take 76 seconds and 2.9 GB; it now takes about two, and a 100,000-point page hidden in an object stream about one and a half. A page too large even at the lowest resolution is refused with its own reason. The filter rapls_pdf_image_creator_max_render_pixels changes the limit
 * Fixed: the Page Selection test on the Status tab now asks for a page by number, as making a thumbnail does
 * Fixed: numbers that a filter hands back as text are made whole numbers, and an error raised during conversion is a failed conversion, not a broken upload
 * Fixed: the list of functions a host disables is read the way PHP reads it, so the blank-page retry is no longer turned off by a name PHP does not disable
@@ -366,16 +366,16 @@ Settings and Status
 * Changed: the shortcodes take a PDF's ID only. The ID of a post, or of another kind of attachment, now gives nothing, where it could show that post's featured image
 * Changed: the shortcodes show a PDF to visitors only when it is public. A PDF attached to a private or draft post is shown only to people who can read that post, and one attached to a password-protected post only to people who can edit it -- including on another, public page
 * Fixed: a shortcode with no class attribute keeps its pic-thumbnail class
-* Changed: Insert into post follows the Link To and Size chosen in the media window. The plugin's Link To and Insert Size settings are now where those choices start for a PDF, including one just uploaded in that window
+* Changed: Insert into post follows the Link To and Size chosen in the media window. The plugin's Link To and Insert Size settings are now where those choices start for a PDF, including one just uploaded in that window. An Insert Size the window does not list, such as medium_large or a theme's size, is still used as long as the window's Size is not changed
 * Fixed: dismissing the notice about this server's PDF support stays on the screen it was on
 * Changed: clearer wording on the settings screen and in the readme, and the Media Library column's marks are read out to screen readers; the settings screen's groups of options are named for screen readers and its colours are easier to read
 * Changed: the settings screen's script is loaded on the settings screen only
-* Fixed: without JavaScript, every tab of the settings screen is shown, so the Status tab can be read
+* Fixed: without JavaScript, every tab of the settings screen is shown, so the Status tab can be read, and the buttons that need JavaScript are replaced by a note saying what to use instead
 * Changed: the review request, and the Support box on the Status tab, are not shown while this server cannot make thumbnails
 * Fixed: Bulk Generate shows how many PDFs there are and how many are still to do separately, and a failure says why
 * Fixed: saving the settings without some of the options no longer stores empty values for them
 * Changed: a few queries fewer on every page load, and the Status tab's "working" colour is easier to read
-* Fixed: uninstalling no longer deletes generated images that posts still show, as their featured image or in their content. A post whose featured image was a PDF is given that PDF's image. A file name written percent-encoded in a post is recognised. If this cannot be checked, nothing is deleted
+* Fixed: regenerating a thumbnail, deleting a PDF and uninstalling no longer delete a generated image that a post's content shows -- an image or gallery block given the PDF, or the classic editor's insert -- which left a broken image in the post. The image is kept as an ordinary one. Uninstalling also keeps one a post uses as its featured image, and a post whose featured image was a PDF is given that PDF's image. A file name written percent-encoded in a post is recognised. If this cannot be checked, nothing is deleted
 * Removed: an unused AJAX endpoint for regenerating a thumbnail, and unused code
 
 = 1.4.20 =
@@ -620,8 +620,8 @@ Settings and Status
 
 == Upgrade Notice ==
 
-= 1.4.35 =
-PDFs appear only in WordPress's own image pickers and show in gallery blocks. Bulk Generate handles large libraries, blank and missing pages are named, a passing server problem no longer stops thumbnails for hours, and a huge page cannot exhaust the server. Uninstalling keeps images posts show.
+= 1.4.36 =
+PDFs appear only in WordPress's own image pickers and show in gallery blocks. Bulk Generate handles large libraries, blank and missing pages are named, a passing server problem no longer stops thumbnails for hours, and a huge page cannot exhaust the server. Regenerating keeps images posts show.
 
 = 1.4.20 =
 Includes the 1.4.12 security fix. Deleting the plugin from a multisite network now cleans up every site.

@@ -66,6 +66,13 @@
     display: block;
 }
 
+/* Buttons only admin.js answers: without it they did nothing when pressed,
+   so they are not shown, and a <noscript> line says what to use instead
+   (review of 1.4.35). */
+body:not(.js) .rapls-pic-needs-js {
+    display: none;
+}
+
 /* Range Input with Output */
 .rapls-pic-range {
     width: 200px;

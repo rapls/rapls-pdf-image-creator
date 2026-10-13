@@ -12,6 +12,17 @@
      */
     const Tabs = {
         init: function() {
+            // The tab pattern's roles, set here and not in the markup:
+            // without this script every panel shows, one under the other, and
+            // the links jump to them, so announcing three tabs of which one
+            // is selected would describe a screen that is not there (review
+            // of 1.4.35).
+            const $tabs = $('.rapls-pic-tabs .nav-tab');
+            $('.rapls-pic-tabs .nav-tab-wrapper').attr('role', 'tablist');
+            $tabs.attr('role', 'tab').attr('aria-selected', 'false');
+            $tabs.filter(function() { return $(this).hasClass('nav-tab-active'); }).attr('aria-selected', 'true');
+            $('.rapls-pic-tab-content').attr('role', 'tabpanel');
+
             $('.rapls-pic-tabs .nav-tab').on('click', this.switchTab);
             $('.rapls-pic-tabs .nav-tab').on('keydown', this.moveWithKeys);
 
@@ -460,9 +471,11 @@
 
         init: function() {
             // Only on the screen that shows them, and only once the Status
-            // tab is open: this script also loads on the Media Library, and
-            // every visit there read the whole library 200 PDFs at a time --
-            // an author got a 403 on each (review after 1.4.31).
+            // tab is open: this script used to load on the Media Library too
+            // (it is the settings screen's only since 1.4.33), and every
+            // visit there read the whole library 200 PDFs at a time -- an
+            // author got a 403 on each (review after 1.4.31). The check stays
+            // for any screen without the box.
             if (!$('#rapls-pic-refresh-stats').length) {
                 return;
             }

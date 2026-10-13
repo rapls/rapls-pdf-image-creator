@@ -50,7 +50,7 @@ namespace {
     function do_action($tag, ...$args) {}
     function _prime_post_caches($ids, $terms = true, $meta = true) { $GLOBALS['primed_posts'][] = array_values($ids); }
     function wp_using_ext_object_cache() { return !empty($GLOBALS['ext_cache']); }
-    function wp_cache_delete($key, $group = '') { ++$GLOBALS['evicted']; return true; }
+    function wp_cache_delete($key, $group = '') { ++$GLOBALS['evicted']; $GLOBALS['evicted_keys'][] = [(int) $key, $group]; return true; }
     function add_shortcode($tag, $cb) { $GLOBALS['shortcodes'][$tag] = $cb; }
     if (!function_exists('get_post_mime_type')) { function get_post_mime_type($id) { return $GLOBALS['mime_of'][(int) $id] ?? false; } }
     function get_post_status($id) { return 'publish'; }
@@ -244,10 +244,17 @@ namespace {
     echo "\n--- The next PDF to draw, from a cursor ---\n";
 
     $library(450, 3);
+    $GLOBALS['evicted_keys'] = [];
     check('The first PDF without a thumbnail', $call([$bulk, 'ajaxNext'], ['after' => 0])[1], ['pdf_id' => 1002, 'filename' => 'doc-1002.pdf', 'after' => 1002, 'done' => false]);
+    // Review of 1.4.35: the page is let go of, but not the answer, whose file
+    // name is read next.
+    $evictedMeta = array_column(array_filter($GLOBALS['evicted_keys'], static function ($k) { return 'post_meta' === $k[1]; }), 0);
+    check('  ...the page is let go of, the answer kept for its file name', [in_array(1001, $evictedMeta, true), in_array(1003, $evictedMeta, true), in_array(1002, $evictedMeta, true)], [true, true, false]);
     check('  ...then the one after it, skipping those with thumbnails', $call([$bulk, 'ajaxNext'], ['after' => 1003])[1]['pdf_id'], 1005);
     $GLOBALS['queries'] = [];
+    $GLOBALS['evicted_keys'] = [];
     check('  ...with force, the very next PDF', $call([$bulk, 'ajaxNext'], ['after' => 1003, 'force' => 1])[1]['pdf_id'], 1004);
+    check('  ...kept for its file name too', in_array([1004, 'post_meta'], $GLOBALS['evicted_keys'], true), false);
     check('  ...asked for as one row, not a page', array_column($GLOBALS['queries'], 'posts_per_page'), [1]);
     check('  ...and past the last one with force: done', $call([$bulk, 'ajaxNext'], ['after' => 1450, 'force' => 1])[1], ['pdf_id' => null, 'filename' => '', 'after' => 1450, 'done' => true]);
     check('  ...past the last one: done', $call([$bulk, 'ajaxNext'], ['after' => 1450])[1], ['pdf_id' => null, 'filename' => '', 'after' => 1450, 'done' => true]);

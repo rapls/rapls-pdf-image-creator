@@ -359,8 +359,63 @@ check('the Support box only while this server can make thumbnails', [
     Admin::showsSupportBox(['availability' => null]),
     Admin::showsSupportBox(null),
 ], [true, false, false, false]);
+// Review of 1.4.35: and not while the last upload found the server unable,
+// as the review request waits for.
+$GLOBALS['options'][\Rapls\PDFImageCreator\Generator::UNAVAILABLE_OPTION] = ['time' => 1];
+$afterFailedUpload = Admin::showsSupportBox(['availability' => ['code' => 'ok']]);
+unset($GLOBALS['options'][\Rapls\PDFImageCreator\Generator::UNAVAILABLE_OPTION]);
+check('  ...nor after an upload found it unable, as the review request', $afterFailedUpload, false);
 check('  ...as the view asks it', substr_count($viewNow, '<?php if (\\Rapls\\PDFImageCreator\\Admin::showsSupportBox($capabilities)) : ?>'), 1);
 check('the tabs are hidden only where JavaScript runs', [(bool) preg_match('/^\.rapls-pic-tab-content \{[^}]*display: none/m', $cssNow), false !== strpos($cssNow, ".js .rapls-pic-tab-content {\n    display: none;"), false !== strpos($cssNow, ".js .rapls-pic-tab-content.active {\n    display: block;")], [false, true, true]);
+
+// Review of 1.4.35: without JavaScript, the buttons only admin.js answers
+// did nothing when pressed. Each sits in a block the stylesheet hides where
+// JavaScript does not run, after a <noscript> line that says what to use.
+$jsBlocks = [];
+preg_match_all('~<noscript>\s*<p class="description">(.*?)</p>\s*</noscript>\s*<p class="rapls-pic-needs-js">(.*?)</p>~s', $viewNow, $jsBlocks, PREG_SET_ORDER);
+$buttonsInBlocks = [];
+foreach ($jsBlocks as $block) {
+    preg_match_all('~<button type="button" id="(rapls-pic-[a-z-]+)"~', $block[2], $ids);
+    $buttonsInBlocks = array_merge($buttonsInBlocks, $ids[1]);
+}
+preg_match_all('~<button type="button" id="(rapls-pic-[a-z-]+)"~', $viewNow, $allButtons);
+check('the buttons only JavaScript answers are each in a block hidden without it, after a <noscript> line', [
+    count($jsBlocks),
+    $buttonsInBlocks,
+    array_values(array_diff(array_intersect($allButtons[1], ['rapls-pic-bulk-scan', 'rapls-pic-bulk-start', 'rapls-pic-bulk-stop', 'rapls-pic-refresh-stats']), $buttonsInBlocks)),
+    count(array_filter($jsBlocks, static function (array $block): bool {
+        return false !== strpos($block[1], 'Generate Thumbnail') && false !== strpos($block[1], "esc_html_e(");
+    })),
+    (bool) preg_match('~body:not\(\.js\) \.rapls-pic-needs-js \{\s*display: none;~', $cssNow),
+    (bool) preg_match('~^\.rapls-pic-needs-js \{[^}]*display: none~m', $cssNow),
+], [2, ['rapls-pic-bulk-scan', 'rapls-pic-bulk-start', 'rapls-pic-bulk-stop', 'rapls-pic-refresh-stats'], [], 2, true, false]);
+
+// Mutation testing of 1.4.35: text straight after a closing tag that starts
+// with "=" -- an "=" typed after the tag's ">" -- prints a stray "=" on the
+// screen.
+$strays = [];
+foreach (token_get_all($viewNow) as $token) {
+    if (is_array($token) && T_INLINE_HTML === $token[0] && preg_match('/^=/', $token[1])) {
+        $strays[] = $token[2];
+    }
+}
+check('the settings view prints no stray "=" after a PHP tag', $strays, []);
+
+// The release's version, said in three places that must agree, with a
+// changelog section and an upgrade notice WordPress.org will show (review of
+// 1.4.35); and no "Domain Path" for a folder the zip leaves out.
+$main = (string) file_get_contents(RAPLS_PIC_PLUGIN_DIR . 'rapls-pdf-image-creator.php');
+$readme = (string) file_get_contents(RAPLS_PIC_PLUGIN_DIR . 'readme.txt');
+preg_match('/^ \* Version:\s+(\S+)$/m', $main, $header);
+preg_match("/define\\('RAPLS_PIC_VERSION', '([^']+)'\\);/", $main, $constant);
+preg_match('/^Stable tag:\s*(\S+)$/m', $readme, $stable);
+$version = $header[1] ?? '';
+preg_match('/== Upgrade Notice ==\s*= ' . preg_quote($version, '/') . ' =\n(.+)\n/', $readme, $notice);
+check('the version agrees in the header, the constant and the stable tag', [$version, $constant[1] ?? null, $stable[1] ?? null], [$version, $version, $version]);
+check('  ...with a changelog section, and an upgrade notice of at most 300 characters',
+    [false !== strpos($readme, "== Changelog ==\n= {$version} =\n"), isset($notice[1]) && strlen($notice[1]) <= 300],
+    [true, true]);
+check('no Domain Path header', false !== strpos($main, 'Domain Path:'), false);
 
 printf("\n%d passed, %d failed\n", $pass, $fail);
 exit($fail === 0 ? 0 : 1);

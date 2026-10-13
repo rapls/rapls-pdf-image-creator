@@ -555,7 +555,10 @@ final class BulkProcessor
         // of 1.4.34).
         if ($force) {
             $ids = $this->idsAfter($after, 1);
-            $this->release($ids);
+            // Its own entry is kept: ajaxNext() reads its file name next,
+            // which released was one more query for every PDF of the run
+            // (review of 1.4.35). Only the images looked up go.
+            $this->release([]);
 
             return [] === $ids
                 ? ['pdf_id' => null, 'after' => $after, 'done' => true]
@@ -566,8 +569,9 @@ final class BulkProcessor
             $ids = $this->idsAfter($after, self::PAGE);
 
             foreach ($ids as $id) {
-                if ($force || !$this->generator->hasThumbnail($id)) {
-                    $this->release($ids);
+                if (!$this->generator->hasThumbnail($id)) {
+                    // All but the answer, whose file name is read next.
+                    $this->release(array_values(array_diff($ids, [$id])));
 
                     return ['pdf_id' => $id, 'after' => $id, 'done' => false];
                 }
