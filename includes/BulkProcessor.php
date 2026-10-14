@@ -286,11 +286,17 @@ final class BulkProcessor
             $result = $this->generator->generate($pdfId, $force);
 
             if ($result) {
+                // The old thumbnail kept, a post showing it: said, as the
+                // Media Library's notice says it (review after 1.4.37).
+                $kept = $this->generator->outcomeFor($pdfId)['kept_previous'] ?? null;
                 wp_send_json_success([
                     'pdf_id' => $pdfId,
                     'thumbnail_id' => $result,
                     'thumbnail_url' => $this->generator->getThumbnailUrl($pdfId, 'thumbnail'),
-                    'message' => __('Thumbnail generated.', 'rapls-pdf-image-creator'),
+                    'message' => null !== $kept
+                        ? __('Thumbnail generated.', 'rapls-pdf-image-creator') . ' ' . Admin::keptPreviousNote()
+                        : __('Thumbnail generated.', 'rapls-pdf-image-creator'),
+                    'kept_previous' => $kept,
                 ]);
             } else {
                 // With the reason, as the Media Library's notice gives it:
@@ -434,11 +440,20 @@ final class BulkProcessor
     {
         global $wpdb;
 
-        $where = static function (string $sql) use ($wpdb, $after): string {
+        // This query only: another plugin's query run while it is being
+        // built -- from pre_get_posts, say -- went through the same filter
+        // and lost its first posts (review after 1.4.37). The query carries
+        // a token, and the filter asks for it.
+        $token = 'rapls-pic-' . bin2hex(random_bytes(6));
+        $where = static function ($sql, $query = null) use ($wpdb, $after, $token) {
+            if (!is_string($sql) || !is_object($query) || !method_exists($query, 'get') || $token !== $query->get('rapls_pic_after_token')) {
+                return $sql;
+            }
+
             return $sql . $wpdb->prepare(" AND {$wpdb->posts}.ID > %d", $after);
         };
 
-        add_filter('posts_where', $where);
+        add_filter('posts_where', $where, 10, 2);
 
         try {
             $query = new \WP_Query([
@@ -454,9 +469,10 @@ final class BulkProcessor
                 // Marks this as the plugin asking, so MediaLibrary's
                 // pre_get_posts filter leaves it alone.
                 'rapls_pic_internal' => true,
+                'rapls_pic_after_token' => $token,
             ]);
         } finally {
-            remove_filter('posts_where', $where);
+            remove_filter('posts_where', $where, 10);
         }
 
         $ids = array_map('intval', (array) $query->posts);

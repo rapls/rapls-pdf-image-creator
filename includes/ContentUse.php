@@ -21,8 +21,10 @@ namespace Rapls\PDFImageCreator;
  * looked at a gallery that names its images by ID only -- a regeneration
  * deleted the picture under it (review of 1.4.36).
  *
- * Only post_content is read. A widget, an option, a theme or page builder
- * setting that names an image by ID is not found.
+ * A post's content and its excerpt are read: WooCommerce keeps a product's
+ * short description in post_excerpt, and an image inserted there was
+ * deleted (review after 1.4.37). A widget, an option, a theme or page
+ * builder setting that names an image by ID is not found.
  *
  * Plain functions of strings, so uninstall.php can load this file on its
  * own, without the plugin.
@@ -33,11 +35,15 @@ final class ContentUse
      * Post types and states not counted as showing anything
      *
      * A revision keeps every image a post ever had, and kept a picture taken
-     * out of the post years ago; an auto-draft or a trashed post is not
-     * shown either.
+     * out of the post years ago; an auto-draft is shown to nobody.
+     *
+     * A trashed post is read: it comes back from the trash with its
+     * pictures, for 30 days, and one deleted meanwhile was gone for good
+     * when it did (review after 1.4.37). Keeping an image too many is
+     * recoverable; deleting one a post will show again is not.
      */
     public const SKIP_TYPES = ['attachment', 'revision'];
-    public const SKIP_STATUSES = ['auto-draft', 'trash'];
+    public const SKIP_STATUSES = ['auto-draft'];
 
     /**
      * A file name without folder, extension or size suffix, lower case
@@ -54,6 +60,16 @@ final class ContentUse
     public static function stem(string $name): string
     {
         $name = basename(str_replace('\\', '/', $name));
+        // One spelling of each character: a name macOS wrote decomposed
+        // ("が" as "か" and a combining mark) and the same name composed,
+        // as a post holds it, compared unequal (review after 1.4.37).
+        // Without intl, names are compared as they are.
+        if (class_exists('Normalizer') && 1 === preg_match('/[\x80-\xff]/', $name)) {
+            $normal = \Normalizer::normalize($name, \Normalizer::FORM_C);
+            if (is_string($normal)) {
+                $name = $normal;
+            }
+        }
         $name = strtr($name, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz');
         $name = (string) preg_replace('/\.[a-z0-9]+$/', '', $name);
         $name = (string) preg_replace('/\.(?:jpe?g|png|gif|webp|avif)$/', '', $name);
@@ -93,20 +109,68 @@ final class ContentUse
      * The stems of every image file a piece of content names
      *
      * Decoded: an address percent-encodes a name that is not ASCII, and the
-     * attached file holds it as it is (review of 1.4.34).
+     * attached file holds it as it is (review of 1.4.34); and an editor can
+     * write a character as an HTML entity ("&#22577;").
      *
-     * @return array<string, true>
+     * The folder is not part of it: the same name in another month's folder
+     * counts as this image, which keeps one too many and never deletes one
+     * a post shows.
+     *
+     * Null when the pattern could not be run over the content -- PCRE's
+     * backtrack limit, on a long run of dotted words: that was read as "no
+     * file named", and an image the post showed was deleted (review after
+     * 1.4.37). stemsShown() falls back to a plainer test then.
+     *
+     * @return array<string, true>|null
      */
-    public static function stemsIn(string $content): array
+    public static function stemsIn(string $content): ?array
     {
         $stems = [];
-        if (preg_match_all('/([^\/\s"\'<>()=]+)\.(?:jpe?g|png|gif|webp|avif)\b/i', $content, $files)) {
-            foreach ($files[0] as $file) {
-                $stems[self::stem(rawurldecode($file))] = true;
-            }
+        $found = preg_match_all('/([^\/\s"\'<>()=]+)\.(?:jpe?g|png|gif|webp|avif)\b/i', $content, $files);
+        if (false === $found) {
+            return null;
+        }
+        // The whole match, extension and all: stem() takes a density suffix
+        // ("@1.5x") off only once the extension is gone, and without it
+        // "name@1.5x" lost ".5x" as if that were the extension.
+        foreach ($files[0] as $file) {
+            $stems[self::stem(rawurldecode(html_entity_decode($file, ENT_QUOTES | ENT_HTML5, 'UTF-8')))] = true;
         }
 
         return $stems;
+    }
+
+    /**
+     * Which of these stems a piece of content names
+     *
+     * stemsIn() when it answers; when it cannot, each stem is looked for as
+     * it is, ignoring case -- a stem found inside a longer name then counts,
+     * which keeps an image too many and never deletes one shown.
+     *
+     * @param string[] $stems
+     * @return string[]
+     */
+    public static function stemsShown(string $content, array $stems): array
+    {
+        if ([] === $stems) {
+            return [];
+        }
+        $named = self::stemsIn($content);
+        if (null !== $named) {
+            return array_keys(array_intersect_key(array_fill_keys($stems, true), $named));
+        }
+        $lower = strtr($content, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz');
+        $shown = [];
+        foreach ($stems as $stem) {
+            foreach (self::fragments([(string) $stem]) as $fragment) {
+                if (false !== strpos($lower, $fragment)) {
+                    $shown[] = (string) $stem;
+                    break;
+                }
+            }
+        }
+
+        return $shown;
     }
 
     /**
@@ -203,14 +267,51 @@ final class ContentUse
     }
 
     /**
-     * What any form that names the image by ID leaves in the content, beside the ID's digits
+     * The PDF IDs this plugin's own shortcodes in a piece of content name
+     *
+     * Only uninstall.php asks: a [rapls_pdf_thumbnail id=N] stops showing
+     * anything once the plugin is gone, and the image is kept for the post
+     * to be pointed at, as for a PDF in a gallery. Regenerating needs no
+     * such test, since the shortcode then shows the new thumbnail.
+     *
+     * @return array<int, true>
      */
-    public const ID_FORMS = ['wp-image-', '"id"', '[gallery', '"ids"'];
+    public static function shortcodePdfIdsIn(string $content): array
+    {
+        $ids = [];
+        if (preg_match_all('/\[rapls_pdf_(?:thumbnail|thumbnail_url|clickable_thumbnail|download_link)\b[^\]]*/i', $content, $shortcodes)) {
+            foreach ($shortcodes[0] as $shortcode) {
+                $shortcode = html_entity_decode($shortcode, ENT_QUOTES, 'UTF-8');
+                if (preg_match('/\bid\s*=\s*["\']?(\d+)/i', $shortcode, $m) && (int) $m[1] > 0) {
+                    $ids[(int) $m[1]] = true;
+                }
+            }
+        }
+
+        return $ids;
+    }
+
+    /**
+     * What a form that names the image by ID leaves in the content, before the ID's digits
+     *
+     * "wp-image-" is followed by the digits at once; in the others the
+     * digits come later, after a colon, spaces or other IDs.
+     */
+    public const ID_FORMS = ['"id"', '[gallery', '"ids"'];
 
     /**
      * The stem fragments one of which any post showing the image by name must hold
      *
-     * The stem as it is or percent-encoded.
+     * Lower case, as the SQL compares them -- LOWER() of the content, so a
+     * case-sensitive collation (utf8mb4_bin, utf8mb4_ja_0900_as_cs) finds
+     * "Report-pdf-thumbnail.jpg" too; the fragments were lower case and the
+     * content was not, the post was not read, and the image it showed was
+     * deleted (review after 1.4.37).
+     *
+     * The stem as it is or percent-encoded. A stem that is not all ASCII
+     * gives its longest run of ASCII too: a post can hold the name partly
+     * encoded, or with a character as an HTML entity, and neither form of
+     * the whole stem is in it.
      *
      * @param string[] $stems
      * @return string[]
@@ -219,40 +320,70 @@ final class ContentUse
     {
         $fragments = [];
         foreach ($stems as $stem) {
+            $stem = (string) $stem;
             $fragments[] = $stem;
-            if (rawurlencode($stem) !== $stem) {
-                $fragments[] = rawurlencode($stem);
+            $encoded = strtr(rawurlencode($stem), 'ABCDEF', 'abcdef');
+            if ($encoded !== $stem) {
+                $fragments[] = $encoded;
+            }
+            if (1 === preg_match('/[^\x20-\x7e]/', $stem) && preg_match_all('/[\x21-\x7e]{4,}/', $stem, $runs)) {
+                usort($runs[0], static function (string $a, string $b): int {
+                    return strlen($b) - strlen($a);
+                });
+                $fragments[] = $runs[0][0];
             }
         }
 
-        return array_values(array_unique($fragments));
+        return array_values(array_unique(array_filter($fragments, 'strlen')));
+    }
+
+    /**
+     * The patterns the SQL that narrows the posts read is made of
+     *
+     * Each is a list of pieces that must appear in that order, any text
+     * between them: LIKE '%a%b%'. One per stem fragment; "wp-image-N"; and
+     * the ID after each of ID_FORMS. The digits once were asked for apart
+     * from the forms, so "7" anywhere in a post with any block made it a
+     * candidate, and nearly every post was read (review after 1.4.37).
+     *
+     * @param string[] $stems
+     * @return array<int, string[]>
+     */
+    public static function patterns(int $imageId, array $stems): array
+    {
+        $patterns = [];
+        foreach (self::fragments($stems) as $fragment) {
+            $patterns[] = [$fragment];
+        }
+        $patterns[] = ['wp-image-' . $imageId];
+        foreach (self::ID_FORMS as $form) {
+            $patterns[] = [$form, (string) $imageId];
+        }
+
+        return $patterns;
     }
 
     /**
      * Whether a post could show the image, as the SQL that narrows the posts read asks it
      *
-     * One of the stem fragments; or the ID's digits together with one of
-     * ID_FORMS. idsIn() and stemsIn() then decide. Any gallery at all once
-     * made every post with a gallery a candidate, read in full for every
-     * image (review after 1.4.36); every form that names an image by ID
-     * holds its digits.
+     * One of patterns(), ignoring case. idsIn() and stemsIn() then decide.
      *
      * @param string[] $stems
      */
     public static function candidate(string $content, int $imageId, array $stems): bool
     {
-        foreach (self::fragments($stems) as $fragment) {
-            if (false !== stripos($content, $fragment)) {
-                return true;
+        $content = strtr($content, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz');
+        foreach (self::patterns($imageId, $stems) as $pieces) {
+            $at = 0;
+            foreach ($pieces as $piece) {
+                $at = strpos($content, $piece, $at);
+                if (false === $at) {
+                    continue 2;
+                }
+                $at += strlen($piece);
             }
-        }
-        if (false === strpos($content, (string) $imageId)) {
-            return false;
-        }
-        foreach (self::ID_FORMS as $form) {
-            if (false !== stripos($content, $form)) {
-                return true;
-            }
+
+            return true;
         }
 
         return false;
@@ -268,10 +399,7 @@ final class ContentUse
         if (isset(self::idsIn($content)[$imageId])) {
             return true;
         }
-        if ([] === $stems) {
-            return false;
-        }
 
-        return [] !== array_intersect_key(self::stemsIn($content), array_fill_keys($stems, true));
+        return [] !== self::stemsShown($content, $stems);
     }
 }

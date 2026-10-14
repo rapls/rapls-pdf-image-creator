@@ -57,7 +57,8 @@ check('  ...nor an ID of 0, nor words', $ids('[gallery ids="0,abc,15"]'), [15]);
 check('shown by its ID', [ContentUse::shows('[gallery ids="5,71"]', 71, []), ContentUse::shows('[gallery ids="5,710"]', 71, [])], [true, false]);
 
 echo "\n--- Fragments that narrow the posts read ---\n";
-check('the stem fragments, as they are and percent-encoded', ContentUse::fragments(['d', '資料']), ['d', '資料', rawurlencode('資料')]);
+check('the stem fragments, as they are and percent-encoded, lower case', ContentUse::fragments(['d', '資料']), ['d', '資料', strtolower(rawurlencode('資料'))]);
+check('  ...a stem not all ASCII gives its longest ASCII run too (review after 1.4.37)', ContentUse::fragments(['報告書-pdf-thumbnail']), ['報告書-pdf-thumbnail', strtolower(rawurlencode('報告書-pdf-thumbnail')), '-pdf-thumbnail']);
 foreach ([
     'a class' => '<img class="wp-image-71">',
     'an image block' => '<!-- wp:image {"id":71} -->',
@@ -88,6 +89,33 @@ check('a gallery block whose IDs are strings', $ids('<!-- wp:gallery {"ids":["73
 check('[gallery] as the editor may store it, with entities', $ids('[gallery ids=&quot;75,76&quot;] [gallery include=&#039;77&#039;]'), [75, 76, 77]);
 check('a density suffix and a second extension', [ContentUse::stem('d-300x200@2x.jpg'), ContentUse::stem('d.jpg.webp'), ContentUse::stem('d-1024x768.png.webp')], ['d', 'd', 'd']);
 check('  ...shown by those names', [ContentUse::shows('<img src="/u/d-300x200@2x.jpg">', 9, ['d']), ContentUse::shows('<img src="/u/d.jpg.webp">', 9, ['d'])], [true, true]);
+
+
+echo "\n--- Review after 1.4.37 ---\n";
+check('trashed posts are read; revisions and auto-drafts are not', [ContentUse::SKIP_TYPES, ContentUse::SKIP_STATUSES], [['attachment', 'revision'], ['auto-draft']]);
+check('a candidate whatever the case: "Report-…" for the stem "report-…"', ContentUse::candidate('<img src="/u/Report-PDF-Thumbnail-300x212.jpg">', 9, ['report-pdf-thumbnail']), true);
+check('the digits must follow a form: "wp-image-71", "\"id\"…71", not 71 anywhere', [
+    ContentUse::candidate('<!-- wp:paragraph --><p>71</p><img class="wp-image-5">', 71, []),
+    ContentUse::candidate('<img class="wp-image-71">', 71, []),
+    ContentUse::candidate('71 <!-- wp:image {"id":5} -->', 71, []),
+    ContentUse::candidate('<!-- wp:image {"lightbox":{"enabled":true},"id":71} -->', 71, []),
+], [false, true, false, true]);
+check('the patterns: a stem fragment, wp-image-N, and N after each form', ContentUse::patterns(71, ['d']), [['d'], ['wp-image-71'], ['"id"', '71'], ['[gallery', '71'], ['"ids"', '71']]);
+check('a density suffix with a fraction, "@1.5x"', [ContentUse::stem('d-300x200@1.5x.jpg'), array_keys(ContentUse::stemsIn('<img src="/u/d-300x200@1.5x.jpg">'))], ['d', ['d']]);
+check('a name partly percent-encoded, or with a character as an entity', [
+    array_keys(ContentUse::stemsIn('<img src="/u/報告' . rawurlencode('書') . '-pdf-thumbnail.jpg">')),
+    array_keys(ContentUse::stemsIn('<img src="/u/&#22577;告書-pdf-thumbnail.jpg">')),
+    ContentUse::candidate('<img src="/u/報告' . rawurlencode('書') . '-pdf-thumbnail.jpg">', 9, ['報告書-pdf-thumbnail']),
+], [['報告書-pdf-thumbnail'], ['報告書-pdf-thumbnail'], true]);
+if (class_exists('Normalizer')) {
+    check('a name written decomposed (macOS) is the composed one', ContentUse::stem(\Normalizer::normalize('が.jpg', \Normalizer::FORM_D)), 'が');
+}
+$limitWas = ini_get('pcre.backtrack_limit');
+ini_set('pcre.backtrack_limit', '1000');
+$long = '<img src="/u/e-pdf-thumbnail.jpg">' . str_repeat('a.', 20000);
+check('names past PCRE\'s backtrack limit: not "none", the plainer test keeps it', [ContentUse::stemsIn($long), ContentUse::stemsShown($long, ['e-pdf-thumbnail', 'z-pdf-thumbnail']), ContentUse::shows($long, 9, ['e-pdf-thumbnail'])], [null, ['e-pdf-thumbnail'], true]);
+ini_set('pcre.backtrack_limit', (string) $limitWas);
+check('this plugin\'s own shortcodes naming a PDF', array_keys(ContentUse::shortcodePdfIdsIn('[rapls_pdf_thumbnail id="31"] [rapls_pdf_download_link id=32 text="x"] [rapls_pdf_thumbnail_url id=&quot;33&quot;] [rapls_pdf_clickable_thumbnail id=\'34\'] [other id="35"]')), [31, 32, 33, 34]);
 
 echo "\n$pass passed, $fail failed\n";
 exit($fail ? 1 : 0);

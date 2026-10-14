@@ -66,6 +66,11 @@
     /** The type added to a picker's library query, so the server knows it (MediaLibrary::PICKER_MARK). */
     const PICKER_MARK = 'rapls-pic/with-thumbnail';
 
+    /** Whether the site turned every image picker back to taking PDFs (MediaLibrary::enqueueBlockEditorAssets()). */
+    function everyPicker() {
+        return !!(window.raplsPicBlockEditor && true === window.raplsPicBlockEditor.everyPicker);
+    }
+
     /** Which of those pickers is opening now: 'core/image', 'core/gallery', 'featured', or ''. */
     let openingPicker = '';
 
@@ -261,6 +266,17 @@
                 const kind = pickerKind(props, fromBlock);
 
                 if (!kind || !props.allowedTypes || !props.allowedTypes.includes('image')) {
+                    // A site that asked for every image picker to take PDFs,
+                    // as up to 1.4.20 (rapls_pdf_image_creator_pdfs_in_every_image_picker):
+                    // the picker's own allowed types say so too, as 1.4.20's
+                    // did, or the media window drops what the server sends
+                    // (review of 1.4.37's fixes).
+                    if (!kind && everyPicker() && props.allowedTypes && props.allowedTypes.includes('image') && !props.allowedTypes.includes('application/pdf')) {
+                        return wp.element.createElement(MediaUpload, Object.assign({}, props, {
+                            allowedTypes: props.allowedTypes.concat(['application/pdf'])
+                        }));
+                    }
+
                     return wp.element.createElement(MediaUpload, props);
                 }
 
@@ -349,6 +365,18 @@
                     });
                 }
 
+                // Every other frame that lists images lists PDFs too, as in
+                // 1.4.20, when the site asked for it (everyPicker()).
+                if (!this.raplsPicPicker && everyPicker()) {
+                    this.on('ready', function() {
+                        const state = 'function' === typeof this.state ? this.state() : null;
+                        const library = state && 'function' === typeof state.get ? state.get('library') : null;
+
+                        if (library && library.props && 'image' === library.props.get('type')) {
+                            library.props.set('type', ['image', 'application/pdf']);
+                        }
+                    }, this);
+                }
             }
         });
     }

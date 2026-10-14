@@ -144,6 +144,19 @@ final class Plugin
         // neither, because activation writes both.
         $previous = '' === $stored && get_option(Settings::OPTION_NAME) ? '1.0.0' : $stored;
 
+        // The version first, and the rest only once it is recorded: where
+        // the write fails, everything below ran again on every request,
+        // and the probes were measured afresh each time (review after
+        // 1.4.37). It is tried again on the next request instead.
+        // Autoloaded: this is read on every request, and not autoloaded it
+        // cost a query on each (review after 1.4.33). update_option() takes
+        // the new autoload with the new value, so an existing install changes
+        // over at this, its next update.
+        update_option(self::VERSION_OPTION, RAPLS_PIC_VERSION, true);
+        if (RAPLS_PIC_VERSION !== get_option(self::VERSION_OPTION, '')) {
+            return;
+        }
+
         if ('' !== $previous && version_compare($previous, self::COLOR_FIX_VERSION, '<')) {
             update_option(self::COLOR_NOTICE_OPTION, '1', false);
         }
@@ -168,12 +181,6 @@ final class Plugin
         if (!get_option(ReviewPrompt::ACTIVATED_OPTION)) {
             add_option(ReviewPrompt::ACTIVATED_OPTION, gmdate('Y-m-d H:i:s'), '', false);
         }
-
-        // Autoloaded: this is read on every request, and not autoloaded it
-        // cost a query on each (review after 1.4.33). update_option() takes
-        // the new autoload with the new value, so an existing install changes
-        // over at this, its next update.
-        update_option(self::VERSION_OPTION, RAPLS_PIC_VERSION, true);
     }
 
     /**
@@ -213,11 +220,59 @@ final class Plugin
     {
         $id = absint($id);
 
-        if (!$id || 'application/pdf' !== get_post_mime_type($id)) {
+        if (!$id) {
             return 0;
         }
 
+        if ('application/pdf' !== get_post_mime_type($id)) {
+            /**
+             * Whether the shortcodes take any post's ID, as in 1.4.20
+             *
+             * Off by default: only a PDF's. On, [rapls_pdf_thumbnail id=N]
+             * and the others show what they showed up to 1.4.20 for any
+             * post -- its featured image, its title -- to a reader who may
+             * see that post: published, or one they may read, and behind a
+             * password only to someone who may edit it. Pages made with a
+             * post's ID came out empty after 1.4.32 (review after 1.4.37).
+             *
+             * @since 1.4.38
+             *
+             * @param bool $any Whether to.
+             * @param int  $id  The ID the shortcode was given.
+             */
+            if (true !== apply_filters('rapls_pdf_image_creator_shortcode_any_post', false, $id)) {
+                return 0;
+            }
+
+            return self::viewablePost($id) ? $id : 0;
+        }
+
         return self::viewable($id) ? $id : 0;
+    }
+
+    /**
+     * Whether whoever is reading may see this post, for a shortcode given its ID
+     *
+     * An attachment as viewable() asks; any other post by its own password
+     * and status.
+     */
+    private static function viewablePost(int $id): bool
+    {
+        $post = get_post($id);
+
+        if (!is_object($post)) {
+            return false;
+        }
+
+        if ('attachment' === ($post->post_type ?? '')) {
+            return self::viewable($id);
+        }
+
+        if (post_password_required($id)) {
+            return current_user_can('edit_post', $id);
+        }
+
+        return self::publicOrReadable($id);
     }
 
     /**
@@ -241,12 +296,48 @@ final class Plugin
             return current_user_can('edit_post', $id);
         }
 
-        $status = get_post_status_object((string) get_post_status($id));
+        return self::publicOrReadable($id);
+    }
+
+    /**
+     * Published -- for an attachment, its parent's status, as core answers
+     * it -- or one this reader may read
+     */
+    private static function publicOrReadable(int $id): bool
+    {
+        $name = (string) get_post_status($id);
+        // What core answers for an attachment: its parent's status; with no
+        // parent, "publish"; a trashed parent's status before the trash
+        // ("publish" when none was kept); with a parent that no longer
+        // exists, false. False was asked as read_post of a status nothing
+        // registers, and the PDF went missing for visitors (review of
+        // 1.4.37's fixes). But '' or false is also what a filter on
+        // get_post_status may answer for a parent that is there: the parent
+        // itself is looked at then, and only one that is gone makes the
+        // attachment stand on its own, as it was shown before. "inherit"
+        // left unresolved is the same question in an older answer.
+        // Whose read_post decides: the attachment's, unless its status had
+        // to be found on the parent -- asked of an attachment whose status
+        // is '' or none, map_meta_cap() calls _doing_it_wrong() and answers
+        // for edit_others_posts (review of 1.4.37's fixes).
+        $askAbout = $id;
+        if ('' === $name || 'inherit' === $name) {
+            $parent = (int) wp_get_post_parent_id($id);
+            $post = $parent ? get_post($parent) : null;
+            if (!$parent || !is_object($post)) {
+                return true;
+            }
+            // The parent's own status as stored: asked through
+            // get_post_status() again, the same filter answered again.
+            $name = (string) ($post->post_status ?? '');
+            $askAbout = $parent;
+        }
+        $status = get_post_status_object($name);
         if ($status && !empty($status->public)) {
             return true;
         }
 
-        return current_user_can('read_post', $id);
+        return current_user_can('read_post', $askAbout);
     }
 
     /**

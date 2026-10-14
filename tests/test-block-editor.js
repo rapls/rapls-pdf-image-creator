@@ -250,6 +250,26 @@ async function chooseUploaded(how, options = {}) {
     ed.open(ed.picker('core/image').element).uploadContent();
     check('Upload tab, auto on: core\'s', JSON.stringify([ed.seen.uploadOptions, ed.seen.coreUpload]), JSON.stringify([null, 1]));
 
+    // Review of 1.4.37's fixes: with rapls_pdf_image_creator_pdfs_in_every_image_picker on, every image picker
+    // and every frame listing images takes PDFs, as 1.4.20's script made them; off, they are left as they are.
+    {
+        const on = load({ settings: { everyPicker: true } });
+        const theirsOn = on.picker('', { allowedTypes: ['image'] });
+        const library = { type: 'image', get(key) { return this[key]; }, set(key, value) { this[key] = value; } };
+        const frameOn = new on.Frame({ state: { get: () => ({ props: library }) } });
+        frameOn.initialize();
+        frameOn.trigger('ready');
+        const off = load();
+        const theirsOff = off.picker('', { allowedTypes: ['image'] });
+        const libraryOff = { type: 'image', get(key) { return this[key]; }, set(key, value) { this[key] = value; } };
+        const frameOff = new off.Frame({ state: { get: () => ({ props: libraryOff }) } });
+        frameOff.initialize();
+        frameOff.trigger('ready');
+        check('Every image picker, when the site asks: PDFs in its types and in the frame\'s library; not otherwise',
+            JSON.stringify([theirsOn.element.props.allowedTypes, library.type, theirsOff.element.props.allowedTypes, libraryOff.type]),
+            JSON.stringify([['image', 'application/pdf'], ['image', 'application/pdf'], ['image'], 'image']));
+    }
+
     console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);
 })();

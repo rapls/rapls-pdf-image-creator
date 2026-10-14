@@ -201,9 +201,9 @@ class Imagick
             $this->w = (int) floor(self::$pageSize[0] * $this->density / 72);
             $this->h = (int) floor(self::$pageSize[1] * $this->density / 72);
             // Past the width or height limit, ImageMagick 7 refuses the read.
-            // A limit of 0 is none.
-            $overW = self::getResourceLimit(self::RESOURCETYPE_WIDTH) > 0 && $this->w > self::getResourceLimit(self::RESOURCETYPE_WIDTH);
-            $overH = self::getResourceLimit(self::RESOURCETYPE_HEIGHT) > 0 && $this->h > self::getResourceLimit(self::RESOURCETYPE_HEIGHT);
+            // A limit of 0 refuses every read (measured on 7.1.1).
+            $overW = $this->w > self::getResourceLimit(self::RESOURCETYPE_WIDTH);
+            $overH = $this->h > self::getResourceLimit(self::RESOURCETYPE_HEIGHT);
             if ($overW || $overH) {
                 throw new ImagickException('Invalid IHDR data');
             }
@@ -636,11 +636,11 @@ check('  ...a page measured larger than its boxes is drawn at its measured size'
 // page under a pixel at the measuring density fails to draw at all), and a
 // page that fails there too fails as the read would -- not drawn at the
 // resolution asked from a ping's answer.
-boxes([595, 842], [14400, 14400]);
+boxes([595, 842], [4000, 5000]);
 $page([595, 842]);
 Imagick::$failReads = 1;
 [$r, $log] = run(['format' => 'jpeg']);
-check('  ...a measuring read that fails is tried at 36 dpi, and the page drawn from that', [$densities($log), $r->isSuccess()], [['setResolution(10)', 'setResolution(36)', 'setResolution(150)'], true]);
+check('  ...a measuring read that fails is tried at 36 dpi, and the page drawn from that', [array_slice($densities($log), 1), $r->isSuccess()], [['setResolution(36)', 'setResolution(150)'], true]);
 Imagick::$failReads = 2;
 [$r, $log] = run(['format' => 'jpeg']);
 check('  ...one that fails there too is the failure, in a read\'s words, and nothing more is read', [$readsOf($log), $r->getCode(), $r->getError()], [2, 'render_error', 'Imagick error: Failed to read the file']);
@@ -655,6 +655,14 @@ foreach ([
 }
 Imagick::$failReads = 0;
 Imagick::$failMessage = 'Failed to read the file';
+// Review after 1.4.37: not at 36 dpi where the file holds a page that would
+// be past the measuring read's bound there -- the limits refuse it only after
+// Ghostscript has drawn it, and that drawing is bounded by nothing of ours.
+boxes([595, 842], [14400, 14400]);
+Imagick::$failReads = 1;
+[$r, $log] = run(['format' => 'jpeg']);
+check('  ...not tried at 36 dpi where a box in the file is past the bound there: the failure, after one read', [$readsOf($log), $r->getCode()], [1, 'render_error']);
+Imagick::$failReads = 0;
 // A page under a pixel at 2 dpi (a 5-point page, which Ghostscript draws at
 // 150 but not at 2) in a file whose boxes cannot be read.
 file_put_contents($pdf, '%PDF-1.4');
@@ -683,13 +691,20 @@ Imagick::$resourceLimits = [];
 Imagick::$limitLog = [];
 run(['format' => 'jpeg']);
 check('  ...and so is one the 4-megapixel density bounds', Imagick::$limitLog, ['10=6325', '4=6325', '10=' . PHP_INT_MAX, '4=' . PHP_INT_MAX]);
-// A stricter limit the site set stays in force, and 0 -- no limit -- is lowered
-// and put back as 0.
+// A stricter limit the site set stays in force; one not set is lowered and
+// put back.
 boxes([595, 842], [300000, 300000]);
-Imagick::$resourceLimits = [10 => 2000, 4 => 0];
+Imagick::$resourceLimits = [10 => 2000];
 Imagick::$limitLog = [];
 [$r, $log] = run(['format' => 'jpeg']);
-check('  ...a stricter width limit the site set is left alone; a height of 0 (none) is lowered and put back', [Imagick::$limitLog, Imagick::$resourceLimits, $r->isSuccess()], [['4=6325', '4=0'], [10 => 2000, 4 => 0], true]);
+check('  ...a stricter width limit the site set is left alone; the height is lowered and put back', [Imagick::$limitLog, Imagick::$resourceLimits, $r->isSuccess()], [['4=6325', '4=' . PHP_INT_MAX], [10 => 2000, 4 => PHP_INT_MAX], true]);
+// A width or height of 0 is the strictest, not none: ImageMagick 7.1.1
+// refuses every read under it (measured), and it was raised for the measuring
+// read (review after 1.4.37). Memory, map and disk at 0 are none there.
+Imagick::$resourceLimits = [10 => 0, 4 => 0];
+Imagick::$limitLog = [];
+run(['format' => 'jpeg']);
+check('  ...a width and height of 0 are left as they are', [Imagick::$limitLog, Imagick::$resourceLimits], [[], [10 => 0, 4 => 0]]);
 Imagick::$resourceLimits = [];
 // A listener raising the limit (the add-on's crop plan) does not raise the
 // measuring read's: that read is only ever an ordinary page's size.
@@ -776,8 +791,10 @@ Imagick::$limitLog = [];
 check('a page whose boxes cannot be read is measured at 2 dpi, bounded, and drawn as asked', [$densities($log), array_slice(Imagick::$limitLog, 0, 2), $r->isSuccess()], [['setResolution(2)', 'setResolution(150)'], ['10=6325', '4=6325'], true]);
 $page([14400, 14400]);
 [$r, $log] = run(['format' => 'jpeg']);
-// 400 pixels at 2 dpi, measured a pixel over: 14,436 points.
-check('  ...a large one measured so is lowered', $resolutionRead($log), 'setResolution(31.54)');
+// 400 pixels at 2 dpi, measured a pixel over: 14,436 points -- and, lowered
+// for that, measured again at the density that keeps it to 4 megapixels:
+// 14,407 points, a pixel over at 9.97 dpi (review after 1.4.37).
+check('  ...a large one measured so is lowered, measured again finer to lower it no more than it needs', [$resolutionRead($log), count($densities($log))], ['setResolution(31.6)', 3]);
 foreach ([
     'not authorized `PDF\' @ error/constitute.c/IsCoderAuthorized/426' => 'pdf_blocked_by_policy',
     'Invalid IHDR data `/tmp/magick-x\' @ error/png.c/MagickPNGErrorHandler/1492' => 'resource_limit',
@@ -878,7 +895,7 @@ $page([595, 842]);
 $a4Fit = $resolutionRead($log);
 [, $log] = run(['format' => 'jpeg']);
 $a4Within = $resolutionRead($log);
-Imagick::$resourceLimits = [10 => 0, 4 => 4000];
+Imagick::$resourceLimits = [4 => 4000];
 [, $log] = run(['format' => 'jpeg', 'resolution' => 600, 'max_width' => 4096, 'max_height' => 4096]);
 $heightOnly = $resolutionRead($log);
 Imagick::$resourceLimits = [];
@@ -1149,6 +1166,136 @@ $inflate = new ReflectionMethod(ImagickEngine::class, 'inflateWithin');
 if (PHP_VERSION_ID < 80100) { $inflate->setAccessible(true); }
 $fiveK = gzcompress(str_repeat('a', 5000));
 check('  ...inflated to exactly the most allowed: kept; a byte more, no answer', [strlen((string) $inflate->invoke(null, $fiveK, 5000)), $inflate->invoke(null, $fiveK, 4999)], [5000, null]);
+
+echo "\n=== Review after 1.4.37: bounds where the boxes cannot give the largest ===\n";
+// No upper bound, but a lower one: every box past the measuring read's bound
+// at 2 dpi, with /UserUnit somewhere. Not read at all to find out it is too
+// large: the limits refuse it only after Ghostscript has drawn it.
+$pdfWas = $pdf;
+$pdf = $boxFile("<< /Type /Page /MediaBox [0 0 10000000 10000000] /UserUnit 1 >>");
+$page([10000000, 10000000]);
+[$r, $log] = run(['format' => 'jpeg']);
+check('every page past the measuring bound at 2 dpi, the boxes give no largest: refused, nothing read', [$readsOf($log), $r->getCode()], [0, 'resource_limit']);
+// A smaller box anywhere -- a cover, a stale object, a comment -- is the
+// lower bound, and the page is measured, as before.
+$pdf = $boxFile("<< /Type /Page /MediaBox [0 0 595 842] >>\n<< /Type /Page /MediaBox [0 0 10000000 10000000] /UserUnit 1 >>");
+$page([595, 842]);
+[$r, $log] = run(['format' => 'jpeg']);
+check('  ...a smaller box anywhere in the file: measured, and drawn', [$densities($log), $r->isSuccess()], [['setResolution(2)', 'setResolution(150)'], true]);
+// A /UserUnit under 1 makes the bound smaller; one given by reference leaves
+// it unknown.
+$pdf = $boxFile("<< /Type /Page /MediaBox [0 0 10000000 10000000] /UserUnit 0.0001 >>");
+$page([1000, 1000]);
+[$r, $log] = run(['format' => 'jpeg']);
+$underOne = [$densities($log)[0] ?? null, $r->isSuccess()];
+// The factor scales both sides, so the area by its square: at 0.001 a
+// 10,000,000-point box is a 10,000-point page (review of 1.4.37's fixes).
+$pdf = $boxFile("<< /Type /Page /MediaBox [0 0 10000000 10000000] /UserUnit 0.001 >>");
+$page([10000, 10000]);
+[$r, $log] = run(['format' => 'jpeg']);
+$atThousandth = [$densities($log)[0] ?? null, $r->isSuccess()];
+$pdf = $boxFile("<< /Type /Page /MediaBox [0 0 10000000 10000000] /UserUnit 5 0 R >>");
+$page([1000, 1000]);
+[$r, $log] = run(['format' => 'jpeg']);
+check('  ...a /UserUnit under 1, or one by reference: measured', [$underOne, $atThousandth, [$densities($log)[0] ?? null, $r->isSuccess()]], [['setResolution(2)', true], ['setResolution(2)', true], ['setResolution(2)', true]]);
+// A file the token reading cannot follow says nothing of a lower bound
+// either: one box unread could be the small one.
+$pdf = $boxFile("<< /Type /Page /MediaBox [0 0 10000000 10000000] /X { >>");
+[$r, $log] = run(['format' => 'jpeg']);
+check('  ...a file the reading cannot follow: measured, not refused on its boxes', [$densities($log)[0] ?? null, $r->isSuccess()], ['setResolution(2)', true]);
+// A page that is a pixel high at 36 dpi and none at 2, in a file whose boxes
+// cannot be read: measured again at 36, and drawn.
+$pdf = $boxFile("<< /Type /Page /UserUnit 1 >>");
+$page([612, 12]);
+[$r, $log] = run(['format' => 'jpeg']);
+check('  ...a page under a pixel high at 2 dpi, with no box to read: measured at 36, drawn', [array_slice($densities($log), 0, 2), $r->isSuccess()], [['setResolution(2)', 'setResolution(36)'], true]);
+$page(null);
+
+// Review after 1.4.37: a file that does not start like a PDF is bounded too,
+// unless it starts like a raster -- PostScript or EPS is drawn by Ghostscript
+// just the same.
+$pdf = RAPLS_PIC_TEST_TMP . '/drawing.eps';
+file_put_contents($pdf, "%!PS-Adobe-3.0 EPSF-3.0\n%%BoundingBox: 0 0 14400 14400\n");
+$page([14400, 14400]);
+[$r, $log] = run(['format' => 'jpeg']);
+$eps = [$densities($log)[0] ?? null, count($densities($log)), $resolutionRead($log), $r->isSuccess()];
+$rasters = [];
+foreach (["\x89PNG\r\n\x1a\nraster", "P7\nWIDTH 1\n", "P6\n1 1\n", "\xFF\xD8\xFF\xE0", "GIF89a", "II*\0", "MM\0*", "BM....", "RIFF\0\0\0\0WEBPVP8 "] as $magic) {
+    $pdf = RAPLS_PIC_TEST_TMP . '/raster.img';
+    file_put_contents($pdf, $magic);
+    [$r, $log] = run(['format' => 'jpeg']);
+    $rasters[] = count($densities($log));
+}
+@unlink(RAPLS_PIC_TEST_TMP . '/raster.img');
+$page(null);
+check('  ...an EPS file is measured and drawn within the limit; a raster of any kind is read once, as it is', [$eps, $rasters], [['setResolution(2)', 3, 'setResolution(31.6)', true], [1, 1, 1, 1, 1, 1, 1, 1, 1]]);
+$pdf = $pdfWas;
+
+// Review after 1.4.37: the measuring reads and the blank-page retry put back
+// both the limits and GS_OPTIONS, after two of each.
+file_put_contents($pdf, '%PDF-1.4');
+$page([14400, 14400]);
+Imagick::$gsRescues = true;
+Imagick::$resourceLimits = [];
+putenv('GS_OPTIONS');
+[$r1, $log1] = run(['format' => 'jpeg']);
+[$r2, $log2] = run(['format' => 'jpeg']);
+Imagick::$gsRescues = false;
+check('  ...two measured, rescued conversions: both drawn, the limits and GS_OPTIONS as they were', [$r1->isSuccess(), $r2->isSuccess(), substr_count(implode(' ', $log1), 'readImage'), Imagick::$resourceLimits, getenv('GS_OPTIONS')], [true, true, 4, [10 => PHP_INT_MAX, 4 => PHP_INT_MAX], false]);
+$page(null);
+boxes([595, 842]);
+
+// A limit that cannot be put back is said once in the error log: it stays
+// with this PHP worker for every request after it.
+$before = new ReflectionProperty(ImagickEngine::class, 'limitsBefore');
+if (PHP_VERSION_ID < 80100) {
+    $before->setAccessible(true);
+}
+$unrestoredLog = tempnam(sys_get_temp_dir(), 'limits');
+$unrestoredWas = ini_set('error_log', $unrestoredLog);
+foreach ([1, 2] as $time) {
+    $before->setValue(null, [10 => 1.0E20]);
+    ImagickEngine::restoreLimits();
+}
+$unrestored = (string) file_get_contents($unrestoredLog);
+ini_set('error_log', (string) $unrestoredWas);
+@unlink($unrestoredLog);
+Imagick::$resourceLimits = [];
+check('  ...a limit that cannot be put back is logged, once', substr_count($unrestored, 'could not be put back'), 1);
+
+$fit = new ReflectionMethod(ImagickEngine::class, 'fittedResolution');
+if (PHP_VERSION_ID < 80100) {
+    $fit->setAccessible(true);
+}
+$fitEngine = new ImagickEngine();
+check('  ...a size that is not a finite number is not one to draw as asked', [$fit->invoke($fitEngine, NAN, 842.0, 150.0, 4.0E7), $fit->invoke($fitEngine, INF, 842.0, 150.0, 4.0E7), $fit->invoke($fitEngine, 595.0, 842.0, 150.0, 4.0E7)], [null, null, 150.0]);
+
+// Review after 1.4.37: what the box reading's tests did not reach.
+check('  ...an escaped box key first in an object stream\'s data, or straight after another escaped name: no answer', [
+    ImagickEngine::largestPageBox($boxFile($decoy . $stream('/Type /ObjStm /N 1 /First 4 /Filter /FlateDecode', gzcompress('/Media#42ox [0 0 300000 300000]')))),
+    ImagickEngine::largestPageBox($boxFile($decoy . $stream('/Type /ObjStm /N 1 /First 4 /Filter /FlateDecode', gzcompress('3 0 << /A#41/Media#42ox [0 0 300000 300000] >>')))),
+], [null, null]);
+check('  ...an object stream left unfiltered, with no /Length: read to its endstream', ImagickEngine::largestPageBox($boxFile($a4 . "\n7 0 obj << /Type /ObjStm /N 1 /First 4 >>\nstream\n1 0 << /MediaBox [0 0 3000 3000] >>\nendstream\nendobj\n")), [9000000.0, 3000.0]);
+// Exactly TOKENS_MAX tokens are read; one more, no answer.
+$tokensOf = static function (string $bytes): int {
+    $m = new ReflectionMethod(ImagickEngine::class, 'readTokens');
+    if (PHP_VERSION_ID < 80100) {
+        $m->setAccessible(true);
+    }
+    $state = ['firsts' => 0, 'tokens' => 0, 'streams' => []];
+    $m->invokeArgs(null, [$bytes, false, &$state]);
+    return $state['tokens'];
+};
+$head = "%PDF-1.4\n<< /MediaBox [0 0 595 842] >>\n";
+$room = 2000000 - $tokensOf($head);
+$exact = $head . str_repeat('1 ', intdiv($room, 2)) . ($room % 2 ? '1' : '');
+$many = RAPLS_PIC_TEST_TMP . '/box-tokens.pdf';
+file_put_contents($many, $exact);
+$atMost = [$tokensOf($exact), ImagickEngine::largestPageBox($many)];
+file_put_contents($many, $exact . ($room % 2 ? ' ' : '1'));
+$onePast = ImagickEngine::largestPageBox($many);
+@unlink($many);
+check('  ...two million tokens exactly are read; one more, no answer', [$atMost, $onePast], [[2000000, [612.0 * 842.0, 842.0]], null]);
 
 echo "\n=== Review after 1.4.35: the limits' edges ===\n";
 // A filter answering 1 pixel is a limit of 1 pixel; one answering less, or
@@ -1523,14 +1670,14 @@ check('  ...the page equal to the count is past the end; a one-page PDF has "1 p
 // confirmed by it first, since a damaged file can state fewer pages than
 // Ghostscript finds (review after 1.4.32).
 $pdfWas = $pdf;
-$pdf = $treeFile("1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n2 0 obj << /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >> endobj");
+$pdf = $treeFile("1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n2 0 obj << /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 /MediaBox [0 0 595 842] >> endobj");
 [$r, $log] = run(['format' => 'jpeg', 'page' => 2]);
 $confirmed = [$r->getCode(), in_array('pingImage', $log, true)];
 Imagick::$countSays = 9;
 [$r, $log] = run(['format' => 'jpeg', 'page' => 2]);
 $understated = $r->getCode();
 Imagick::$countSays = null;
-$pdf = $treeFile("2 0 obj << /Type /Pages /Kids [3 0 R] /Count 5 >> endobj");
+$pdf = $treeFile("2 0 obj << /Type /Pages /Kids [3 0 R] /Count 5 /MediaBox [0 0 595 842] >> endobj");
 [$r, $log] = run(['format' => 'jpeg', 'page' => 1]);
 $within = [$r->getCode(), in_array('pingImage', $log, true)];
 $pdf = $pdfWas;
@@ -1539,6 +1686,19 @@ $pdf = $pdfWas;
 // a page that is not there came back as a render error. ImageMagick counts
 // first now, on a failure only.
 check('  ...counted by ImageMagick first, whatever the page tree says', [$confirmed, $understated, $within], [['page_out_of_range', true], 'render_error', ['page_out_of_range', true]]);
+// Review after 1.4.37: not where a page in the file is too large to draw at
+// 2 dpi within the default limit, or the boxes cannot say -- the count draws
+// every page at 2 dpi, under no limit of ours. The file's own figure then.
+$pdf = $treeFile("2 0 obj << /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 /MediaBox [0 0 300000 300000] >> endobj");
+Imagick::$countSays = 9;
+[$r, $log] = run(['format' => 'jpeg', 'page' => 2]);
+$hugeTree = [$r->getCode(), in_array('pingImage', $log, true)];
+$pdf = $treeFile("2 0 obj << /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >> endobj");
+[$r, $log] = run(['format' => 'jpeg', 'page' => 2]);
+$noBoxTree = [$r->getCode(), in_array('pingImage', $log, true)];
+Imagick::$countSays = null;
+$pdf = $pdfWas;
+check('  ...not counted by ImageMagick where a box is too large to draw small, or there is no box: the page tree\'s figure', [$hugeTree, $noBoxTree], [['page_out_of_range', false], ['page_out_of_range', false]]);
 // Verification of 1.4.34: a page past the server's width or height limit is
 // left out of a ping of the whole document, and was then called missing. When
 // ImageMagick says the page was too large, it is too large.

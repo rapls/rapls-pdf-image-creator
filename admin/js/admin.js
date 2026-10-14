@@ -204,7 +204,7 @@
                         self.showScan(response.data, includeExisting);
                     },
                     error: function(xhr, status, error) {
-                        self.scanFailed(raplsPicAdmin.i18n.error + '\n\n' + raplsPicAdmin.i18n.httpStatus.replace('%s', status) + '\n' + raplsPicAdmin.i18n.httpError.replace('%s', error));
+                        self.scanFailed(raplsPicAdmin.i18n.error + '\n\n' + raplsPicAdmin.i18n.httpStatus.replace('%s', function() { return String(status); }) + '\n' + raplsPicAdmin.i18n.httpError.replace('%s', function() { return String(error); }));
                     }
                 });
             };
@@ -385,7 +385,9 @@
                 .replace('%2$d', this.total));
 
             // Log current file
-            this.log(raplsPicAdmin.i18n.processingFile.replace('%s', filename), 'info');
+            // A function, not the name itself: a string replacement reads
+            // "$&" and "$'" in it as patterns (review after 1.4.37).
+            this.log(raplsPicAdmin.i18n.processingFile.replace('%s', function() { return filename; }), 'info');
 
             // On past this PDF whatever happens to it, as before.
             const next = function() {
@@ -407,7 +409,9 @@
                 success: function(response) {
                     if (response.success) {
                         self.generated++;
-                        self.log('✓ ' + filename, 'success');
+                        // The old thumbnail kept, a post showing it: said
+                        // (review after 1.4.37).
+                        self.log('✓ ' + filename + (response.data && response.data.kept_previous ? ': ' + response.data.message : ''), 'success');
                     } else {
                         self.failed++;
                         self.log('✗ ' + filename + ': ' + ((response.data && response.data.message) || raplsPicAdmin.i18n.failed), 'error');
@@ -589,6 +593,11 @@
      * Initialize on document ready
      */
     $(document).ready(function() {
+        // The stylesheet hides the tabs not chosen, and shows the buttons
+        // only this script answers, once this is here: a page where this
+        // script did not run keeps every tab in view (review after 1.4.37).
+        $('.rapls-pic-settings').addClass('rapls-pic-js');
+
         // Store original button text
         $('#rapls-pic-bulk-scan').data('original-text', $('#rapls-pic-bulk-scan').text());
 

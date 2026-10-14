@@ -274,7 +274,7 @@ check(
 
 // Review after 1.4.34: only switches that set a value, and none that
 // loosens Ghostscript's sandbox or sends its output elsewhere.
-foreach (['-Ifonts', '-dNOSAFER', '-DNOSAFER', '-dSAFER -dDELAYSAFER', '-dSAFER=false', '-dDOPS', '-dPermitFileReading=/', '-sOutputFile=/tmp/x', '-sDEVICE=txtwrite', '-sstdout=/tmp/x', '-sSTDERR=/tmp/x', '-c quit', '-f/tmp/x.ps', '-r300', '-g9000x9000', '-dDEVICEWIDTH=90000', '-dDEVICEHEIGHTPOINTS=90000', '-dDEVICEXRESOLUTION=9000', '-dFIXEDMEDIA', '-dFIXEDRESOLUTION', '-sPAPERSIZE=a0', '-dUseArtBox', '-dUSECROPBOX', '-q -dNOSAFER', '-sFONTPATH=/srv/fonts', '-sGenericResourceDir=/tmp/', '-sICCProfilesDir=/tmp/', '-sDefaultRGBProfile=/tmp/x.icc', '-SOutputICCProfile=/tmp/x.icc', '-sFoo_File=/tmp/x', '-dFooPath', '-sFONTMAP=/tmp/Fontmap', '-sCIDFMAP=/tmp/cidfmap', '-dFONTMAP=/tmp/Fontmap', '-dCIDFMAP=x', '-dWRITESYSTEMDICT', '-dDELAYBIND', '-dNOOUTERSAVE', '-sPageList=2', '-dFirstPage=2', '-dLastPage=9', '-I/tmp', '@/tmp/args', '-sDEFAULTPAPERSIZE=a0', '-dPDFFitPage', '-dEPSFitPage', '-sCIDFSubstFont=/srv/x.ttf', '-sCIDFSubstFont=Arial', '-sSourceObjectICC=/tmp/x', '-sSourceObjectICC=x', '-dDownScaleFactor=8', '-dHWResolution=9000', '-sHWSIZE=9000x9000', '-sNonsense=/etc/passwd', '-dMEDIAPOSITION=1', '-dBufferSpace=2000000000', '-dMaxBitmap=500000000', '-dMaxBitmap', '-dBandHeight=9000', '-dNumRenderingThreads=64', '-dDOINTERPOLATE', '-dInterpolateControl=4'] as $flags) {
+foreach (['-Ifonts', '-dNOSAFER', '-DNOSAFER', '-dSAFER -dDELAYSAFER', '-dSAFER=false', '-dDOPS', '-dPermitFileReading=/', '-sOutputFile=/tmp/x', '-sDEVICE=txtwrite', '-sstdout=/tmp/x', '-sSTDERR=/tmp/x', '-c quit', '-f/tmp/x.ps', '-r300', '-g9000x9000', '-dDEVICEWIDTH=90000', '-dDEVICEHEIGHTPOINTS=90000', '-dDEVICEXRESOLUTION=9000', '-dFIXEDMEDIA', '-dFIXEDRESOLUTION', '-sPAPERSIZE=a0', '-dUseArtBox', '-dUSECROPBOX', '-q -dNOSAFER', '-sFONTPATH=/srv/fonts', '-sGenericResourceDir=/tmp/', '-sICCProfilesDir=/tmp/', '-sDefaultRGBProfile=/tmp/x.icc', '-SOutputICCProfile=/tmp/x.icc', '-sFoo_File=/tmp/x', '-dFooPath', '-sFONTMAP=/tmp/Fontmap', '-sCIDFMAP=/tmp/cidfmap', '-dFONTMAP=/tmp/Fontmap', '-dCIDFMAP=x', '-dWRITESYSTEMDICT', '-dDELAYBIND', '-dNOOUTERSAVE', '-sPageList=2', '-dFirstPage=2', '-dLastPage=9', '-I/tmp', '@/tmp/args', '-sDEFAULTPAPERSIZE=a0', '-dPDFFitPage', '-dEPSFitPage', '-sCIDFSubstFont=/srv/x.ttf', '-sCIDFSubstFont=Arial', '-sSourceObjectICC=/tmp/x', '-sSourceObjectICC=x', '-dDownScaleFactor=8', '-dHWResolution=9000', '-sHWSIZE=9000x9000', '-sNonsense=/etc/passwd', '-dMEDIAPOSITION=1', '-dBufferSpace=2000000000', '-dMaxBitmap=500000000', '-dMaxBitmap', '-dBandHeight=9000', '-dNumRenderingThreads=64', '-dDOINTERPOLATE', '-dInterpolateControl=4', '-sPERMITFILEREADING=foo', '-dPermitFileWriting=x', '-dPermitFileControl'] as $flags) {
     reset_state();
     add_filter('rapls_pdf_image_creator_ghostscript_options', function () use ($flags) { return $flags; });
     check('refused: ' . $flags, [priv($engine, $ref, 'readWithGhostscriptOptions', '/tmp/none.pdf', 0, 150), Imagick::$log], [null, []]);
@@ -309,12 +309,28 @@ $dropLogged = (string) file_get_contents($dropLog);
 ini_set('error_log', (string) $dropLogWas);
 @unlink($dropLog);
 check('  ...said in the error log, once per value, by name and never by value (a path)', [substr_count($dropLogged, 'left out of the blank-page retry'), false !== strpos($dropLogged, '-dMaxBitmap'), false !== strpos($dropLogged, '500000000'), false !== strpos($dropLogged, '-dDELAYSAFER'), false !== strpos($dropLogged, '-sOutputFile'), false !== strpos($dropLogged, '/srv/secret'), false !== strpos($dropLogged, '/home/u/fonts'), false !== strpos($dropLogged, 'quit'), false !== strpos($dropLogged, '(other)')], [4, true, false, true, true, false, false, false, true]);
-// Nothing left but -q or -dSAFER: no retry.
-foreach (['-q -dNOSAFER', '-dSAFER -dMaxBitmap=1'] as $flags) {
+// Nothing left but -q or -dSAFER, in any case: no retry.
+foreach (['-q -dNOSAFER', '-dSAFER -dMaxBitmap=1', '-dsafer -q', '-DSafer'] as $flags) {
     Imagick::$gsOptionsSeen = [];
     add_filter('rapls_pdf_image_creator_ghostscript_options', function () use ($flags) { return $flags; });
     check('  ...nothing left to retry with: ' . $flags, [priv($engine, $ref, 'readWithGhostscriptOptions', '/tmp/none.pdf', 0, 150), Imagick::$gsOptionsSeen], [null, []]);
 }
+// Review after 1.4.37: a value with a character no switch is made of is no
+// retry at all, as since 1.4.0 -- not one with that switch left out.
+foreach (["-dNOTRANSPARENCY -sFoo=a\"b", "-dNOTRANSPARENCY\t-dTextAlphaBits=4", "-dNOTRANSPARENCY -sFoo=50%"] as $flags) {
+    Imagick::$gsOptionsSeen = [];
+    add_filter('rapls_pdf_image_creator_ghostscript_options', function () use ($flags) { return $flags; });
+    check('  ...a character no switch is made of: no retry, ' . json_encode($flags), [priv($engine, $ref, 'readWithGhostscriptOptions', '/tmp/none.pdf', 0, 150), Imagick::$gsOptionsSeen], [null, []]);
+}
+// Every switch left out is named, past a double space among them.
+$dropLog = tempnam(sys_get_temp_dir(), 'gsdrop');
+$dropLogWas = ini_set('error_log', $dropLog);
+add_filter('rapls_pdf_image_creator_ghostscript_options', function () { return '-dMaxBitmap=1  -sFONTPATH=/x -dNOTRANSPARENCY'; });
+priv($engine, $ref, 'readWithGhostscriptOptions', '/tmp/none.pdf', 0, 150);
+$dropLogged = (string) file_get_contents($dropLog);
+ini_set('error_log', (string) $dropLogWas);
+@unlink($dropLog);
+check('  ...every switch left out is named, past a double space', [false !== strpos($dropLogged, '-dMaxBitmap'), false !== strpos($dropLogged, '-sFONTPATH'), false !== strpos($dropLogged, '/x')], [true, true, false]);
 Imagick::$blankWithoutGsOptions = false;
 
 reset_state();
@@ -456,13 +472,13 @@ check('Ghostscript exiting 1 in the check is "unable to check", not "no PDF supp
 $child = sys_get_temp_dir() . '/rapls-pic-canset-' . getmypid() . '.php';
 file_put_contents($child, '<?php define("ABSPATH", "/"); function __($s, $d = null) { return $s; } require ' . var_export(RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/EngineInterface.php', true) . '; require ' . var_export(RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/ColorProfile.php', true) . '; require ' . var_export(RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/ImagickEngine.php', true) . '; $m = new ReflectionMethod(Rapls\\PDFImageCreator\\Engine\\ImagickEngine::class, "canSetEnvironment"); if (PHP_VERSION_ID < 80100) { $m->setAccessible(true); } echo $m->invoke(new Rapls\\PDFImageCreator\\Engine\\ImagickEngine()) ? "yes" : "no";');
 $asked = [];
-foreach (['putenv', 'exec'] as $list) {
+foreach (['putenv', 'exec', 'getenv'] as $list) {
     $out = [];
     exec(escapeshellarg(PHP_BINARY) . ' -n -d ' . escapeshellarg('disable_functions=' . $list) . ' ' . escapeshellarg($child) . ' 2>&1', $out);
     $asked[$list] = implode('', $out);
 }
 @unlink($child);
-check('putenv disabled on the host: the retry is not tried; otherwise it is', $asked, ['putenv' => 'no', 'exec' => 'yes']);
+check('putenv or getenv disabled on the host: the retry is not tried; otherwise it is', $asked, ['putenv' => 'no', 'exec' => 'yes', 'getenv' => 'no']);
 
 echo "\n--- Review after 1.4.33: what was not pinned ---\n";
 // The device note names bmpsep8 as the one ImageMagick cannot read back, and

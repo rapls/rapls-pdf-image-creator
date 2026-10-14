@@ -523,8 +523,13 @@ final class MediaLibrary
         ];
 
         // Add other sizes if available
-        if (!empty($thumbnailMeta['sizes'])) {
+        if (!empty($thumbnailMeta['sizes']) && is_array($thumbnailMeta['sizes'])) {
             foreach ($thumbnailMeta['sizes'] as $sizeName => $sizeData) {
+                // A size another plugin wrote without its file or measures
+                // is left out, not read as a warning (review after 1.4.37).
+                if (!self::isSize($sizeData)) {
+                    continue;
+                }
                 $sizes[$sizeName] = [
                     'url' => $sizeBase . $sizeData['file'],
                     'width' => $sizeData['width'],
@@ -671,8 +676,11 @@ final class MediaLibrary
         ];
 
         // Add other sizes
-        if (!empty($thumbnailMeta['sizes'])) {
+        if (!empty($thumbnailMeta['sizes']) && is_array($thumbnailMeta['sizes'])) {
             foreach ($thumbnailMeta['sizes'] as $sizeName => $sizeData) {
+                if (!self::isSize($sizeData)) {
+                    continue;
+                }
                 $mediaDetails['sizes'][$sizeName] = [
                     'file' => $sizeData['file'],
                     'width' => $sizeData['width'],
@@ -928,7 +936,10 @@ final class MediaLibrary
         }
         $redirectUrl = remove_query_arg(['rapls_pic_generated', 'rapls_pic_error'], $redirectUrl);
         if ($result) {
-            $redirectUrl = add_query_arg('rapls_pic_generated', '1', $redirectUrl);
+            // "kept": the old thumbnail stays, a post shows it, and the
+            // notice says so (review after 1.4.37).
+            $kept = $this->generator->outcomeFor($attachmentId)['kept_previous'] ?? null;
+            $redirectUrl = add_query_arg('rapls_pic_generated', null !== $kept ? 'kept' : '1', $redirectUrl);
         } else {
             // The code, not the message: the notice says it in words of its
             // own, so nothing from ImageMagick -- a command line, a server
@@ -941,6 +952,17 @@ final class MediaLibrary
 
         wp_safe_redirect($redirectUrl);
         exit;
+    }
+
+    /**
+     * Whether a size in an image's metadata has the file and measures read from it
+     *
+     * @param mixed $size
+     */
+    private static function isSize($size): bool
+    {
+        return is_array($size) && isset($size['file'], $size['width'], $size['height'])
+            && is_string($size['file']) && '' !== $size['file'] && is_numeric($size['width']) && is_numeric($size['height']);
     }
 
     /**
@@ -992,8 +1014,38 @@ final class MediaLibrary
         // mark (admin/js/block-editor.js). Any image query used to get PDFs:
         // another plugin's image picker too, which can take only images, and
         // was handed a PDF (Codex review of 1.4.29, 1).
-        if (!is_array($mimeType) || !in_array(self::PICKER_MARK, $mimeType, true)) {
-            return $query;
+        //
+        // A site whose builder or field plugin took PDFs that way, as 1.4.20
+        // let every image picker do, can have it back: the filter below
+        // returning true puts PDFs with thumbnails into every query for
+        // images (review after 1.4.37).
+        $marked = is_array($mimeType) && in_array(self::PICKER_MARK, $mimeType, true);
+        if (!$marked) {
+            $asksImages = 'image' === $mimeType || (is_array($mimeType) && in_array('image', $mimeType, true));
+            /**
+             * Whether every image picker is given PDFs with thumbnails, as in 1.4.20
+             *
+             * Off by default: only WordPress's own image block, gallery and
+             * featured image pickers are. On, any media query for "image" --
+             * a page builder's, a field plugin's, the classic "Create
+             * Gallery" -- lists PDFs that have a thumbnail too, as every one
+             * did up to 1.4.20. A picker that can take only images may then
+             * be handed a PDF.
+             *
+             * @since 1.4.38
+             *
+             * @param bool  $every Whether to.
+             * @param array $query The media query's arguments. Asked once
+             *                     more with [] when the block editor
+             *                     loads, for its pickers' side
+             *                     (enqueueBlockEditorAssets()): a listener
+             *                     that decides by the query answers then
+             *                     for no query in particular.
+             */
+            if (!$asksImages || true !== apply_filters('rapls_pdf_image_creator_pdfs_in_every_image_picker', false, $query)) {
+                return $query;
+            }
+            $mimeType = (array) $mimeType;
         }
 
         $types = array_values(array_diff($mimeType, [self::PICKER_MARK]));
@@ -1116,6 +1168,10 @@ final class MediaLibrary
             'deleteUploaded' => __('Delete the uploaded PDF', 'rapls-pdf-image-creator'),
             'deleted' => __('The PDF was deleted from the Media Library.', 'rapls-pdf-image-creator'),
             'deleteFailed' => __('The PDF could not be deleted. Delete it in the Media Library.', 'rapls-pdf-image-creator'),
+            // rapls_pdf_image_creator_pdfs_in_every_image_picker, for the
+            // pickers' side: their allowed types and the media window's
+            // library, as 1.4.20 set them (review of 1.4.37's fixes).
+            'everyPicker' => true === apply_filters('rapls_pdf_image_creator_pdfs_in_every_image_picker', false, []),
         ]);
     }
 

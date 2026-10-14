@@ -14,8 +14,26 @@ namespace {
     define('RAPLS_PIC_PLUGIN_DIR', dirname(__DIR__) . '/');
 
     // generate() loads wp-admin/includes/image.php; an empty one will do.
-    $abs = sys_get_temp_dir() . '/rapls-pic-regen-' . bin2hex(random_bytes(4)) . '/';
+    // Under the run's own folder when run.php gives one, and removed when
+    // this suite ends: one was left behind on every run, some 110 files each
+    // (review after 1.4.37).
+    $base = getenv('RAPLS_PIC_TEST_TMP');
+    $base = is_string($base) && '' !== $base && is_dir($base) ? $base : sys_get_temp_dir();
+    $abs = $base . '/rapls-pic-regen-' . bin2hex(random_bytes(4)) . '/';
     mkdir($abs . 'wp-admin/includes', 0777, true);
+    // Not in the child that dies while drawing: that one removes its own
+    // folder last, after the plugin's shutdown function has had its turn,
+    // which is what it checks.
+    '1' === getenv('RAPLS_PIC_DIE_WHILE_DRAWING') || register_shutdown_function(static function () use ($abs): void {
+        if (!is_dir($abs)) {
+            return;
+        }
+        $tree = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($abs, \FilesystemIterator::SKIP_DOTS), \RecursiveIteratorIterator::CHILD_FIRST);
+        foreach ($tree as $item) {
+            $item->isDir() && !$item->isLink() ? @rmdir($item->getPathname()) : @unlink($item->getPathname());
+        }
+        @rmdir($abs);
+    });
     file_put_contents($abs . 'wp-admin/includes/image.php', "<?php\n");
     define('ABSPATH', $abs);
     $uploads = $abs . 'uploads';
@@ -54,9 +72,17 @@ namespace {
     function get_post_mime_type($id) { return $GLOBALS['mimes'][(int) $id] ?? false; }
     // This request's object cache: a value read earlier stays until the
     // post's meta is evicted or written, as core's does.
+    // $single as core answers it: the value, or a list of every value
+    // (mutation testing after 1.4.37).
     function get_post_meta($id, $key, $single = false) {
-        if (isset($GLOBALS['meta_cache'][(int) $id]) && array_key_exists($key, $GLOBALS['meta_cache'][(int) $id])) { return $GLOBALS['meta_cache'][(int) $id][$key]; }
-        return $GLOBALS['meta'][(int) $id][$key] ?? '';
+        if (isset($GLOBALS['meta_cache'][(int) $id]) && array_key_exists($key, $GLOBALS['meta_cache'][(int) $id])) {
+            $value = $GLOBALS['meta_cache'][(int) $id][$key];
+        } elseif (isset($GLOBALS['meta'][(int) $id][$key])) {
+            $value = $GLOBALS['meta'][(int) $id][$key];
+        } else {
+            return $single ? '' : [];
+        }
+        return $single ? $value : [$value];
     }
     function update_post_meta($id, $key, $value) {
         unset($GLOBALS['meta_cache'][(int) $id]);
@@ -140,6 +166,7 @@ namespace {
     function wp_send_json_error($d = null, $s = null) { rapls_test_json(false, $d, $s); }
     function wp_send_json_success($d = null, $s = null) { rapls_test_json(true, $d, $s); }
 
+    require __DIR__ . '/fake-content-sql.php';
     require RAPLS_PIC_PLUGIN_DIR . 'includes/FailureCode.php';
     require RAPLS_PIC_PLUGIN_DIR . 'includes/Settings.php';
     require RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/ConversionResult.php';
@@ -175,15 +202,8 @@ namespace {
             $this->contentQueries++;
             $this->last_error = $this->contentFails ? 'simulated failure' : '';
             if ($this->contentFails) { return []; }
-            $rows = [];
-            foreach ($GLOBALS['content'] as $id => $html) {
-                if ($id <= (int) $q[1][0]) { continue; }
-                foreach (array_slice($q[1], 1) as $like) {
-                    $needle = stripslashes(substr($like, 1, -1));
-                    if (false !== stripos($html, $needle)) { $rows[] = ['ID' => (string) $id, 'post_content' => $html]; break; }
-                }
-            }
-            return $rows;
+            // As MySQL would answer the SQL given (fake-content-sql.php).
+            return rapls_test_content_rows($q, $GLOBALS['content'], $GLOBALS['excerpts'] ?? []);
         }
     };
 
@@ -302,7 +322,13 @@ namespace {
         [is_int($new) && 46 !== $new, $GLOBALS['meta'][45]['_rapls_pic_thumbnail_id'] ?? null, $GLOBALS['deleted'], isset($GLOBALS['posts'][46]), $GLOBALS['meta'][46]['_rapls_pic_is_thumbnail'] ?? ''],
         [true, $new, [], true, '']);
     check('  ...kept on purpose, so not logged as a delete that failed', false !== strpos($keptLogged, 'could not be deleted'), false);
+    // Review after 1.4.37: and said where it was regenerated -- the post
+    // still shows the old picture.
+    check('  ...and the outcome says the old one was kept', $generator->outcomeFor(45)['kept_previous'] ?? 'none', 46);
     $GLOBALS['content'] = [];
+    $generator->generate(40, true);
+    $deletedOutcome = $generator->outcomeFor(40) ?? [];
+    check('  ...one deleted is not said to be kept', [array_key_exists('kept_previous', $deletedOutcome), $deletedOutcome['kept_previous'] ?? null], [true, null]);
 
     // Review of 1.4.36: the posts are read once. Asking again whether the
     // image was "used elsewhere" after keeping it read them a second time.
@@ -463,7 +489,7 @@ namespace {
     check('a request that dies while drawing leaves no reserved file; one that finished keeps its image', [$reservedSeen, is_int($kept) && is_file($GLOBALS['files'][$kept] ?? '')], [[1, 0], true]);
     // ...by the shutdown function itself, in a request that really dies.
     $died = [];
-    exec('RAPLS_PIC_DIE_WHILE_DRAWING=1 ' . escapeshellarg(PHP_BINARY) . ' -d ' . escapeshellarg('error_reporting=E_ALL & ~E_DEPRECATED') . ' ' . escapeshellarg(__FILE__) . ' 2>&1', $died);
+    exec('RAPLS_PIC_DIE_WHILE_DRAWING=1 ' . escapeshellarg(PHP_BINARY) . ' -d error_reporting=E_ALL -d display_errors=stderr ' . escapeshellarg(__FILE__) . ' 2>&1', $died);
     check('  ...and in a request that dies there, the shutdown function deletes it', implode("\n", $died), "drawing:1\nafter:0");
     $pdf(210, 211);
     $engine->renders = false;

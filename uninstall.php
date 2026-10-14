@@ -189,10 +189,13 @@ function rapls_pic_uninstall_move_featured(): bool
  * shortcode naming the image or the PDF it was made from -- a PDF in a
  * gallery showed its thumbnail, and without the plugin it shows nothing, so
  * the image is kept for the post to be pointed at again (review of 1.4.36).
+ * This plugin's own shortcodes naming the PDF count the same way (review
+ * after 1.4.37).
  *
- * Only post_content is read: not widgets, not options, not a page builder's
- * own meta. Revisions, auto-drafts and trashed posts are not read: a
- * revision kept a picture taken out of the post long ago. Every other post
+ * The content and the excerpt are read: not widgets, not options, not a page
+ * builder's own meta. Revisions and auto-drafts are not read: a revision
+ * kept a picture taken out of the post long ago. A trashed post is: it can
+ * be restored with its pictures (review after 1.4.37). Every other post
  * is read, 200 at a time, unless every thumbnail has been found sooner. On a
  * very large site that can outlast the request; if it does, nothing has
  * been deleted yet, and the plugin's settings and markers are what is left
@@ -230,7 +233,7 @@ function rapls_pic_uninstall_shown_in_content(array $thumbnails): ?array
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Uninstall cleanup requires direct query; constants only
         $rapls_pic_posts = $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT ID, post_content FROM {$wpdb->posts} WHERE ID > %d AND post_type NOT IN ({$rapls_pic_skip_types}) AND post_status NOT IN ({$rapls_pic_skip_statuses}) AND post_content <> '' ORDER BY ID LIMIT 200",
+                "SELECT ID, post_content, post_excerpt FROM {$wpdb->posts} WHERE ID > %d AND post_type NOT IN ({$rapls_pic_skip_types}) AND post_status NOT IN ({$rapls_pic_skip_statuses}) AND (post_content <> '' OR post_excerpt <> '') ORDER BY ID LIMIT 200",
                 $rapls_pic_after
             ),
             ARRAY_A
@@ -241,12 +244,15 @@ function rapls_pic_uninstall_shown_in_content(array $thumbnails): ?array
 
         foreach ($rapls_pic_posts as $rapls_pic_post) {
             $rapls_pic_after = (int) $rapls_pic_post['ID'];
-            $rapls_pic_content = (string) $rapls_pic_post['post_content'];
+            $rapls_pic_content = (string) $rapls_pic_post['post_content'] . "\n" . (string) ($rapls_pic_post['post_excerpt'] ?? '');
 
-            foreach (array_intersect_key($rapls_pic_by_stem, \Rapls\PDFImageCreator\ContentUse::stemsIn($rapls_pic_content)) as $rapls_pic_ids) {
-                $rapls_pic_shown += array_fill_keys($rapls_pic_ids, true);
+            // stemsShown(): a post the pattern cannot be run over still
+            // keeps every image whose name it holds (review after 1.4.37).
+            foreach (\Rapls\PDFImageCreator\ContentUse::stemsShown($rapls_pic_content, array_keys($rapls_pic_by_stem)) as $rapls_pic_stem) {
+                $rapls_pic_shown += array_fill_keys($rapls_pic_by_stem[$rapls_pic_stem], true);
             }
-            foreach (array_intersect_key($rapls_pic_by_id, \Rapls\PDFImageCreator\ContentUse::idsIn($rapls_pic_content)) as $rapls_pic_ids) {
+            $rapls_pic_named = \Rapls\PDFImageCreator\ContentUse::idsIn($rapls_pic_content) + \Rapls\PDFImageCreator\ContentUse::shortcodePdfIdsIn($rapls_pic_content);
+            foreach (array_intersect_key($rapls_pic_by_id, $rapls_pic_named) as $rapls_pic_ids) {
                 $rapls_pic_shown += array_fill_keys($rapls_pic_ids, true);
             }
         }

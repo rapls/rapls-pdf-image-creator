@@ -202,9 +202,15 @@ $GLOBALS['wpdb'] = new class {
                 }
             }
             $rows = [];
-            foreach (site()['posts'] as $id => $content) {
+            // The excerpt too, when the SQL asks for it (review after 1.4.37).
+            $withExcerpt = 1 === preg_match('/SELECT ID, post_content, post_excerpt FROM/', $sql);
+            $ids = array_unique(array_merge(array_keys(site()['posts']), array_keys(site()['excerpts'] ?? [])));
+            sort($ids);
+            foreach ($ids as $id) {
                 if ($id > (int) $m[1] && count($rows) < (int) $m[2] && !in_array($id, $skip, true)) {
-                    $rows[] = ['ID' => (string) $id, 'post_content' => $content];
+                    $row = ['ID' => (string) $id, 'post_content' => site()['posts'][$id] ?? ''];
+                    if ($withExcerpt) { $row['post_excerpt'] = site()['excerpts'][$id] ?? ''; }
+                    $rows[] = $row;
                 }
             }
             return $rows;
@@ -403,15 +409,44 @@ $GLOBALS['sites'][1]['posts'][200] = '<img src="/wp-content/uploads/2026/10/annu
 rapls_pic_uninstall_site();
 check('a post showing "annual-d-pdf-thumbnail" does not keep "d-pdf-thumbnail"', $GLOBALS['sites'][1]['deleted'], [71]);
 
-// A revision, an auto-draft and a trashed post do not count.
+// A revision and an auto-draft do not count.
 seed_site();
 $GLOBALS['sites'][1]['posts'][200] = '<img src="/wp-content/uploads/2026/10/d-pdf-thumbnail.jpg">';
 $GLOBALS['sites'][1]['posts'][201] = '<img class="wp-image-71">';
-$GLOBALS['sites'][1]['posts'][202] = '[gallery ids="71"]';
 $GLOBALS['sites'][1]['revisions'] = [200];
-$GLOBALS['sites'][1]['statuses'] = ['auto-draft' => [201], 'trash' => [202]];
+$GLOBALS['sites'][1]['statuses'] = ['auto-draft' => [201]];
 rapls_pic_uninstall_site();
-check('a revision, an auto-draft and a trashed post keep nothing', $GLOBALS['sites'][1]['deleted'], [71]);
+check('a revision and an auto-draft keep nothing', $GLOBALS['sites'][1]['deleted'], [71]);
+
+echo "\n--- Review after 1.4.37 ---\n";
+
+// A trashed post does: it can be restored with its pictures.
+seed_site();
+$GLOBALS['sites'][1]['posts'][202] = '[gallery ids="71"]';
+$GLOBALS['sites'][1]['statuses'] = ['trash' => [202]];
+rapls_pic_uninstall_site();
+check('a trashed post keeps what it shows, for when it is restored', $GLOBALS['sites'][1]['deleted'], []);
+
+// An excerpt -- a WooCommerce product's short description.
+seed_site();
+$GLOBALS['sites'][1]['excerpts'][203] = '<img src="/wp-content/uploads/2026/10/d-pdf-thumbnail-150x150.jpg">';
+rapls_pic_uninstall_site();
+check('an image shown only in an excerpt is kept', $GLOBALS['sites'][1]['deleted'], []);
+
+// This plugin's own shortcode naming the PDF, as a gallery naming it does.
+seed_site();
+$GLOBALS['sites'][1]['posts'][204] = '[rapls_pdf_thumbnail id="70" size="medium"]';
+rapls_pic_uninstall_site();
+check('a [rapls_pdf_thumbnail] naming its PDF keeps the image', $GLOBALS['sites'][1]['deleted'], []);
+
+// A post the name pattern cannot be run over still keeps what it names.
+seed_site();
+$GLOBALS['sites'][1]['posts'][205] = '<img src="/wp-content/uploads/2026/10/d-pdf-thumbnail.jpg">' . str_repeat('a.', 20000);
+$rapls_limit_was = ini_get('pcre.backtrack_limit');
+ini_set('pcre.backtrack_limit', '1000');
+rapls_pic_uninstall_site();
+ini_set('pcre.backtrack_limit', (string) $rapls_limit_was);
+check('past PCRE\'s backtrack limit, the image the post names is kept', $GLOBALS['sites'][1]['deleted'], []);
 
 echo "\n$pass passed, $fail failed\n";
 exit($fail ? 1 : 0);

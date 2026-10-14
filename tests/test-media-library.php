@@ -129,7 +129,7 @@ namespace {
     @rmdir($uploads);
 
     // R66-01: the hide clause is ANDed with an existing meta query, not added to its OR.
-    if (!function_exists('apply_filters')) { function apply_filters($tag, $value, ...$args) { return $value; } }
+    if (!function_exists('apply_filters')) { function apply_filters($tag, $value, ...$args) { return isset($GLOBALS['filtered'][$tag]) ? $GLOBALS['filtered'][$tag]($value, ...$args) : $value; } }
     $orQuery = ['relation' => 'OR', ['key' => 'a', 'value' => '1'], ['key' => 'b', 'value' => '1']];
     $joined = \Rapls\PDFImageCreator\MediaLibrary::withoutGeneratedImages($orQuery);
     check('R66-01: an OR query is kept whole and ANDed', [$joined['relation'] ?? null, $joined[0] ?? null, $joined[1]['relation'] ?? null, $joined[1][0]['compare'] ?? null], ['AND', $orQuery, 'OR', 'NOT EXISTS']);
@@ -152,6 +152,14 @@ namespace {
     check('  ...and the image the key names must exist (R67-01)', [false !== strpos($where, 'INNER JOIN wp_posts rapls_pic_image ON rapls_pic_image.ID = CAST(rapls_pic_thumb.meta_value AS UNSIGNED)'), false !== strpos($where, "rapls_pic_image.post_type = 'attachment'")], [true, true]);
     check('  ...other queries are left alone', $library->limitPdfsToThumbnailed(' AND 1=1', new WP_Query(['post_mime_type' => 'image'])), ' AND 1=1');
     check('  ...a non-image query is not marked', isset($library->allowPdfsInImageSelection(['post_mime_type' => 'application/pdf'])['rapls_pic_image_pick']), false);
+    // Review after 1.4.37: every image picker, as in 1.4.20, for a site that asks.
+    $GLOBALS['filtered']['rapls_pdf_image_creator_pdfs_in_every_image_picker'] = static function ($every, $query) { $GLOBALS['picker_filter_saw'] = $query['post_mime_type'] ?? null; return true; };
+    $every = [$library->allowPdfsInImageSelection(['post_mime_type' => 'image']), $library->allowPdfsInImageSelection(['post_mime_type' => ['image', 'video']])];
+    check('  ...a site that asks: every image picker gets PDFs with thumbnails, as in 1.4.20', [$every[0]['post_mime_type'], $every[0]['rapls_pic_image_pick'] ?? null, $every[1]['post_mime_type'], $GLOBALS['picker_filter_saw']], [['image', 'application/pdf'], true, ['image', 'video', 'application/pdf'], ['image', 'video']]);
+    check('  ...and a query not for images still gets none', [$library->allowPdfsInImageSelection(['post_mime_type' => 'video'])['post_mime_type'], isset($library->allowPdfsInImageSelection(['post_mime_type' => 'application/pdf'])['rapls_pic_image_pick'])], ['video', false]);
+    $GLOBALS['filtered']['rapls_pdf_image_creator_pdfs_in_every_image_picker'] = static function () { return 'yes'; };
+    check('  ...a filter answering anything but true leaves them alone', $library->allowPdfsInImageSelection(['post_mime_type' => 'image'])['post_mime_type'], 'image');
+    unset($GLOBALS['filtered']['rapls_pdf_image_creator_pdfs_in_every_image_picker']);
 
     // Codex review of 1.4.29, 1: the classic editor's featured image script loads on a classic post screen only.
     if (!defined('RAPLS_PIC_PLUGIN_URL')) { define('RAPLS_PIC_PLUGIN_URL', 'https://example.test/wp-content/plugins/rapls-pdf-image-creator/'); }
@@ -227,6 +235,14 @@ namespace {
         'https://cdn.example.net/media/2026/10/doc-pdf-thumbnail-300x225.jpg',
         'https://cdn.example.net/media/2026/10/doc-pdf-thumbnail-300x225.jpg',
     ]);
+    // Review after 1.4.37: a size another plugin wrote without its file or
+    // measures is left out, not read as a warning.
+    $GLOBALS['attachment_meta'][3000]['sizes']['broken'] = ['width' => 10];
+    $GLOBALS['attachment_meta'][3000]['sizes']['odd'] = 'x';
+    $brokenJs = $library->filterAttachmentForJs(['url' => 'https://example.test/300.pdf', 'mime' => 'application/pdf'], new WP_Post(300, 0, 'application/pdf'), []);
+    $brokenRest = $library->filterRestAttachment(new WP_REST_Response(['id' => 300, 'mime_type' => 'application/pdf', 'source_url' => 'https://example.test/300.pdf', 'media_details' => []]), new WP_Post(300, 0, 'application/pdf'), new WP_REST_Request())->get_data();
+    unset($GLOBALS['attachment_meta'][3000]['sizes']['broken'], $GLOBALS['attachment_meta'][3000]['sizes']['odd']);
+    check('  ...a size without its file or measures is left out, the others kept', [isset($brokenJs['sizes']['broken']) || isset($brokenJs['sizes']['odd']), isset($brokenRest['media_details']['sizes']['broken']), isset($brokenJs['sizes']['medium'])], [false, false, true]);
     // Review of 1.4.32: a size the thumbnail has no file for -- "large" for a
     // 1024-pixel image -- is the full image, never the PDF the block editor
     // would fall back to (a gallery asks for "large").

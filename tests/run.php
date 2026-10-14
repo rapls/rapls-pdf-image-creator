@@ -43,7 +43,9 @@ foreach ($suites as $suite) {
 
     // Every notice, deprecations included: leaving those out hid the
     // plugin's own along with the tests' (review of 1.4.35).
-    $command = [PHP_BINARY, '-d', 'error_reporting=E_ALL', __DIR__ . '/' . $suite];
+    // And printed, whatever php.ini says: with display_errors off nothing
+    // reached the output for the check below to see (review after 1.4.37).
+    $command = [PHP_BINARY, '-d', 'error_reporting=E_ALL', '-d', 'display_errors=stderr', '-d', 'log_errors=0', __DIR__ . '/' . $suite];
 
     if ('.js' === substr($suite, -3)) {
         $node = trim((string) @shell_exec('command -v node 2>/dev/null'));

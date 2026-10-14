@@ -807,8 +807,11 @@ final class ImagickEngine implements EngineInterface
             $page = max(0, (int) $options['page']);
 
             // Lowered for a page too large to draw at it. A raster an add-on
-            // hands over has the size it has.
-            if (self::looksLikePdf($pdfPath)) {
+            // hands over has the size it has -- and only a raster is let past:
+            // a PostScript or EPS file, or anything else Ghostscript draws,
+            // was drawn unbounded because it did not start like a PDF (review
+            // after 1.4.37).
+            if (!self::looksLikeRaster($pdfPath)) {
                 $resolution = $this->boundedResolution($pdfPath, $page, $resolution, $options);
 
                 if (null === $resolution) {
@@ -1009,6 +1012,9 @@ final class ImagickEngine implements EngineInterface
             $code = \Rapls\PDFImageCreator\FailureCode::fromExceptionMessage($e->getMessage(), true);
             $pages = null;
 
+            // ImageMagick's count draws every page, at 2 dpi and under no
+            // limit of ours: not asked where the file's boxes say a page in it
+            // is too large to draw small, or cannot say (review after 1.4.37).
             if ((int) $options['page'] > 0 && \Rapls\PDFImageCreator\FailureCode::RENDER_ERROR === $code) {
                 // ImageMagick's count first: the file's own figure is the
                 // largest /Count it states, which a file can overstate and an
@@ -1016,7 +1022,7 @@ final class ImagickEngine implements EngineInterface
                 // came back as a render error (review after 1.4.34). One
                 // Ghostscript pass over the document, on a failure only; the
                 // file's figure where ImageMagick cannot count.
-                $pages = self::pagesPinged($pdfPath);
+                $pages = self::smallEnoughToCount($pdfPath) ? self::pagesPinged($pdfPath) : null;
                 $pages = null !== $pages ? $pages : self::pagesFromBytes($pdfPath);
             }
 
@@ -1269,7 +1275,9 @@ final class ImagickEngine implements EngineInterface
     private const MIN_RESOLUTION = 2.0;
 
     /**
-     * The most pixels the read that measures one page is drawn at, when the file's boxes say how large its pages can be
+     * The most pixels the read that measures one page is drawn at, when its size is known to be no more than a bound
+     *
+     * The file's largest box, or a first measurement at MIN_RESOLUTION.
      */
     private const MEASURE_MAX_PIXELS = 4000000;
 
@@ -1347,7 +1355,8 @@ final class ImagickEngine implements EngineInterface
     private function boundedResolution(string $pdfPath, int $page, float $resolution, array $options): ?float
     {
         $limit = $this->renderPixelLimit($pdfPath, $options);
-        $box = self::largestPageBox($pdfPath);
+        $scan = self::scanPageBoxes($pdfPath);
+        $box = null === $scan ? null : $scan['largest'];
 
         // Within the limit even as the largest box in the file, either way
         // round: drawn as asked, and nothing else run.
@@ -1373,6 +1382,18 @@ final class ImagickEngine implements EngineInterface
         $pixels = min($limit, (float) self::RENDER_MAX_PIXELS);
         $side = (int) ceil(sqrt($pixels));
         $measureAt = self::MIN_RESOLUTION;
+
+        // Where the boxes give no upper bound but do give a lower one -- every
+        // page in the file at least so large, /UserUnit counted -- a page
+        // past the measuring read's bound even at MIN_RESOLUTION is not read
+        // to find that out. The limits refuse such a page only after
+        // Ghostscript has drawn it, and that drawing is bounded by nothing of
+        // ours (review after 1.4.37). A lower bound only ever stops a page
+        // that is too large: a box smaller than the page makes it lower.
+        if (null === $box && null !== $scan && null !== $scan['least']
+            && $scan['least'] * (self::MIN_RESOLUTION / 72) ** 2 > $pixels) {
+            return null;
+        }
 
         if (null !== $box) {
             // The page asked is no larger than the largest box, so drawing it
@@ -1408,7 +1429,8 @@ final class ImagickEngine implements EngineInterface
 
                     throw $again;
                 }
-            } elseif ($measureAt < min($resolution, self::SMALL_PAGE_RESOLUTION)) {
+            } elseif ($measureAt < min($resolution, self::SMALL_PAGE_RESOLUTION)
+                && self::smallEnoughToMeasureAt($box, min($resolution, self::SMALL_PAGE_RESOLUTION), $pixels)) {
                 // A page under a pixel at the measuring density fails to
                 // draw at all: measured on Ghostscript 10.04, a 5-point page
                 // at 2 dpi, which draws at 150. Measured again at
@@ -1420,7 +1442,63 @@ final class ImagickEngine implements EngineInterface
             }
         }
 
-        return $this->fittedResolution($measured[0], $measured[1], $resolution, $limit);
+        $fitted = $this->fittedResolution($measured[0], $measured[1], $resolution, $limit);
+
+        // Measured at MIN_RESOLUTION for want of a box, a pixel over each way
+        // is up to 36 points over: an A4 page at 600 dpi came out at 596
+        // (review after 1.4.37). Where that lowered the page, it is measured
+        // once more at the density that keeps it to MEASURE_MAX_PIXELS --
+        // the first measurement is an upper bound, so that read is bounded.
+        if (null === $box && $measureAt <= self::MIN_RESOLUTION && null !== $fitted && $fitted < $resolution) {
+            $fine = min($resolution, 72 * sqrt(self::MEASURE_MAX_PIXELS / ($measured[0] * $measured[1])));
+
+            if ($fine >= 2 * self::MIN_RESOLUTION) {
+                try {
+                    $again = $this->measurePage($pdfPath . '[' . $page . ']', $fine, max($side, (int) ceil(max($measured[0], $measured[1]) * $fine / 72) + 2), $pixels);
+                    $finer = $this->fittedResolution($again[0], $again[1], $resolution, $limit);
+                    $fitted = null !== $finer ? max($fitted, $finer) : $fitted;
+                } catch (\Throwable $e) {
+                    // The first measurement stands.
+                }
+            }
+        }
+
+        return $fitted;
+    }
+
+    /**
+     * Whether a page no larger than this box may be measured at this density
+     *
+     * The measuring read's limits refuse a page past them only after
+     * Ghostscript has drawn it: drawing every page at 36 dpi to find a
+     * small one was bounded by nothing when the file held a large one
+     * (review after 1.4.37). With no box, the page may be one under a pixel
+     * at 2 dpi, and is measured.
+     *
+     * @param array{0: float, 1: float}|null $box The largest box, or null.
+     */
+    private static function smallEnoughToMeasureAt(?array $box, float $density, float $pixels): bool
+    {
+        if (null === $box) {
+            return true;
+        }
+
+        return $box[0] * ($density / 72) ** 2 <= $pixels && $box[1] * $density / 72 <= ceil(sqrt($pixels));
+    }
+
+    /**
+     * Whether ImageMagick may be asked to count this file's pages
+     *
+     * The count draws every page at 2 dpi, under no limit of ours, on a
+     * failure only (pagesPinged()). Asked only where the file's boxes say
+     * every page fits the default limit even so; otherwise the file's own
+     * figure is all there is (review after 1.4.37).
+     */
+    private static function smallEnoughToCount(string $pdfPath): bool
+    {
+        $box = self::largestPageBox($pdfPath);
+
+        return null !== $box && $box[0] * (self::MIN_RESOLUTION / 72) ** 2 <= self::RENDER_MAX_PIXELS;
     }
 
     /**
@@ -1473,7 +1551,10 @@ final class ImagickEngine implements EngineInterface
      */
     private function fittedResolution(float $width, float $height, float $resolution, float $limit): ?float
     {
-        if ($width <= 0 || $height <= 0) {
+        // Nor a size past what a float holds: a box of 400 digits came out
+        // as INF, INF / INF as NaN, and NaN compares false either way, so it
+        // was handed back as the resolution (review after 1.4.37).
+        if (!is_finite($width) || !is_finite($height) || $width <= 0 || $height <= 0) {
             return null;
         }
 
@@ -1508,7 +1589,10 @@ final class ImagickEngine implements EngineInterface
      * The width and height limits this server sets, where it sets any
      *
      * @return array<int, float> 0 for the width, 1 for the height; a limit
-     *         that is 0 (none), unreadable or absent is left out.
+     *         that is unreadable, absent or under 2 is left out. Under 2 is
+     *         not "none": measured on ImageMagick 7.1.1, a width limit of 0
+     *         refuses every read ("Invalid IHDR data"), and the read reports
+     *         that itself.
      */
     private static function siteSideLimits(): array
     {
@@ -1622,12 +1706,13 @@ final class ImagickEngine implements EngineInterface
      * with "%PDF-" (ImageMagick would read it as something else), a file the
      * token reading cannot follow to its end, a /First anywhere that reading
      * did not see as a key (inside a stream, a string, a comment or where a
-     * value belongs, where a repaired file could still find it), /UserUnit, a box that is not four
-     * plain numbers, a key spelt with #xx escapes, more names with them than
-     * BOX_MAX_COUNT, arrays or dictionaries nested past NESTING_MAX, an
-     * object stream that is encrypted, filtered otherwise or too large, no
-     * box at all, a file past PAGE_TREE_MAX_BYTES. The page is then measured
-     * by drawing it.
+     * value belongs, where a repaired file could still find it),
+     * /UserUnit, a box that is not four plain numbers, a key spelt with #xx
+     * escapes, more names with them than BOX_MAX_COUNT, arrays or
+     * dictionaries nested past NESTING_MAX, an object stream filtered
+     * otherwise, too large, or encrypted (there is no test for encryption
+     * as such: encrypted data does not inflate), no box at all, a file past
+     * PAGE_TREE_MAX_BYTES. The page is then measured by drawing it.
      *
      * What it holds is bounded as well as what it reads: the file, the
      * object streams it inflates (BOX_MAX_INFLATED in all), and nothing per
@@ -1638,6 +1723,28 @@ final class ImagickEngine implements EngineInterface
      *         points, and the longest side in points.
      */
     public static function largestPageBox(string $pdfPath): ?array
+    {
+        $scan = self::scanPageBoxes($pdfPath);
+
+        return null === $scan ? null : $scan['largest'];
+    }
+
+    /**
+     * The file's boxes, read as largestPageBox() reads them: the largest, and a lower bound for every page
+     *
+     * The lower bound is the smallest box in the file, its area in square
+     * points, times the smallest /UserUnit where one is given and less than
+     * 1: no page is smaller than that, so a page past a bound even at that
+     * size is past it (boundedResolution()). Given only where every box was
+     * read -- every object stream opened, no box key spelt with escapes, no
+     * box that is not four numbers -- since one box unread could be the
+     * small one. /UserUnit, which leaves the largest unknown, leaves this
+     * known.
+     *
+     * @return array{largest: array{0: float, 1: float}|null, least: float|null}|null
+     *         Null when the bytes say nothing of the page sizes.
+     */
+    private static function scanPageBoxes(string $pdfPath): ?array
     {
         $size = @filesize($pdfPath);
 
@@ -1661,7 +1768,10 @@ final class ImagickEngine implements EngineInterface
         $inflated = 0;
 
         foreach ($streams as $place) {
-            $text = self::inflateWithin(substr($bytes, $place[0], $place[1]), self::BOX_MAX_INFLATED - $inflated);
+            // Read from the file where it lies: a copy of each stream's data,
+            // and a list of its kilobytes, came on top of the file (review
+            // after 1.4.37).
+            $text = self::inflateWithin($bytes, self::BOX_MAX_INFLATED - $inflated, $place[0], $place[1]);
 
             if (null === $text) {
                 return null;
@@ -1673,6 +1783,9 @@ final class ImagickEngine implements EngineInterface
 
         $area = 0.0;
         $side = 0.0;
+        $least = INF;
+        $units = INF;
+        $userUnit = false;
         $count = 0;
         $space = '[' . self::PDF_WHITESPACE . ']';
         $number = '([+-]?(?:\d+\.?\d*|\.\d+))';
@@ -1681,19 +1794,21 @@ final class ImagickEngine implements EngineInterface
         // capture of a 31 MB name was a 31 MB copy (review after 1.4.36).
         $escapedName = '#/((?:' . $nameChar . '|\#[0-9A-Fa-f]{2}){0,256}\#[0-9A-Fa-f]{2}(?:' . $nameChar . '|\#[0-9A-Fa-f]{2}){0,256})#';
         $box = '#\G' . $space . '*\[' . $space . '*' . $number . $space . '+' . $number . $space . '+' . $number . $space . '+' . $number . $space . '*\]#';
+        $end = '(?![^' . self::PDF_WHITESPACE . '/\[\]<>(){}%])';
+        // A number, and not the start of a reference ("5 0 R"), whose value
+        // is somewhere else.
+        $unit = '#\G' . $space . '+' . $number . $end . '(?!' . $space . '+\d+' . $space . '+R' . $end . ')#';
 
         foreach ($texts as $text) {
-            if (false !== strpos($text, '/UserUnit')) {
-                return null;
-            }
-
             // "/Media#42ox" is /MediaBox to a reader. One name at a time, and
             // so many at most: collected all at once, 3.3 million "/#41" in a
-            // 24 KB file held 346 MB (review after 1.4.36).
+            // 24 KB file held 346 MB (review after 1.4.36). Searched on from
+            // where the whole match ends, its "/" included: from a byte later
+            // a name right after it ("/A#41/Media#42ox") was stepped over.
             $from = 0;
             $escaped = 0;
 
-            while (1 === ($found = preg_match($escapedName, $text, $name, PREG_OFFSET_CAPTURE, $from))) {
+            while (1 === ($result = preg_match($escapedName, $text, $name, PREG_OFFSET_CAPTURE, $from))) {
                 $from = (int) $name[0][1] + strlen($name[0][0]);
 
                 if (++$escaped > self::BOX_MAX_COUNT || in_array(self::decodeName($name[1][0]), self::BOX_KEYS, true)) {
@@ -1701,37 +1816,70 @@ final class ImagickEngine implements EngineInterface
                 }
             }
 
-            if (false === $found) {
+            if (false === $result) {
+                return null;
+            }
+
+            // /UserUnit makes a page larger than its box says, by a factor
+            // only Ghostscript applies, page by page: the largest is not
+            // known, the least is -- by the smallest factor, where one is
+            // under 1.
+            $offset = 0;
+
+            while (1 === ($result = preg_match('#/UserUnit' . $end . '#', $text, $key, PREG_OFFSET_CAPTURE, $offset))) {
+                $offset = (int) $key[0][1] + strlen($key[0][0]);
+                $userUnit = true;
+
+                if (++$count > self::BOX_MAX_COUNT || 1 !== preg_match($unit, $text, $numbers, 0, $offset) || (float) $numbers[1] <= 0) {
+                    return null;
+                }
+
+                $units = min($units, (float) $numbers[1]);
+            }
+
+            if (false === $result) {
                 return null;
             }
 
             $offset = 0;
 
-            while (1 === ($found = preg_match('#/(?:Media|Crop|Bleed|Trim|Art)Box(?![^' . self::PDF_WHITESPACE . '/\[\]<>(){}%])#', $text, $key, PREG_OFFSET_CAPTURE, $offset))) {
+            while (1 === ($result = preg_match('#/(?:Media|Crop|Bleed|Trim|Art)Box' . $end . '#', $text, $key, PREG_OFFSET_CAPTURE, $offset))) {
                 $offset = (int) $key[0][1] + strlen($key[0][0]);
 
-                if (++$count > self::BOX_MAX_COUNT || 1 !== preg_match($box, $text, $found, 0, $offset)) {
+                if (++$count > self::BOX_MAX_COUNT || 1 !== preg_match($box, $text, $numbers, 0, $offset)) {
                     return null;
                 }
 
                 // x1 - x0 and y1 - y0: [1] to [4] are the four numbers.
-                $width = abs((float) $found[3] - (float) $found[1]);
-                $height = abs((float) $found[4] - (float) $found[2]);
+                $width = abs((float) $numbers[3] - (float) $numbers[1]);
+                $height = abs((float) $numbers[4] - (float) $numbers[2]);
                 $area = max($area, $width * $height);
                 $side = max($side, $width, $height);
+                $least = min($least, $width * $height);
             }
 
             // A search that failed is not one that found nothing.
-            if (false === $found) {
+            if (false === $result) {
                 return null;
             }
         }
 
-        if (0 === $count) {
+        if (!is_finite($least)) {
             return null;
         }
 
-        return [max($area, 612.0 * 842.0), max($side, 842.0)];
+        return [
+            // At least Letter and A4 together: the sizes Ghostscript gives a
+            // page with no box, where its default paper is one of those. A
+            // build defaulting to another, or GS_OPTIONS naming a paper size,
+            // gives such a page another size -- a page with no box at all,
+            // which the standard does not allow.
+            'largest' => $userUnit ? null : [max($area, 612.0 * 842.0), max($side, 842.0)],
+            // An area: /UserUnit scales both sides (review of 1.4.37's fixes:
+            // by the factor once, a 10,000,000-point box at 0.001 -- a
+            // 10,000-point page -- was refused unread).
+            'least' => $least * min(1.0, $units) ** 2,
+        ];
     }
 
     /** The characters PDF counts as white space, for a character class: NUL, tab, LF, FF, CR, space. */
@@ -1791,11 +1939,12 @@ final class ImagickEngine implements EngineInterface
      * 100,000-point page in it was drawn at 150 dpi (review after 1.4.35).
      *
      * @return array<int, array{0: int, 1: int}>|null Where the data of each
-     *         one compressed with /FlateDecode alone starts, and its length; null when the file cannot be followed
-     *         to its end, a stream is filtered otherwise, has parameters or is
-     *         an object stream with no /First, a /First sits anywhere this
-     *         reading did not see it as a key, or past TOKENS_MAX tokens or
-     *         PAGE_TREE_MAX_NODES object streams.
+     *         one compressed with /FlateDecode alone starts, and its length;
+     *         null when the file cannot be followed to its end, a stream is
+     *         filtered otherwise, has parameters or is an object stream with
+     *         no /First, a /First sits anywhere this reading did not see it
+     *         as a key, or past TOKENS_MAX tokens or PAGE_TREE_MAX_NODES
+     *         object streams.
      */
     private static function objectStreams(string $bytes): ?array
     {
@@ -2172,10 +2321,14 @@ final class ImagickEngine implements EngineInterface
      * (PHP 8.5, review after 1.4.34) -- and a kilobyte inflates to a
      * megabyte at most.
      *
+     * @param string   $data   The bytes the data is in.
+     * @param int      $most   Most bytes to inflate to.
+     * @param int      $start  Where the data starts in $data.
+     * @param int|null $length How long it is; to the end of $data when null.
      * @return string|null Null when it is not zlib data, is cut short, or
      *                     comes to more than $most bytes.
      */
-    private static function inflateWithin(string $data, int $most): ?string
+    private static function inflateWithin(string $data, int $most, int $start = 0, ?int $length = null): ?string
     {
         if ($most < 1 || !function_exists('inflate_init') || !function_exists('inflate_get_status')) {
             return null;
@@ -2188,9 +2341,10 @@ final class ImagickEngine implements EngineInterface
         }
 
         $text = '';
+        $length = null === $length ? strlen($data) - $start : $length;
 
-        foreach (str_split($data, 1024) as $chunk) {
-            $piece = @inflate_add($context, $chunk, ZLIB_SYNC_FLUSH);
+        for ($done = 0; $done < $length; $done += 1024) {
+            $piece = @inflate_add($context, substr($data, $start + $done, min(1024, $length - $done)), ZLIB_SYNC_FLUSH);
 
             if (!is_string($piece)) {
                 return null;
@@ -2321,8 +2475,13 @@ final class ImagickEngine implements EngineInterface
             $was = \Imagick::getResourceLimit($type);
             $was = is_numeric($was) ? (float) $was : 0.0;
 
-            // A stricter limit the site set stays in force; 0 is none.
-            if ($was > 0 && $was <= $most) {
+            // A stricter limit the site set stays in force. For width and
+            // height, 0 is the strictest, not none: measured on ImageMagick
+            // 7.1.1, a width or height limit of 0 refuses every read
+            // ("Invalid IHDR data"), and it was taken for none and raised for
+            // the measuring read (review after 1.4.37). Memory, map and disk
+            // at 0 read a page as without them, measured the same way: none.
+            if (($was > 0 || (0.0 === $was && in_array($name, self::$limitTypeNames, true))) && $was <= $most) {
                 continue;
             }
 
@@ -2346,6 +2505,9 @@ final class ImagickEngine implements EngineInterface
     /** Whether restoreLimits() is registered for shutdown (once a request). */
     private static bool $limitsGuarded = false;
 
+    /** Whether a limit that could not be put back has been logged (once a request). */
+    private static bool $limitsUnrestoredSaid = false;
+
     /**
      * Put back the limits lowerLimits() lowered, if it did
      *
@@ -2357,7 +2519,14 @@ final class ImagickEngine implements EngineInterface
             try {
                 \Imagick::setResourceLimit($type, $was);
             } catch (\Throwable $e) {
-                // Nothing more to do.
+                // A limit left lowered stays with this PHP worker for every
+                // request after it: said once in the error log (review after
+                // 1.4.37).
+                if (!self::$limitsUnrestoredSaid) {
+                    self::$limitsUnrestoredSaid = true;
+                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+                    error_log('Rapls PDF Image Creator: an ImageMagick resource limit lowered for measuring a page could not be put back: ' . $e->getMessage());
+                }
             }
         }
 
@@ -2430,6 +2599,36 @@ final class ImagickEngine implements EngineInterface
         fclose($handle);
 
         return false !== strpos($head, '%PDF-');
+    }
+
+    /**
+     * Does the file start like a raster image -- PNG, PAM or another PNM, JPEG, GIF, TIFF, BMP, WebP?
+     *
+     * What an add-on hands over after drawing a page itself (png16m,
+     * pngalpha, pamcmyk32), and so has the size it has. Anything else is
+     * bounded as a PDF would be (boundedResolution()): Ghostscript draws a
+     * PostScript or EPS file just as readily, and a file that cannot be read
+     * is no raster either.
+     */
+    private static function looksLikeRaster(string $path): bool
+    {
+        $handle = @fopen($path, 'rb');
+
+        if (false === $handle) {
+            return false;
+        }
+
+        $head = (string) fread($handle, 12);
+        fclose($handle);
+
+        return 0 === strncmp($head, "\x89PNG\r\n\x1a\n", 8)
+            || 1 === preg_match('/\AP[1-7][\t\n\r ]/', $head)
+            || 0 === strncmp($head, "\xFF\xD8\xFF", 3)
+            || 0 === strncmp($head, 'GIF8', 4)
+            || 0 === strncmp($head, "II*\0", 4)
+            || 0 === strncmp($head, "MM\0*", 4)
+            || 0 === strncmp($head, 'BM', 2)
+            || (0 === strncmp($head, 'RIFF', 4) && 'WEBP' === substr($head, 8, 4));
     }
 
     /** GS_OPTIONS as it was before the retry set it; null when it was unset. */
@@ -2565,7 +2764,9 @@ final class ImagickEngine implements EngineInterface
 
         $flags = $kept;
 
-        if ('' === trim((string) preg_replace('/(?:^| )(?:-q|-[dD]SAFER)(?= |$)/', ' ', $flags))) {
+        // Nothing left but -q and SAFER, in any case, as the switch is read
+        // in any case above: no retry (review after 1.4.37).
+        if ('' === trim((string) preg_replace('/(?:^| )(?:-q|-[dD](?i:SAFER))(?= |$)/', ' ', $flags))) {
             return null;
         }
 
@@ -2726,7 +2927,12 @@ final class ImagickEngine implements EngineInterface
             return false;
         }
 
-        return !self::isListedDisabled('putenv', (string) ini_get('disable_functions'));
+        // getenv() too: on PHP 7.4 a disabled function still exists, and
+        // answers null with a warning -- read as "unset", and the value the
+        // site had set was taken away by the put-back (review after 1.4.37).
+        $disabled = (string) ini_get('disable_functions');
+
+        return !self::isListedDisabled('putenv', $disabled) && !self::isListedDisabled('getenv', $disabled);
     }
 
     /**

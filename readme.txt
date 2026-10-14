@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.1
-Stable tag: 1.4.37
+Stable tag: 1.4.38
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -14,7 +14,7 @@ Turns PDFs into images. Refuses to save a blank thumbnail, works around a Ghosts
 
 == Description ==
 
-Rapls PDF Image Creator automatically generates thumbnail images when you upload PDF files to your WordPress Media Library. The plugin uses ImageMagick (Imagick PHP extension) to convert the first page of a PDF into an image.
+Rapls PDF Image Creator automatically generates thumbnail images when you upload PDF files to your WordPress Media Library. The plugin uses ImageMagick (Imagick PHP extension) to convert a page of a PDF into an image -- the first, unless you choose another for the whole site.
 
 👉 **Setup guide & troubleshooting:** [How to fix CMYK black thumbnails and PDF/X issues](https://raplsworks.com/rapls-pdf-image-creator-guide/)
 
@@ -44,7 +44,7 @@ Measured on a live shared host running Ghostscript 9.27, in a single upload: the
 = How It Works =
 
 1. Upload a PDF file to the Media Library
-2. The plugin automatically converts the first page to an image
+2. The plugin automatically converts the first page (or the one you choose) to an image
 3. The image is registered as the PDF's featured image
 4. Use shortcodes or template functions to display the thumbnail
 
@@ -58,7 +58,7 @@ When you upload `my-document.pdf`, the plugin creates:
 * my-document-pdf-thumbnail-150x150.jpg (Thumbnail)
 * Additional sizes based on your theme settings
 
-A thumbnail made again ("Regenerate Thumbnail", or Bulk Generate with "Include PDFs that already have thumbnails (regenerate)") gets a new name with a suffix, such as `my-document-pdf-thumbnail-6512a3f0.jpg`, so browsers do not keep showing the old image. The old image is deleted, unless a post's content shows it -- by its address, or by its ID in an image or gallery block or a [gallery] shortcode -- or a post uses it as its featured image; then it is kept as an ordinary image. One a translated copy of the PDF shares is kept as that copy's thumbnail. Widgets and other settings that name an image are not checked. The extension follows the output format you choose.
+A thumbnail made again ("Regenerate Thumbnail", or Bulk Generate with "Include PDFs that already have thumbnails (regenerate)") gets a new name with a suffix, such as `my-document-pdf-thumbnail-6512a3f0.jpg`, so browsers do not keep showing the old image. The old image is deleted, unless a post's content or excerpt shows it -- by its address, or by its ID in an image or gallery block or a [gallery] shortcode -- or a post uses it as its featured image; then it is kept as an ordinary image, and the screen that regenerated it says so, since that post still shows the old picture. A post in the trash counts, as it can be restored; revisions and drafts saved automatically do not. One a translated copy of the PDF shares is kept as that copy's thumbnail. Widgets and other settings that name an image are not checked. The extension follows the output format you choose.
 
 = Shortcodes =
 
@@ -68,6 +68,8 @@ A thumbnail made again ("Regenerate Thumbnail", or Bulk Generate with "Include P
 * `[rapls_pdf_download_link id="123"]` - Download link with thumbnail
 
 The thumbnail, clickable thumbnail and download link shortcodes take a `class` attribute, which can hold several classes separated by spaces: `[rapls_pdf_thumbnail id="123" class="alignleft shadow"]`.
+
+The shortcodes take a PDF's ID. Up to 1.4.20 they also took any post's ID and showed its featured image; a site with pages written that way can have it back with `add_filter( 'rapls_pdf_image_creator_shortcode_any_post', '__return_true' );`. A post is then shown only to a reader who may see it.
 
 = Template Functions =
 
@@ -183,7 +185,15 @@ JPEG, PNG, and WebP. Choose one under Image Settings on the Settings tab. WebP n
 
 By default, yes. To keep generated images as regular attachments, enable "Keep Images on Uninstall" in Display Settings before uninstalling.
 
-Even with that setting off, uninstalling keeps a generated image that a post uses as its featured image, or that a post's content shows (its address, or its ID or the PDF's in an image or gallery block or a [gallery] shortcode), and makes it an ordinary image. Revisions, drafts saved automatically and trashed posts do not count. It also keeps one that a translated copy of the PDF shares. Only featured images and post content are checked: an image used in a widget, a theme or page-builder setting, or anywhere else is not found, so turn on "Keep Images on Uninstall" if you use them there. A post whose featured image was a PDF is given that PDF's image instead, with the setting on or off, so it looks as it did. If any of this cannot be checked, no image is deleted. On a very large site, reading every post can take longer than the server allows; if uninstalling stops there, no image has been deleted.
+Even with that setting off, uninstalling keeps a generated image that a post uses as its featured image, or that a post's content or excerpt shows (its address, or its ID or the PDF's in an image or gallery block, a [gallery] shortcode or this plugin's own shortcodes), and makes it an ordinary image. A post in the trash counts, as it can be restored; revisions and drafts saved automatically do not. It also keeps one that a translated copy of the PDF shares. Only featured images and post content are checked: an image used in a widget, a theme or page-builder setting, or anywhere else is not found, so turn on "Keep Images on Uninstall" if you use them there. A post whose featured image was a PDF is given that PDF's image instead, with the setting on or off, so it looks as it did. If any of this cannot be checked, no image is deleted. On a very large site, reading every post can take longer than the server allows; if uninstalling stops there, no image has been deleted.
+
+= What happens to the thumbnail when I delete a PDF? =
+
+With "Hide Generated Images" on, the PDF's thumbnail is deleted with it, unless a post shows it or uses it as its featured image, or a translated copy of the PDF shares it. One a post shows is kept as an ordinary image, attached where the PDF was. With the setting off, every thumbnail is kept as an ordinary image.
+
+= Why can't I pick a PDF in my page builder's or field plugin's image picker? =
+
+Since 1.4.38, PDFs with a thumbnail are offered only in WordPress's own image pickers: the image, gallery and featured image blocks, and the classic editor's featured image. An image picker of another plugin may take only images, and a PDF handed to it broke there. If yours takes them, as every picker did up to 1.4.20, turn it back on: `add_filter( 'rapls_pdf_image_creator_pdfs_in_every_image_picker', '__return_true' );`.
 
 = Can I use a different page for the thumbnail? =
 
@@ -272,6 +282,11 @@ foreach ( $pdfs as $pdf ) {
 * `rapls_pdf_image_creator_custom_insert_html` - Custom insert HTML
 * `rapls_pdf_image_creator_hide_thumbnails_in_library` - Hide in Media Library
 * `rapls_pdf_image_creator_policy_paths` - ImageMagick policy.xml paths to search when diagnosing blocked PDF support
+* `rapls_pdf_image_creator_ghostscript_options` - Ghostscript switches for the blank-page retry (default: `-dNOTRANSPARENCY`); switches that loosen its sandbox, point at files or change what is drawn are left out
+* `rapls_pdf_image_creator_before_resize` - The page as drawn, before it is resized; return it, changed or not
+* `rapls_pdf_image_creator_show_upsell` - Reserved for saying that an add-on exists; nothing uses it yet
+* `rapls_pdf_image_creator_pdfs_in_every_image_picker` - Return true to offer PDFs with a thumbnail in every media picker that asks for images, as up to 1.4.20 (default: false, WordPress's own pickers only). Its second argument is the media query; the block editor asks it once more with an empty array for its pickers
+* `rapls_pdf_image_creator_shortcode_any_post` - Return true for the shortcodes to take any post's ID and show its featured image, as up to 1.4.20 (default: false, a PDF's ID only)
 
 = Color Conversion Filters =
 
@@ -320,9 +335,9 @@ No other profile is bundled. CMYK profiles are read from the host when one is
 present and are never redistributed.
 
 == Changelog ==
-= 1.4.37 =
+= 1.4.38 =
 Choosing a PDF as an image
-* Changed: PDFs with a thumbnail are offered in WordPress's own image pickers only -- the image, gallery and Post Featured Image blocks, the block editor's featured image, and the classic editor's "Set featured image" and the featured image view of "Add Media". Other plugins' image pickers, core pickers that also take other media such as Cover and Media & Text, and the classic editor's "Create Gallery" (whose [gallery] shortcode shows images only) are not given PDFs
+* Changed: PDFs with a thumbnail are offered in WordPress's own image pickers only -- the image, gallery and Post Featured Image blocks, the block editor's featured image, and the classic editor's "Set featured image" and the featured image view of "Add Media". Other plugins' image pickers, core pickers that also take other media such as Cover and Media & Text, and the classic editor's "Create Gallery" (whose [gallery] shortcode shows images only) are not given PDFs. The filter rapls_pdf_image_creator_pdfs_in_every_image_picker, returning true, offers them in every picker that asks for images, as up to 1.4.20
 * Fixed: a PDF in a gallery block, or chosen at a size its thumbnail has no file for, shows the thumbnail instead of a broken image
 * Fixed: a PDF is offered only when it has a thumbnail; one whose thumbnail could not be made, or was deleted from the Media Library, is not
 * Changed: a PDF dropped or pasted into the block editor is no longer turned into an image block. WordPress's image block cannot upload a PDF, so the upload failed; it now becomes a File block, as without this plugin. To show a PDF as an image, choose it in the image block's Media Library tab
@@ -343,10 +358,10 @@ Bulk Generate
 
 Making the thumbnail
 * Fixed: a blank page drawn as transparent is now recognised as blank, so the retry for blank pages runs for it too, and a page that is blank is reported as such
-* New: a page number past the end of the PDF fails with its own reason, which says how many pages the file has, and is not retried. The pages are counted by ImageMagick, so a PDF that claims more pages than it has, or had pages deleted when it was last saved, is caught too
+* New: a page number past the end of the PDF fails with its own reason, which says how many pages the file has, and is not retried. The pages are counted by ImageMagick, so a PDF that claims more pages than it has, or had pages deleted when it was last saved, is caught too; where a page in the file is too large to count that way, by the page count the file states
 * Fixed: an error from ImageMagick while drawing a page is reported as a drawing failure, not as a server that cannot render PDFs
 * Removed: the retry that read the whole document when the chosen page came back blank. It never rescued a page, and a PDF that understates its page count could make it draw every page -- 954 MB for one 60-page file. A blank page is still tried once more with Ghostscript's transparency handling switched off
-* Fixed: a page is drawn at a lower resolution when it would come out larger than 40 million pixels, or larger than this server's own ImageMagick limits on width, height, memory and disk. Its size is read from the PDF's page boxes, compressed object streams included, with the file read token by token as a PDF reader reads it, so that no key, string or comment can hide a page from it, and with limits on how deep, how long and how many of anything it reads, so that no file can exhaust PHP's memory or stack while it is read; a page they cannot vouch for, or one in a document with a page over the limit, is drawn small to measure it first. A small PDF with a 200-inch page used to take 76 seconds and 2.9 GB; it now takes about two, and a 100,000-point page hidden in an object stream about one and a half. A page too large even at the lowest resolution is refused with its own reason. The filter rapls_pdf_image_creator_max_render_pixels changes the limit
+* Fixed: a page is drawn at a lower resolution when it would come out larger than 40 million pixels, or larger than this server's own ImageMagick limits on width, height, memory and disk. Its size is read from the PDF's page boxes, compressed object streams included, with the file read token by token as a PDF reader reads it, so that no key, string or comment can hide a page from it, and with limits on how deep, how long and how many of anything it reads, so that no file can exhaust PHP's memory or stack while it is read; a page they cannot vouch for, or one in a document with a page over the limit, is drawn small to measure it first, and is not drawn at all where every page in the file is too large even at the lowest resolution. A PostScript or EPS file, or anything else that is not an image, is bounded the same way. A small PDF with a 200-inch page used to take 76 seconds and 2.9 GB; it now takes about two, and a 100,000-point page hidden in an object stream about one and a half. A page too large even at the lowest resolution is refused with its own reason. The filter rapls_pdf_image_creator_max_render_pixels changes the limit
 * Fixed: the Page Selection test on the Status tab now asks for a page by number, as making a thumbnail does
 * Fixed: numbers that a filter hands back as text are made whole numbers, and an error raised during conversion is a failed conversion, not a broken upload
 * Fixed: the list of functions a host disables is read the way PHP reads it, so the blank-page retry is no longer turned off by a name PHP does not disable
@@ -363,21 +378,27 @@ Settings and Status
 * Changed: where this server or this WordPress cannot make WebP thumbnails, the WebP setting says so
 * Fixed: placeholders in a Custom HTML template are escaped, so a title with a quote in it no longer breaks the markup
 * Fixed: the thumbnail, clickable thumbnail and download link shortcodes keep several classes in their class attribute
-* Changed: the shortcodes take a PDF's ID only. The ID of a post, or of another kind of attachment, now gives nothing, where it could show that post's featured image
+* Changed: the shortcodes take a PDF's ID only. The ID of a post, or of another kind of attachment, now gives nothing, where it could show that post's featured image. The filter rapls_pdf_image_creator_shortcode_any_post, returning true, takes them again as up to 1.4.20, for readers who may see that post
 * Changed: the shortcodes show a PDF to visitors only when it is public. A PDF attached to a private or draft post is shown only to people who can read that post, and one attached to a password-protected post only to people who can edit it -- including on another, public page
 * Fixed: a shortcode with no class attribute keeps its pic-thumbnail class
-* Changed: Insert into post follows the Link To and Size chosen in the media window. The plugin's Link To and Insert Size settings are now where those choices start for a PDF, including one just uploaded in that window. An Insert Size the window does not list, such as medium_large or a theme's size, is still used as long as the window's Size is not changed
+* Changed: Insert into post, as a thumbnail or a title, follows the Link To and Size chosen in the media window (a Custom HTML template decides its own links). The plugin's Link To and Insert Size settings are now where those choices start for a PDF, including one just uploaded in that window. An Insert Size the window does not list, such as medium_large or a theme's size, is still used as long as the window's Size is not changed
 * Fixed: dismissing the notice about this server's PDF support stays on the screen it was on
 * Changed: clearer wording on the settings screen and in the readme, and the Media Library column's marks are read out to screen readers; the settings screen's groups of options are named for screen readers and its colours are easier to read
 * Changed: the settings screen's script is loaded on the settings screen only
 * Fixed: without JavaScript, every tab of the settings screen is shown, so the Status tab can be read, and the buttons that need JavaScript are replaced by a note saying what to use instead
 * Changed: the review request, and the Support box on the Status tab, are not shown while this server cannot make thumbnails
 * Fixed: Bulk Generate shows how many PDFs there are and how many are still to do separately, and a failure says why
-* Fixed: saving the settings without some of the options no longer stores empty values for them
+* Fixed: saving the settings without some of the options -- from code or WP-CLI -- no longer stores empty values for them or turns the checkboxes it left out off; they keep what was saved
 * Changed: a few queries fewer on every page load, and the Status tab's "working" colour is easier to read
-* Fixed: regenerating a thumbnail, deleting a PDF and uninstalling no longer delete a generated image that a post's content shows -- by its address in any size, in a retina (@2x) or WebP copy's name, or under the name it had before it was edited, or by its ID in an image or gallery block or a [gallery] shortcode -- which left a broken image in the post. The image is kept as an ordinary one, attached where the PDF was when the PDF is deleted. Names are compared whole, so a post showing "annual-report" does not keep "report", and revisions, drafts saved automatically and trashed posts do not count. Uninstalling also keeps one a post uses as its featured image, and a post whose featured image was a PDF is given that PDF's image. If this cannot be checked, nothing is deleted. Only post content and featured images are checked, not widgets or other settings
+* Fixed: replacing the plugin's folder with a new version and activating it again runs the update's own work, as an update from the Plugins screen does
+* Fixed: without the settings screen's script -- blocked, or broken by another script -- every tab stays in view
+
+Keeping and deleting images
+* Fixed: regenerating a thumbnail, deleting a PDF and uninstalling no longer delete a generated image that a post's content shows -- by its address in any size, in a retina (@2x) or WebP copy's name, or under the name it had before it was edited, or by its ID in an image or gallery block or a [gallery] shortcode -- which left a broken image in the post. The image is kept as an ordinary one, attached where the PDF was when the PDF is deleted. Names are compared whole and in any letter case, whatever the database's collation, so a post showing "annual-report" does not keep "report" and one showing "Report" keeps "report". A post's excerpt counts too (a product's short description), and so does a post in the trash, which can be restored; revisions and drafts saved automatically do not. Uninstalling also keeps one a post uses as its featured image, and a post whose featured image was a PDF is given that PDF's image. If this cannot be checked, nothing is deleted. Only post content and featured images are checked, not widgets or other settings
 * Fixed: deleting a generated image from the Media Library no longer leaves its PDF naming an image that is gone
-* Removed: an unused AJAX endpoint for regenerating a thumbnail, and unused code
+* New: a regeneration that kept the old thumbnail, because a post shows it, says so on the screen that ran it -- the post still shows the old picture until it is replaced there
+* Changed: "Insert into post" gives the image the "wp-image-" class with its ID, as WordPress's own insert does, so WordPress adds srcset to it
+* Removed: the AJAX action rapls_pic_regenerate_thumbnail, unused since the Media Library's link regenerates through admin-post.php; Settings::getFileExtension() and Settings::getMimeType(), which nothing called; and the insert keys the plugin added to wp_prepare_attachment_for_js, which nothing read
 
 = 1.4.20 =
 * Fixed: deleting the plugin from a multisite network now cleans up every site, each by its own "Keep Images on Uninstall" setting. Before, only the site it was deleted from was cleaned up, and the other sites kept the plugin's settings, its markers on PDFs and images, and -- with that setting off -- the generated images
@@ -621,8 +642,8 @@ Settings and Status
 
 == Upgrade Notice ==
 
-= 1.4.37 =
-PDFs appear only in WordPress's own image pickers and show in gallery blocks. Bulk Generate handles large libraries, blank and missing pages are named, a passing server problem no longer stops thumbnails for hours, and a huge page cannot exhaust the server. Regenerating keeps images posts show.
+= 1.4.38 =
+PDFs appear only in core's image pickers, shortcodes take a PDF's ID only, and a dropped PDF becomes a File block; two filters restore the old pickers and IDs (see FAQ). Bulk Generate handles large libraries, huge pages cannot exhaust the server, and regenerating keeps images posts show.
 
 = 1.4.20 =
 Includes the 1.4.12 security fix. Deleting the plugin from a multisite network now cleans up every site.

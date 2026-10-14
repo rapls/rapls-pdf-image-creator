@@ -43,7 +43,7 @@ namespace {
         return $value;
     }
     function get_post($id) { return $GLOBALS['posts'][(int) $id] ?? null; }
-    function get_post_meta($id, $key, $single = false) { return $GLOBALS['meta'][(int) $id][$key] ?? ''; }
+    function get_post_meta($id, $key, $single = false) { if (!isset($GLOBALS['meta'][(int) $id][$key])) { return $single ? '' : []; } return $single ? $GLOBALS['meta'][(int) $id][$key] : [$GLOBALS['meta'][(int) $id][$key]]; }
     function delete_post_meta($id, $key) { unset($GLOBALS['meta'][(int) $id][$key]); return true; }
     function get_attached_file($id) { return $GLOBALS['files'][(int) $id] ?? false; }
     function update_postmeta_cache($ids) { $GLOBALS['primed'] += count($ids); return []; }
@@ -98,9 +98,18 @@ namespace {
     // posts_per_page of them (-1 for all, as 1.4.25 asked).
     final class WP_Query {
         public $posts = [];
+        private $args;
+        public function get($key) { return $this->args[$key] ?? ''; }
         public function __construct(array $args) {
+            $this->args = $args;
             $GLOBALS['queries'][] = $args;
-            $where = apply_filters('posts_where', '');
+            // Another plugin's query, built while this one is (review after
+            // 1.4.37): it goes through the same posts_where filters.
+            if (!empty($GLOBALS['nest']) && empty($args['nested'])) {
+                $inner = new self(['nested' => true, 'posts_per_page' => -1]);
+                $GLOBALS['nested_posts'] = $inner->posts;
+            }
+            $where = apply_filters('posts_where', '', $this);
             $after = preg_match('/ID > (\d+)/', $where, $m) ? (int) $m[1] : 0;
             $ids = array_values(array_filter($GLOBALS['pdfs'], static function ($id) use ($after) { return $id > $after; }));
             sort($ids);
@@ -256,6 +265,11 @@ namespace {
     check('  ...with force, the very next PDF', $call([$bulk, 'ajaxNext'], ['after' => 1003, 'force' => 1])[1]['pdf_id'], 1004);
     check('  ...kept for its file name too', in_array([1004, 'post_meta'], $GLOBALS['evicted_keys'], true), false);
     check('  ...asked for as one row, not a page', array_column($GLOBALS['queries'], 'posts_per_page'), [1]);
+    // Review after 1.4.37: the cursor's filter is the bulk query's alone.
+    $GLOBALS['nest'] = true;
+    $nested = $call([$bulk, 'ajaxNext'], ['after' => 1003, 'force' => 1])[1]['pdf_id'];
+    $GLOBALS['nest'] = false;
+    check('  ...another query built meanwhile is not cut at the cursor', [$nested, count($GLOBALS['nested_posts'] ?? []), $GLOBALS['nested_posts'][0] ?? null], [1004, count($GLOBALS['pdfs']), min($GLOBALS['pdfs'])]);
     check('  ...and past the last one with force: done', $call([$bulk, 'ajaxNext'], ['after' => 1450, 'force' => 1])[1], ['pdf_id' => null, 'filename' => '', 'after' => 1450, 'done' => true]);
     check('  ...past the last one: done', $call([$bulk, 'ajaxNext'], ['after' => 1450])[1], ['pdf_id' => null, 'filename' => '', 'after' => 1450, 'done' => true]);
 

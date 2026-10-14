@@ -101,6 +101,16 @@ check('  ...one on the list is kept', [$fine['bgcolor'], $fine['insert_type'], $
 // input anyway: null was saved.
 $partial = $admin->sanitizeSettings(['page' => 1]);
 check('a save that leaves keys out keeps their defaults, not null', [$partial['format'], $partial['bgcolor'], $partial['insert_type'], $partial['insert_size'], $partial['insert_link']], ['jpeg', 'white', 'image', 'medium', 'file']);
+// Review after 1.4.37: what is saved stays where a save leaves it out; a
+// checkbox the settings form leaves out is one unticked.
+$GLOBALS['options'][Settings::OPTION_NAME] = ['format' => 'png', 'set_featured' => true, 'keep_on_uninstall' => true];
+$fromCode = $admin->sanitizeSettings(['page' => 2]);
+$fromForm = $admin->sanitizeSettings(['page' => 2, Admin::FORM_MARKER => '1']);
+unset($GLOBALS['options'][Settings::OPTION_NAME]);
+check('a save of a few keys keeps the rest as saved; the form\'s leaves its unticked boxes off', [
+    [$fromCode['format'], $fromCode['set_featured'], $fromCode['keep_on_uninstall'], $fromCode['page']],
+    [$fromForm['format'], $fromForm['set_featured'], $fromForm['keep_on_uninstall'], array_key_exists(Admin::FORM_MARKER, $fromForm)],
+], [['png', true, true, 2], ['png', false, false, false]]);
 
 echo "\n=== A failure's reason, in this plugin's words ===\n";
 check('a code with a label says it', Admin::failureReason(FailureCode::PAGE_OUT_OF_RANGE), 'The chosen page is not in this PDF.');
@@ -202,7 +212,20 @@ $GLOBALS['options'] = [Plugin::VERSION_OPTION => '1.4.33', Settings::OPTION_NAME
 $GLOBALS['autoload'] = [];
 $upgrade->invoke((new ReflectionClass(Plugin::class))->newInstanceWithoutConstructor());
 $main = (string) file_get_contents(RAPLS_PIC_PLUGIN_DIR . 'rapls-pdf-image-creator.php');
-check('the version is written autoloaded, on update and on activation', [$GLOBALS['options'][Plugin::VERSION_OPTION], $GLOBALS['autoload'][Plugin::VERSION_OPTION] ?? null, false !== strpos($main, "update_option('rapls_pic_version', RAPLS_PIC_VERSION, true)")], ['9.9.9', true, true]);
+check('the version is written autoloaded, on update and on activation', [$GLOBALS['options'][Plugin::VERSION_OPTION], $GLOBALS['autoload'][Plugin::VERSION_OPTION] ?? null, false !== strpos($main, "add_option('rapls_pic_version', RAPLS_PIC_VERSION, '', true)")], ['9.9.9', true, true]);
+// Review after 1.4.37: activation stamped the version on every site, and one
+// updated by replacing the folder and activating again was never upgraded.
+check('  ...on activation only for a fresh install, whose settings were not there',
+    [1 === preg_match('/\$rapls_pic_fresh = !get_option\(.*Settings::OPTION_NAME\);/', $main), false !== strpos($main, "if (\$rapls_pic_fresh && false === get_option('rapls_pic_version', false)) {"), false !== strpos($main, "update_option('rapls_pic_version'")],
+    [true, true, false]);
+// Review after 1.4.37: a version that will not be written leaves the probes
+// alone, instead of measuring them afresh on every request.
+$GLOBALS['options'] = [Plugin::VERSION_OPTION => '1.4.33', Settings::OPTION_NAME => []];
+$GLOBALS['transient_deletes'] = [];
+$GLOBALS['refuse_option'] = Plugin::VERSION_OPTION;
+$upgrade->invoke((new ReflectionClass(Plugin::class))->newInstanceWithoutConstructor());
+unset($GLOBALS['refuse_option']);
+check('  ...not written: nothing else is done, to be tried on the next request', [$GLOBALS['options'][Plugin::VERSION_OPTION], $GLOBALS['transient_deletes']], ['1.4.33', []]);
 check('the activation error\'s title is translated', false !== strpos($main, "esc_html__('Plugin Activation Error', 'rapls-pdf-image-creator')"), true);
 
 echo "\n=== What the Status tab says works is readable ===\n";

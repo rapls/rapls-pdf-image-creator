@@ -595,14 +595,21 @@ final class Generator
         // Asked once: the content lookup reads posts, and asking again whether
         // the image was "used elsewhere" ran it a second time (review of
         // 1.4.36).
-        if (null !== $previousId && $previousId !== $thumbnailId && $this->isOwnThumbnail($previousId, $pdfId)
-            && self::RELEASE_FAILED === $this->releaseThumbnail($pdfId, $previousId)) {
+        $released = null !== $previousId && $previousId !== $thumbnailId && $this->isOwnThumbnail($previousId, $pdfId)
+            ? $this->releaseThumbnail($pdfId, $previousId)
+            : null;
+        if (self::RELEASE_FAILED === $released) {
             // The new one is in place, so this is not a failure; but the old
             // image is now linked from nothing and stays. Said, so it can be
             // found (R58-03).
             // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
             error_log(sprintf('Rapls PDF Image Creator: the previous thumbnail #%d of PDF #%d could not be deleted after it was replaced; it is still in the Media Library.', $previousId, $pdfId));
         }
+        // Kept -- a post shows it, or whether one does could not be told --
+        // and said on the screen that regenerated it: the post still shows
+        // the old picture, which nobody would otherwise know (review after
+        // 1.4.37).
+        $keptPrevious = self::RELEASE_KEPT === $released ? $previousId : null;
 
         /**
          * Action after generating thumbnail
@@ -622,7 +629,7 @@ final class Generator
         // the outcome (R58-04, R60-02). The exception is not caught here --
         // WordPress's hooks do not tidy up after one, and a request carrying
         // on past it would carry that state too (R60-03).
-        $this->outcomes[$pdfId] = ['ok' => true, 'thumbnail_id' => $thumbnailId, 'code' => '', 'message' => ''];
+        $this->outcomes[$pdfId] = ['ok' => true, 'thumbnail_id' => $thumbnailId, 'code' => '', 'message' => '', 'kept_previous' => $keptPrevious];
 
         do_action('rapls_pdf_image_creator_after_generate', $thumbnailId, $pdfId, $result);
 
@@ -688,7 +695,7 @@ final class Generator
         // Recorded before the action, as for a success: a listener that
         // throws -- or runs first and throws, before one that was listening
         // for the reason -- does not change what failed (R59-02, R60-02).
-        $this->outcomes[$pdfId] = ['ok' => false, 'thumbnail_id' => null, 'code' => $code, 'message' => $message];
+        $this->outcomes[$pdfId] = ['ok' => false, 'thumbnail_id' => null, 'code' => $code, 'message' => $message, 'kept_previous' => null];
 
         do_action('rapls_pdf_image_creator_generation_failed', $message, $pdfId, $code, $result);
 
@@ -700,11 +707,14 @@ final class Generator
      *
      * For code that needs the reason as data rather than from an action,
      * whose listeners can run in any order and throw: `ok`, `thumbnail_id`,
-     * `code` (see FailureCode) and `message`. Null before any attempt, or
-     * when the attempt ended in an exception before it came to anything.
+     * `code` (see FailureCode), `message`, and `kept_previous`: the old
+     * thumbnail's ID when a forced regeneration kept it as an ordinary
+     * image, because a post shows it. Null before any attempt, or when the
+     * attempt ended in an exception before it came to anything.
      *
      * @since 1.4.17
-     * @return array{ok: bool, thumbnail_id: int|null, code: string, message: string}|null
+     * @since 1.4.38 kept_previous.
+     * @return array{ok: bool, thumbnail_id: int|null, code: string, message: string, kept_previous: int|null}|null
      */
     public function outcomeFor(int $pdfId): ?array
     {
@@ -845,8 +855,9 @@ final class Generator
      * "annual-report-pdf-thumbnail", and nothing found a gallery naming the
      * image by ID (review of 1.4.36).
      *
-     * Revisions, auto-drafts, trashed posts and attachments are not read.
-     * Only post_content is: not widgets, options or a page builder's meta.
+     * Revisions, auto-drafts and attachments are not read; a trashed post
+     * is, as it can come back (review after 1.4.37). The content and the
+     * excerpt are: not widgets, options or a page builder's meta.
      * It runs only when an image of this plugin's own is about to be
      * deleted: a forced regeneration, or deleting a PDF.
      *
@@ -866,29 +877,37 @@ final class Generator
             (string) get_post_meta($thumbnailId, '_wp_attached_file', true),
             get_post_meta($thumbnailId, '_wp_attachment_backup_sizes', true)
         );
-        // ContentUse::candidate(), as SQL: a stem fragment, or the ID's
-        // digits with a form that names an image by ID.
+        // ContentUse::candidate(), as SQL: each pattern's pieces in order,
+        // in the content or the excerpt, ignoring case whatever the
+        // collation -- LOWER(), since a case-sensitive one (utf8mb4_bin,
+        // utf8mb4_ja_0900_as_cs) missed "Report-pdf-thumbnail.jpg" and the
+        // image was deleted (review after 1.4.37). Each column on its own:
+        // CONCAT_WS() of the two failed with "Illegal mix of collations"
+        // where they differ, and joined them into a value built for every
+        // row and every pattern (review of 1.4.37's fixes). A pattern never
+        // needs both: its pieces are one name or one ID's spelling.
+        // LOWER() of each column is so worked out once per pattern, five to
+        // seven times a row; MySQL does not keep it between them. Accepted:
+        // '%...%' reads every row either way, and this runs only when an
+        // image of the plugin's own is about to be deleted.
+        $likes = [];
         $patterns = [];
-        foreach (ContentUse::fragments($stems) as $fragment) {
-            $patterns[] = '%' . $wpdb->esc_like($fragment) . '%';
+        foreach (ContentUse::patterns($thumbnailId, $stems) as $pieces) {
+            $pattern = '%' . implode('%', array_map([$wpdb, 'esc_like'], $pieces)) . '%';
+            $likes[] = '(LOWER(post_content) LIKE %s OR LOWER(post_excerpt) LIKE %s)';
+            $patterns[] = $pattern;
+            $patterns[] = $pattern;
         }
-        $forms = [];
-        foreach (ContentUse::ID_FORMS as $form) {
-            $forms[] = '%' . $wpdb->esc_like($form) . '%';
-        }
-        $likes = implode(' OR ', array_merge(
-            array_fill(0, count($patterns), 'post_content LIKE %s'),
-            ['(post_content LIKE %s AND (' . implode(' OR ', array_fill(0, count($forms), 'post_content LIKE %s')) . '))']
-        ));
-        $patterns = array_merge($patterns, ['%' . $wpdb->esc_like((string) $thumbnailId) . '%'], $forms);
+        $likes = implode(' OR ', $likes);
         $skipTypes = "'" . implode("', '", ContentUse::SKIP_TYPES) . "'";
         $skipStatuses = "'" . implode("', '", ContentUse::SKIP_STATUSES) . "'";
 
+        // From before the first post: an ID starts at 1.
         $after = 0;
         do {
             // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- constants and placeholders only
             $rows = $wpdb->get_results($wpdb->prepare(
-                "SELECT ID, post_content FROM {$wpdb->posts}
+                "SELECT ID, post_content, post_excerpt FROM {$wpdb->posts}
                  WHERE ID > %d AND post_type NOT IN ({$skipTypes}) AND post_status NOT IN ({$skipStatuses}) AND ({$likes})
                  ORDER BY ID LIMIT 100",
                 $after,
@@ -901,7 +920,8 @@ final class Generator
 
             foreach ($rows as $row) {
                 $after = (int) ($row['ID'] ?? 0);
-                if (ContentUse::shows((string) ($row['post_content'] ?? ''), $thumbnailId, $stems)) {
+                $shown = (string) ($row['post_content'] ?? '') . "\n" . (string) ($row['post_excerpt'] ?? '');
+                if (ContentUse::shows($shown, $thumbnailId, $stems)) {
                     return true;
                 }
             }

@@ -96,6 +96,7 @@ function $(arg) {
         const created = makeElement();
         const cls = /class="([^"]*)"/.exec(arg);
         created.cls = cls ? cls[1] : '';
+        made.push(created);
         return created;
     }
     // A tab no one has: nothing.
@@ -103,6 +104,7 @@ function $(arg) {
     if (!elements[arg]) { elements[arg] = makeElement(); }
     return elements[arg];
 }
+const made = [];
 $.ajax = (options) => { requests.push(options); };
 const documentStub = { getElementById: (id) => $('#' + id) };
 
@@ -133,6 +135,10 @@ vm.runInNewContext(source, {
     setTimeout: () => {},
 });
 ready();
+
+// Review after 1.4.37: the stylesheet hides the tabs not chosen only once
+// the script marks the screen, so a page it did not run on shows them all.
+check('The script marks the screen it runs on', $('.rapls-pic-settings').hasClass('rapls-pic-js'), true);
 
 // Review of 1.4.32: the script itself takes the tabs that are not chosen out
 // of the Tab order (the markup leaves them in, for when it does not run).
@@ -203,6 +209,17 @@ answer({ pdf_id: 1005, filename: 'b.pdf', after: 1005, done: false });
 fault();
 check('A draw that never answers counts as failed, and the run goes on past it', [$('#rapls-pic-stat-failed').text(), next().data.action, next().data.after], ['1', 'rapls_pic_bulk_next', 1005]);
 
+// Review after 1.4.37: a name with "$&" in it is logged as it is, and a
+// thumbnail kept because a post shows the old one says so.
+const logged = () => made.filter((e) => /^log-/.test(e.cls)).map((e) => e.text());
+answer({ pdf_id: 1006, filename: 'x$&y$\'.pdf', after: 1006, done: false });
+const processing = logged().slice(-1)[0];
+answer({ pdf_id: 1006, kept_previous: 77, message: 'Thumbnail generated. The previous one is kept.' });
+check('  ...a name with "$&" in it is logged as it is; a kept old thumbnail is said', [processing, logged().slice(-1)[0]], ['Processing: x$&y$\'.pdf', "✓ x$&y$'.pdf: Thumbnail generated. The previous one is kept."]);
+answer({ pdf_id: 1008, filename: 'd.pdf', after: 1008, done: false });
+answer({ pdf_id: 1008 });
+check('  ...one that kept nothing is logged by name alone', logged().slice(-1)[0], '✓ d.pdf');
+
 // Review after 1.4.33: the box changed while a run is going changes nothing.
 $('#rapls-pic-include-existing')._handlers.change.call($('#rapls-pic-include-existing'));
 check('  ...ticking the include box mid-run leaves the run and its count alone', [$('#rapls-pic-bulk-message').text(), $('#rapls-pic-bulk-results')._shown], ['', true]);
@@ -212,10 +229,10 @@ answer({ pdf_id: 1007, filename: 'c.pdf', after: 1007, done: false });
 $('#rapls-pic-bulk-stop').click();
 check('Stop says it waits for the PDF being drawn', [$('#rapls-pic-bulk-status').text(), $('#rapls-pic-bulk-stop').prop('disabled')], ['Stopping after the current PDF...', true]);
 answer({ pdf_id: 1007 });
-check('  ...that PDF is still counted, and nothing more is asked', [$('#rapls-pic-stat-generated').text(), requests.length, $('#rapls-pic-bulk-status').text()], ['2', 0, 'Stopped']);
+check('  ...that PDF is still counted, and nothing more is asked', [$('#rapls-pic-stat-generated').text(), requests.length, $('#rapls-pic-bulk-status').text()], ['4', 0, 'Stopped']);
 check('  ...Start becomes Continue', [$('#rapls-pic-bulk-start').text(), $('#rapls-pic-bulk-start').prop('disabled')], ['Continue', false]);
 $('#rapls-pic-bulk-start').click();
-check('Continue does not ask again, and goes on after the last PDF', [confirms, next().data.after, $('#rapls-pic-stat-generated').text()], [1, 1007, '2']);
+check('Continue does not ask again, and goes on after the last PDF', [confirms, next().data.after, $('#rapls-pic-stat-generated').text()], [1, 1007, '4']);
 r = answer({ pdf_id: null, filename: '', after: 2000, done: false });
 check('Nothing in the pages looked at: asks again from where the server got to', [next().data.action, next().data.after], ['rapls_pic_bulk_next', 2000]);
 answer({ pdf_id: null, filename: '', after: 2100, done: true });

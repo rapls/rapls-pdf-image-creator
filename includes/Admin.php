@@ -159,6 +159,12 @@ final class Admin
         );
     }
 
+    /** A field only the settings form sends, so a save can tell it from code's. */
+    public const FORM_MARKER = '_rapls_pic_form';
+
+    /** The settings that are checkboxes on the form. */
+    private const CHECKBOXES = ['auto_generate', 'set_featured', 'display_thumbnail_icon', 'hide_generated_images', 'keep_on_uninstall'];
+
     /**
      * Sanitize settings
      *
@@ -173,6 +179,16 @@ final class Admin
         if (!is_array($input)) {
             return $this->settings->get(true);
         }
+
+        // A key not given keeps the value it has. From the settings form,
+        // whose marker says so, a checkbox not given is one unticked -- a
+        // browser sends nothing for it. From anywhere else, a save of a
+        // few keys turned every checkbox it left out off (review after
+        // 1.4.37).
+        $current = $this->settings->get(true);
+        $fromForm = !empty($input[self::FORM_MARKER]);
+        unset($input[self::FORM_MARKER]);
+        $input += $fromForm ? array_diff_key($current, array_flip(self::CHECKBOXES)) : $current;
 
         $sanitized = [];
 
@@ -402,6 +418,18 @@ final class Admin
     }
 
     /**
+     * What a regeneration says when it kept the previous thumbnail
+     *
+     * A post shows the old image, so it was kept, and the post still shows
+     * the old picture until it is pointed at the new one (review after
+     * 1.4.37).
+     */
+    public static function keptPreviousNote(): string
+    {
+        return __('The previous thumbnail is still shown in a post, so it was kept in the Media Library as an ordinary image. That post still shows the old picture; replace it there to show the new one.', 'rapls-pdf-image-creator');
+    }
+
+    /**
      * The notice after the Media Library's "Regenerate Thumbnail"
      */
     private function showRegenerateNotices(): void
@@ -410,7 +438,12 @@ final class Admin
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Display-only notice, no data processing
         if (isset($_GET['rapls_pic_generated'])) {
             echo '<div class="notice notice-success is-dismissible">';
-            echo '<p>' . esc_html__('PDF thumbnail generated successfully.', 'rapls-pdf-image-creator') . '</p>';
+            echo '<p>' . esc_html__('PDF thumbnail generated successfully.', 'rapls-pdf-image-creator');
+            // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Display-only notice, no data processing
+            if ('kept' === $_GET['rapls_pic_generated']) {
+                echo ' ' . esc_html(self::keptPreviousNote());
+            }
+            echo '</p>';
             echo '</div>';
         }
 

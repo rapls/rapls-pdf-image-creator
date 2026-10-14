@@ -4,11 +4,11 @@
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: Rapls PDF Image Creator 1.4.37\n"
+"Project-Id-Version: Rapls PDF Image Creator 1.4.38\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-11 08:48+0900\n"
-"PO-Revision-Date: 2026-10-13 15:00+0900\n"
-"Last-Translator: \n"
+"POT-Creation-Date: 2026-10-14 12:00+0900\n"
+"PO-Revision-Date: 2026-10-14 12:00+0900\n"
+"Last-Translator: Rapls Works\n"
 "Language-Team: Japanese\n"
 "Language: ja\n"
 "MIME-Version: 1.0\n"
@@ -42,16 +42,16 @@ msgid "Image Settings"
 msgstr "画像設定"
 
 msgid "Max Width"
-msgstr "最大幅"
+msgstr "最大の幅"
 
 msgid "Maximum width of generated thumbnail. (100-4096)"
-msgstr "生成されるサムネイルの最大幅 (100-4096)。"
+msgstr "生成されるサムネイルの最大の幅 (100-4096)。"
 
 msgid "Max Height"
-msgstr "最大高さ"
+msgstr "最大の高さ"
 
 msgid "Maximum height of generated thumbnail. (100-4096)"
-msgstr "生成されるサムネイルの最大高さ (100-4096)。"
+msgstr "生成されるサムネイルの最大の高さ (100-4096)。"
 
 msgid "Rendering Resolution"
 msgstr "描画解像度"
@@ -64,7 +64,7 @@ msgid ""
 "scale the rendered page down, never up. Higher values use more memory during "
 "generation."
 msgstr ""
-"サムネイルを大きくするには、この値を上げてください。上の最大幅・最大高さは、"
+"サムネイルを大きくするには、この値を上げてください。上の最大の幅と高さは、"
 "描画されたページを縮小するだけで、拡大はしません。値を大きくすると、生成時の"
 "メモリ使用量が増えます。"
 
@@ -151,13 +151,8 @@ msgstr ""
 "チェックすると、プラグイン削除後も生成された画像ファイルは通常の画像ファイル"
 "として扱われます。"
 
-msgid ""
-"Images a post still shows, as its featured image or in its content, are kept "
-"either way. A post whose featured image was a PDF is given that PDF's image."
-msgstr ""
-"投稿がまだ表示している画像 (アイキャッチ画像や本文中の画像) は、どちらの場"
-"合も残します。PDF をアイキャッチ画像にしていた投稿には、その PDF の画像を設定し"
-"ます。"
+msgid "Images a post still shows, as its featured image or in its content or excerpt, are kept either way, a post in the trash included. A post whose featured image was a PDF is given that PDF's image."
+msgstr "投稿がまだ表示している画像 (アイキャッチ画像や、本文または抜粋の中の画像) は、どちらの場合も残します。ゴミ箱の投稿も含めます。PDF をアイキャッチ画像にしていた投稿には、その PDF の画像を設定します。"
 
 msgid "Insert Settings"
 msgstr "挿入設定"
@@ -472,6 +467,9 @@ msgstr "PDF ファイルではありません。"
 
 msgid "Thumbnail generated."
 msgstr "サムネイルを生成しました。"
+
+msgid "The previous thumbnail is still shown in a post, so it was kept in the Media Library as an ordinary image. That post still shows the old picture; replace it there to show the new one."
+msgstr "前のサムネイルは投稿で表示されているので、普通の画像としてメディアライブラリに残しました。その投稿には前の画像が表示されたままです。新しい画像にするには、その投稿で差し替えてください。"
 
 msgid "Failed to generate thumbnail."
 msgstr "サムネイルの生成に失敗しました。"
@@ -906,13 +904,13 @@ msgid "This has no effect where ImageMagick calls Ghostscript as a library (%1$s
 msgstr "ImageMagick が Ghostscript をライブラリとして呼び出す場合 (%2$s の出力に %1$s がある場合) は効果がなく、そのときはアップグレードだけが有効です。"
 
 msgid "WebP cannot be used on this server: WordPress before 5.8 does not accept WebP images, or ImageMagick here cannot write them. Thumbnails set to WebP fail to generate."
-msgstr "このサーバーでは WebP を使えません。5.8より前の WordPress は WebP 画像を受け付けないか、ここの ImageMagick が WebP を書き出せないためです。WebP に設定したサムネイルは生成に失敗します。"
+msgstr "このサーバーでは WebP を使えません。5.8より前の WordPress は WebP 画像を受け付けないか、このサーバーの ImageMagick が WebP を書き出せないためです。WebP に設定したサムネイルは生成に失敗します。"
 
 msgid "Where WordPress shows a file-type icon for a PDF, the generated thumbnail is shown instead. The Media Library's grid and list show a PDF's thumbnail whether or not this is on."
 msgstr "WordPress が PDF にファイル形式のアイコンを表示する場所で、代わりに生成したサムネイルを表示します。メディアライブラリのグリッドとリストでは、この設定に関係なく PDF のサムネイルを表示します。"
 
-msgid "This also decides what happens to the image when its PDF is deleted. Checked: the image is deleted with the PDF, unless something else uses it. Another PDF that shares it keeps it as its thumbnail; one a post uses as its featured image, or a post's content shows, is kept as an ordinary image. Only featured images and post content are checked, not widgets or other settings. Unchecked: the image is kept as an ordinary image."
-msgstr "PDF を削除したときに画像をどうするかも、この設定で決まります。オンにすると、画像も PDF と一緒に削除します。ただし、ほかのものが使っている画像は残します。同じ画像を使っているほかの PDF があれば、その PDF のサムネイルとして残します。投稿がアイキャッチ画像として使っている画像や、投稿の本文に表示されている画像は、普通の画像として残します。確かめるのはアイキャッチ画像と投稿の本文だけで、ウィジェットやほかの設定は確かめません。オフにすると、画像は普通の画像として残ります。"
+msgid "This also decides what happens to the image when its PDF is deleted. Checked: the image is deleted with the PDF, unless something else uses it. Another PDF that shares it keeps it as its thumbnail; one a post uses as its featured image, or a post's content or excerpt shows, is kept as an ordinary image -- a post in the trash included, as it can be restored. Only featured images, post content and excerpts are checked, not widgets or other settings. Unchecked: the image is kept as an ordinary image."
+msgstr "PDF を削除したときに画像をどうするかも、この設定で決まります。オンにすると、画像も PDF と一緒に削除します。ただし、ほかのものが使っている画像は残します。同じ画像を使っているほかの PDF があれば、その PDF のサムネイルとして残します。投稿がアイキャッチ画像として使っている画像や、投稿の本文または抜粋に表示されている画像は、普通の画像として残します。ゴミ箱の投稿も、元に戻せるので含めます。確かめるのはアイキャッチ画像と投稿の本文と抜粋だけで、ウィジェットやほかの設定は確かめません。オフにすると、画像は普通の画像として残ります。"
 
 msgid "These settings are used by \"Insert into post\" in the classic editor's Add Media window, where Size and Link To start at them for a PDF with a thumbnail; what is chosen there is used instead. The block editor does not use them."
 msgstr "これらの設定は、クラシックエディターの「メディアを追加」画面の「投稿に挿入」で使われます。サムネイルのある PDF では、画面のサイズとリンク先が最初にこの設定になり、画面で選んだものがあればそちらを使います。ブロックエディターでは使われません。"
@@ -955,7 +953,7 @@ msgid "Your PDFs have been getting thumbnails from this plugin. If it has been w
 msgstr "このプラグインで PDF のサムネイルが作られています。うまく動いていれば、レビューを書いていただけませんか ? ほかの人がこのプラグインを見つける、いちばんの手がかりになります。"
 
 msgid "Nothing was drawn, and ImageMagick raised no error. This is almost always the PDF renderer underneath it, Ghostscript, being too old for the file: Ghostscript 9.27 and earlier fail on files that Ghostscript 10 draws, and write an empty page. The page was already tried again with transparency switched off, which works around the most common case, where this server allows it. Ask your hosting provider which Ghostscript version is installed and whether it can be updated. If the page really is blank, choose another page."
-msgstr "何も描画されず、ImageMagick もエラーを出しませんでした。ほとんどの場合、その下で PDF を描く Ghostscript がこのファイルには古すぎることが原因です。Ghostscript 9.27以前は、Ghostscript 10なら描けるファイルで失敗し、空のページを書き出します。このページは、サーバーが許す場合、もっとも多い原因を回避するために透明を無効にして描き直しています。インストールされている Ghostscript の版と更新できるかを、ホスティング事業者に確認してください。ページが本当に白紙なら、別のページを選んでください。"
+msgstr "何も描画されず、ImageMagick もエラーを出しませんでした。ほとんどの場合、その下で PDF を描く Ghostscript がこのファイルには古すぎることが原因です。Ghostscript 9.27以前は、Ghostscript 10なら描けるファイルで失敗し、空のページを書き出します。このページは、サーバーが許す場合、もっとも多い原因を回避するために透明効果を無効にして描き直しています。インストールされている Ghostscript のバージョンと更新できるかを、ホスティング事業者に確認してください。ページが本当に白紙なら、別のページを選んでください。"
 
 msgid "Page %1$d was asked for (counting from 0), but this PDF has %2$d page."
 msgid_plural "Page %1$d was asked for (counting from 0), but this PDF has %2$d pages."

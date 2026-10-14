@@ -47,10 +47,15 @@
     margin-bottom: -1px;
 }
 
-/* Tab Content. Hidden only where JavaScript runs -- core swaps the admin
-   body's "no-js" for "js" as the page opens -- since only admin.js switches
-   tabs; without it, the Status tab could not be reached (review of 1.4.34),
-   so every tab shows, one under the other. */
+/* Tab Content. Hidden only once admin.js has run and marked the screen
+   "rapls-pic-js", since only admin.js switches tabs; without it, the Status
+   tab could not be reached (review of 1.4.34), so every tab shows, one under
+   the other. Core's "js" on the body was asked before, and a page where
+   admin.js did not load -- blocked, or broken by another script -- showed one
+   tab and no way to the others (review after 1.4.37). Until admin.js runs,
+   at document ready, every tab shows for a moment; hiding them earlier would
+   bring back the page with no way to the others whenever admin.js does not
+   run. Accepted (review of 1.4.37's fixes). */
 .rapls-pic-tab-content {
     background: #fff;
     border: 1px solid #c3c4c7;
@@ -58,18 +63,19 @@
     padding: 20px;
 }
 
-.js .rapls-pic-tab-content {
+.rapls-pic-js .rapls-pic-tab-content {
     display: none;
 }
 
-.js .rapls-pic-tab-content.active {
+.rapls-pic-js .rapls-pic-tab-content.active {
     display: block;
 }
 
 /* Buttons only admin.js answers: without it they did nothing when pressed,
    so they are not shown, and a <noscript> line says what to use instead
-   (review of 1.4.35). */
-body:not(.js) .rapls-pic-needs-js {
+   (review of 1.4.35). Until admin.js has run, not only where JavaScript is
+   off (review after 1.4.37). */
+.rapls-pic-settings:not(.rapls-pic-js) .rapls-pic-needs-js {
     display: none;
 }
 

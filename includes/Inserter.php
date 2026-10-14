@@ -256,18 +256,25 @@ final class Inserter
             return $this->generateTitleHtml($pdfId, $pdfTitle, $href);
         }
 
+        // "wp-image-N", as core's own insert writes it: WordPress adds srcset
+        // and sizes to an image in a post by that class, and it names the
+        // image by ID for a regeneration to see that a post shows it, should
+        // the address be rewritten (review after 1.4.37).
+        $thumbnailId = (int) $this->generator->getThumbnailId($pdfId);
+        $classes = 'rapls-pic-pdf-thumbnail alignnone size-' . $insertSize . ($thumbnailId > 0 ? ' wp-image-' . $thumbnailId : '');
+
         // Get image HTML
         $imageHtml = $this->generator->getThumbnailImage($pdfId, $insertSize, [
-            'class' => 'rapls-pic-pdf-thumbnail alignnone size-' . $insertSize,
+            'class' => $classes,
             'alt' => $pdfTitle,
         ]);
 
         if (empty($imageHtml)) {
             $imageHtml = sprintf(
-                '<img src="%s" alt="%s" class="rapls-pic-pdf-thumbnail alignnone size-%s">',
+                '<img src="%s" alt="%s" class="%s">',
                 esc_url($thumbnailUrl),
                 esc_attr($pdfTitle),
-                esc_attr($insertSize)
+                esc_attr($classes)
             );
         }
 

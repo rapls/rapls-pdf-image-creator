@@ -244,6 +244,22 @@ $translatedNotice = $regenNotice('render_error');
 unset($GLOBALS['translations']);
 check('  ...and the reason is escaped, translated or not', [false !== strpos($translatedNotice, 'Le &lt;b&gt;rendu&lt;/b&gt; a échoué.'), false !== strpos($translatedNotice, '<b>')], [true, false]);
 
+// Review after 1.4.37: the old thumbnail kept because a post shows it, said.
+$keptNotice = static function (string $value) use ($admin): string {
+    $_GET = ['rapls_pic_generated' => $value];
+    ob_start();
+    $notices = new ReflectionMethod(Admin::class, 'showRegenerateNotices');
+    if (PHP_VERSION_ID < 80100) { $notices->setAccessible(true); }
+    $notices->invoke($admin);
+    $_GET = [];
+    return (string) ob_get_clean();
+};
+check('a regeneration that kept the old thumbnail says the post still shows it; one that did not, does not', [
+    false !== strpos($keptNotice('kept'), 'The previous thumbnail is still shown in a post'),
+    false !== strpos($keptNotice('1'), 'The previous thumbnail is still shown in a post'),
+    false !== strpos($keptNotice('1'), 'PDF thumbnail generated successfully.'),
+], [true, false, true]);
+
 echo "\n=== Review of 1.4.32: markup a screen reader and the stylesheet rely on ===\n";
 $viewNow = (string) file_get_contents(RAPLS_PIC_PLUGIN_DIR . 'admin/views/settings-page.php');
 $cssNow = (string) file_get_contents(RAPLS_PIC_PLUGIN_DIR . 'admin/css/admin.css');
@@ -366,7 +382,7 @@ $afterFailedUpload = Admin::showsSupportBox(['availability' => ['code' => 'ok']]
 unset($GLOBALS['options'][\Rapls\PDFImageCreator\Generator::UNAVAILABLE_OPTION]);
 check('  ...nor after an upload found it unable, as the review request', $afterFailedUpload, false);
 check('  ...as the view asks it', substr_count($viewNow, '<?php if (\\Rapls\\PDFImageCreator\\Admin::showsSupportBox($capabilities)) : ?>'), 1);
-check('the tabs are hidden only where JavaScript runs', [(bool) preg_match('/^\.rapls-pic-tab-content \{[^}]*display: none/m', $cssNow), false !== strpos($cssNow, ".js .rapls-pic-tab-content {\n    display: none;"), false !== strpos($cssNow, ".js .rapls-pic-tab-content.active {\n    display: block;")], [false, true, true]);
+check('the tabs are hidden only once admin.js has run', [(bool) preg_match('/^\.rapls-pic-tab-content \{[^}]*display: none/m', $cssNow), false !== strpos($cssNow, ".rapls-pic-js .rapls-pic-tab-content {\n    display: none;"), false !== strpos($cssNow, ".rapls-pic-js .rapls-pic-tab-content.active {\n    display: block;"), (bool) preg_match('/^\.js \.rapls-pic-tab-content/m', $cssNow)], [false, true, true, false]);
 
 // Review of 1.4.35: without JavaScript, the buttons only admin.js answers
 // did nothing when pressed. Each sits in a block the stylesheet hides where
@@ -386,7 +402,7 @@ check('the buttons only JavaScript answers are each in a block hidden without it
     count(array_filter($jsBlocks, static function (array $block): bool {
         return false !== strpos($block[1], 'Generate Thumbnail') && false !== strpos($block[1], "esc_html_e(");
     })),
-    (bool) preg_match('~body:not\(\.js\) \.rapls-pic-needs-js \{\s*display: none;~', $cssNow),
+    (bool) preg_match('~\.rapls-pic-settings:not\(\.rapls-pic-js\) \.rapls-pic-needs-js \{\s*display: none;~', $cssNow),
     (bool) preg_match('~^\.rapls-pic-needs-js \{[^}]*display: none~m', $cssNow),
 ], [2, ['rapls-pic-bulk-scan', 'rapls-pic-bulk-start', 'rapls-pic-bulk-stop', 'rapls-pic-refresh-stats'], [], 2, true, false]);
 
@@ -397,6 +413,25 @@ check('the Bulk options and the quality number are hidden without JavaScript', [
     (bool) preg_match('~<table class="form-table rapls-pic-needs-js">\s*<tr>\s*<th scope="row"><\?php esc_html_e\(\'Options\'.*?id="rapls-pic-include-existing"~s', $viewNow),
     (bool) preg_match('~<output class="rapls-pic-needs-js">.*?</output>\s*<noscript><span>.*?__\(\'Saved: %d\'~s', $viewNow),
 ], [true, true]);
+
+// Mutation testing after 1.4.37: what the server, a filter or a translation
+// hands these screens is escaped where it is printed -- a requirement's
+// message, a size name image_size_names_choose returns, the engine notice's
+// label. Read from the source: each is printed through esc_html() and in no
+// other way.
+$adminSource = (string) file_get_contents(RAPLS_PIC_PLUGIN_DIR . 'includes/Admin.php');
+$printed = static function (string $source, string $expression): array {
+    $quoted = preg_quote($expression, '~');
+    return [
+        preg_match_all('~echo\s+esc_html\(\s*' . $quoted . '~', $source),
+        preg_match_all('~echo\s+(?!esc_html\()[^;]*' . $quoted . '~', $source),
+    ];
+};
+check('a requirement\'s message, a size\'s name and the engine notice\'s label are printed escaped', [
+    $printed($viewNow, "\$rapls_pic_req['message']"),
+    (bool) preg_match('~echo esc_html\(is_array\(\$rapls_pic_size_names\) && isset\(\$rapls_pic_size_names\[\$rapls_pic_size\]\) \? \(string\) \$rapls_pic_size_names\[\$rapls_pic_size\] : \$rapls_pic_size\);~', $viewNow),
+    $printed($adminSource, "\$status['label']"),
+], [[1, 0], true, [1, 0]]);
 
 // Mutation testing of 1.4.35: text straight after a closing tag that starts
 // with "=" -- an "=" typed after the tag's ">" -- prints a stray "=" on the

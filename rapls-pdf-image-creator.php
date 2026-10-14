@@ -12,7 +12,7 @@
  * Plugin Name: Rapls PDF Image Creator – PDF Thumbnails & Featured Images
  * Plugin URI:  https://raplsworks.com/plugins/rapls-pdf-image-creator/
  * Description: The first page of each uploaded PDF becomes an image in every registered size, ready to use as a post cover or inside content. Needs ImageMagick.
- * Version:     1.4.37
+ * Version:     1.4.38
  * Author:      Rapls Works
  * Author URI:  https://raplsworks.com
  * Text Domain: rapls-pdf-image-creator
@@ -45,7 +45,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Plugin constants
-define('RAPLS_PIC_VERSION', '1.4.37');
+define('RAPLS_PIC_VERSION', '1.4.38');
 define('RAPLS_PIC_PLUGIN_FILE', __FILE__);
 define('RAPLS_PIC_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('RAPLS_PIC_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -111,14 +111,21 @@ register_activation_hook(__FILE__, function (): void {
     }
 
     // Set default options. Taken from Settings so the two cannot drift.
-    if (!get_option(\Rapls\PDFImageCreator\Settings::OPTION_NAME)) {
+    $rapls_pic_fresh = !get_option(\Rapls\PDFImageCreator\Settings::OPTION_NAME);
+    if ($rapls_pic_fresh) {
         add_option(\Rapls\PDFImageCreator\Settings::OPTION_NAME, \Rapls\PDFImageCreator\Settings::DEFAULTS);
     }
 
-    // Stamping the version here is what lets Plugin::maybeUpgrade() tell a
-    // fresh install apart from an upgrade that predates the option.
+    // Stamping the version on a fresh install is what lets
+    // Plugin::maybeUpgrade() tell it apart from an upgrade that predates the
+    // option. Only then: written on every activation, it also stamped a
+    // site updated by replacing the folder and activating again, and
+    // maybeUpgrade() found nothing to do -- what the old version had
+    // measured about the server stood (review after 1.4.37).
     // Autoloaded, as Plugin::maybeUpgrade() writes it: read on every request.
-    update_option('rapls_pic_version', RAPLS_PIC_VERSION, true);
+    if ($rapls_pic_fresh && false === get_option('rapls_pic_version', false)) {
+        add_option('rapls_pic_version', RAPLS_PIC_VERSION, '', true);
+    }
 
     // When the clock for the review request starts. Written once and never
     // overwritten: deactivating and reactivating must not restart the wait,

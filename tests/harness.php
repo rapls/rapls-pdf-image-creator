@@ -58,7 +58,7 @@ function get_transient($k) { return $GLOBALS['transients'][$k] ?? false; }
 function set_transient($k, $v, $t = 0) { $GLOBALS['transients'][$k] = $v; $GLOBALS['transient_ttl'][$k] = $t; return true; }
 function delete_transient($k) { $GLOBALS['transient_deletes'][] = $k; unset($GLOBALS['transients'][$k]); return true; }
 function get_option($k, $d = false) { return $GLOBALS['options'][$k] ?? $d; }
-function update_option($k, $v, $a = null) { $GLOBALS['options'][$k] = $v; $GLOBALS['autoload'][$k] = $a; return true; }
+function update_option($k, $v, $a = null) { if (($GLOBALS['refuse_option'] ?? null) === $k) { return false; } $GLOBALS['options'][$k] = $v; $GLOBALS['autoload'][$k] = $a; return true; }
 // A translation can be given, to see that a translated string is escaped.
 function __($s, $d = null) { return $GLOBALS['translations'][$s] ?? $s; }
 if (!function_exists('_n')) { function _n($one, $many, $n, $d = null) { return 1 === (int) $n ? $one : $many; } }
