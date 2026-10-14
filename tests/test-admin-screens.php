@@ -194,6 +194,14 @@ $upgradeFrom = static function (string $version) use ($upgrade, $plugin): array 
     return [isset($GLOBALS['options'][\Rapls\PDFImageCreator\Plugin::COLOR_NOTICE_OPTION]), isset($GLOBALS['transients']['rapls_pic_icc_path_srgb'])];
 };
 check('an update from before the colour fix says so once; from it or after, not; profile paths are looked for again', [$upgradeFrom('1.0.9'), $upgradeFrom('1.1.0'), $upgradeFrom('1.4.20')], [[true, false], [false, false], [false, false]]);
+// No version recorded: settings there mean a release older than the version
+// option, and say so; no settings either is a fresh install, and does not.
+$fromNothing = static function (bool $settings) use ($upgrade, $plugin): bool {
+    $GLOBALS['options'] = $settings ? [\Rapls\PDFImageCreator\Settings::OPTION_NAME => ['format' => 'jpeg']] : [];
+    $upgrade->invoke($plugin);
+    return isset($GLOBALS['options'][\Rapls\PDFImageCreator\Plugin::COLOR_NOTICE_OPTION]);
+};
+check('  ...no version but settings: an old release, said; nothing at all: a fresh install, not', [$fromNothing(true), $fromNothing(false)], [true, false]);
 
 echo "\n=== Review of 1.4.32: a failed regeneration says why ===\n";
 if (!function_exists('current_user_can')) { function current_user_can($cap, ...$a) { return $GLOBALS['admin_can'] ?? true; } }
@@ -255,10 +263,22 @@ $keptNotice = static function (string $value) use ($admin): string {
     return (string) ob_get_clean();
 };
 check('a regeneration that kept the old thumbnail says the post still shows it; one that did not, does not', [
-    false !== strpos($keptNotice('kept'), 'The previous thumbnail is still shown in a post'),
-    false !== strpos($keptNotice('1'), 'The previous thumbnail is still shown in a post'),
+    false !== strpos($keptNotice('kept'), 'A post may still show the previous thumbnail'),
+    false !== strpos($keptNotice('1'), 'A post may still show the previous thumbnail'),
     false !== strpos($keptNotice('1'), 'PDF thumbnail generated successfully.'),
 ], [true, false, true]);
+// Review after 1.4.38: the reason it was kept, each said as it is; an
+// unknown value says only that it was generated; the note is escaped.
+check('  ...each reason in its own words, and nothing for a value it does not know', [
+    false !== strpos($keptNotice('kept-featured'), 'featured image, or another item'),
+    false !== strpos($keptNotice('kept-shared'), 'thumbnail (a translated copy'),
+    false !== strpos($keptNotice('kept-unknown'), 'could not be checked'),
+    false !== strpos($keptNotice('kept-other'), 'The previous thumbnail'),
+], [true, true, true, false]);
+$GLOBALS['translations']["The previous thumbnail is a post's featured image, or another item's cover image, so it was kept in the Media Library as an ordinary image."] = 'Gardée <i>ici</i>.';
+$escapedKept = $keptNotice('kept-featured');
+unset($GLOBALS['translations']);
+check('  ...and the note is escaped', [false !== strpos($escapedKept, 'Gardée &lt;i&gt;ici&lt;/i&gt;.'), false !== strpos($escapedKept, '<i>')], [true, false]);
 
 echo "\n=== Review of 1.4.32: markup a screen reader and the stylesheet rely on ===\n";
 $viewNow = (string) file_get_contents(RAPLS_PIC_PLUGIN_DIR . 'admin/views/settings-page.php');

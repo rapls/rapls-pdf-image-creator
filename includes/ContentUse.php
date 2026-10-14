@@ -24,7 +24,16 @@ namespace Rapls\PDFImageCreator;
  * A post's content and its excerpt are read: WooCommerce keeps a product's
  * short description in post_excerpt, and an image inserted there was
  * deleted (review after 1.4.37). A widget, an option, a theme or page
- * builder setting that names an image by ID is not found.
+ * builder setting kept outside the post is not read.
+ *
+ * Beyond the forms core writes, any number where an ID could stand -- an
+ * attribute's value, a JSON value, an item of a list -- counts as naming
+ * that attachment (idsInContext()). Page builders keep an image in the
+ * content by its ID alone, each in its own spelling ([vc_single_image
+ * image="555"], [et_pb_gallery gallery_ids="555"], [fusion_imageframe
+ * image_id="555|full"]), and regenerating deleted the image under them
+ * (review after 1.4.38). A number that only looks like an ID -- a width,
+ * a column count -- keeps an image too many, never deletes one shown.
  *
  * Plain functions of strings, so uninstall.php can load this file on its
  * own, without the plugin.
@@ -110,7 +119,10 @@ final class ContentUse
      *
      * Decoded: an address percent-encodes a name that is not ASCII, and the
      * attached file holds it as it is (review of 1.4.34); and an editor can
-     * write a character as an HTML entity ("&#22577;").
+     * write a character as an HTML entity ("&#22577;"), and a block or a
+     * plugin that stores JSON without JSON_UNESCAPED_UNICODE writes it as
+     * "\u5831" -- the name was not found there, and the image was deleted
+     * (review after 1.4.38).
      *
      * The folder is not part of it: the same name in another month's folder
      * counts as this image, which keeps one too many and never deletes one
@@ -125,6 +137,7 @@ final class ContentUse
      */
     public static function stemsIn(string $content): ?array
     {
+        $content = self::unescapeJson($content);
         $stems = [];
         $found = preg_match_all('/([^\/\s"\'<>()=]+)\.(?:jpe?g|png|gif|webp|avif)\b/i', $content, $files);
         if (false === $found) {
@@ -159,7 +172,7 @@ final class ContentUse
         if (null !== $named) {
             return array_keys(array_intersect_key(array_fill_keys($stems, true), $named));
         }
-        $lower = strtr($content, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz');
+        $lower = strtr(self::unescapeJson($content), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz');
         $shown = [];
         foreach ($stems as $stem) {
             foreach (self::fragments([(string) $stem]) as $fragment) {
@@ -267,6 +280,118 @@ final class ContentUse
     }
 
     /**
+     * What can stand right before an ID in a value
+     *
+     * "=" of an attribute, ":" of JSON, "," "|" or "[" of a list, ";" of an
+     * entity-quoted value (ids=&quot;12&quot;, &#34;12&#34;), and
+     * "wp-image-"; then up to 64 spaces, quotes and backslashes (an
+     * attribute quoted inside a string, image=\"555\"; indented JSON) --
+     * bounded, as an unbounded run gave MySQL 8's ICU a run to try from
+     * every such character of a long post, under regexp_time_limit. Or a
+     * digit and white space: the second and later IDs of a list that spaces
+     * divide, as WordPress's own wp_parse_id_list() reads [gallery ids="1
+     * 555"] -- a list that only ",", "=" or "[" could start missed them, and
+     * the image the gallery showed was deleted (review of 1.4.38's fixes).
+     * That branch keeps an image for any number after another and a space,
+     * "1024 768" among them: too many, never too few, accepted. After
+     * either, leading zeros ("0555" is 555, as (int) and the gallery read
+     * it). The content is read with JSON's \uXXXX written out, so a quote
+     * written \u0022 -- json_encode()'s JSON_HEX_QUOT -- is a quote (review
+     * of 1.4.38's fixes). Not counted, and accepted: a run of more than 64
+     * spaces or quotes before an ID, which no editor or builder writes, and
+     * "\U0022", which JSON does not define (its escape is a lower-case u).
+     *
+     * The SQL asks a superset. The first branch in a REGEXP every MySQL and
+     * MariaDB read alike (ID_CONTEXT_SQL: no backslash inside a bracket,
+     * which they do not); the second as LIKEs on the white space before the
+     * ID (idLikesSql()), not in the REGEXP: "[0-9]" there had MySQL 8's ICU
+     * try every digit of every candidate post for a two- or three-digit ID,
+     * under regexp_time_limit, and a query that runs past it fails -- the
+     * image is then kept, but kept every time (review of 1.4.38's fixes).
+     */
+    private const ID_CONTEXT = '(?:(?:[=:,|;\[]|wp-image-)[\s"\'\\\\]{0,64}|(?<=\d)[ \t\r\n]{1,8})0*';
+    private const ID_CONTEXT_SQL = '([=:,|;]|\\[|wp-image-)[^0-9a-zA-Z]{0,64}0*';
+
+    /**
+     * The LIKE patterns, for the SQL, that find an ID after a digit and white space
+     *
+     * The white space right before it, each kind ID_CONTEXT's second branch
+     * takes, with or without leading zeros between; and any \u00XX escape
+     * before it, which the PHP writes out before it reads (a quote as
+     * \u0022). A superset, as the PHP then decides.
+     *
+     * @return string[]
+     */
+    public static function idLikesSql(int $id): array
+    {
+        $likes = [];
+        foreach ([' ', "\t", "\n", "\r"] as $space) {
+            $likes[] = '%' . $space . $id . '%';
+            $likes[] = '%' . $space . '0%' . $id . '%';
+        }
+        $likes[] = '%u00%' . $id . '%';
+
+        return $likes;
+    }
+
+    /**
+     * Every number in a piece of content that stands where an ID could
+     *
+     * A superset of idsIn(): what any page builder writes for an image it
+     * keeps by ID, and what some other number happens to look like.
+     *
+     * Null when the pattern could not be run over the content: the caller
+     * then keeps, as for stemsIn().
+     *
+     * @return array<int, true>|null
+     */
+    public static function idsInContext(string $content): ?array
+    {
+        $found = preg_match_all('/' . self::ID_CONTEXT . '(\d+)/', self::unescapeJson($content), $m);
+        if (false === $found) {
+            return null;
+        }
+        $ids = [];
+        foreach ($m[1] as $id) {
+            $ids[(int) $id] = true;
+        }
+        unset($ids[0]);
+
+        return $ids;
+    }
+
+    /**
+     * The regular expression, for MySQL's REGEXP, a post that could name this ID matches
+     *
+     * The ID after one of ID_CONTEXT's characters, and no digit after it.
+     */
+    public static function idRegexSql(int $id): string
+    {
+        return self::ID_CONTEXT_SQL . $id . '([^0-9]|$)';
+    }
+
+    /**
+     * JSON's \uXXXX escapes, written out
+     *
+     * Only runs of them, each run decoded as JSON would, so a pair that
+     * stands for one character becomes it; a run that is not valid JSON
+     * stays as it was.
+     */
+    private static function unescapeJson(string $content): string
+    {
+        if (false === strpos($content, '\\u')) {
+            return $content;
+        }
+        $decoded = preg_replace_callback('/(?:\\\\u[0-9a-fA-F]{4})+/', static function (array $m): string {
+            $text = json_decode('"' . $m[0] . '"');
+
+            return is_string($text) ? $text : $m[0];
+        }, $content);
+
+        return is_string($decoded) ? $decoded : $content;
+    }
+
+    /**
      * The PDF IDs this plugin's own shortcodes in a piece of content name
      *
      * Only uninstall.php asks: a [rapls_pdf_thumbnail id=N] stops showing
@@ -290,14 +415,6 @@ final class ContentUse
 
         return $ids;
     }
-
-    /**
-     * What a form that names the image by ID leaves in the content, before the ID's digits
-     *
-     * "wp-image-" is followed by the digits at once; in the others the
-     * digits come later, after a colon, spaces or other IDs.
-     */
-    public const ID_FORMS = ['"id"', '[gallery', '"ids"'];
 
     /**
      * The stem fragments one of which any post showing the image by name must hold
@@ -338,52 +455,39 @@ final class ContentUse
     }
 
     /**
-     * The patterns the SQL that narrows the posts read is made of
+     * The LIKE patterns, by name, the SQL that narrows the posts read is made of
      *
-     * Each is a list of pieces that must appear in that order, any text
-     * between them: LIKE '%a%b%'. One per stem fragment; "wp-image-N"; and
-     * the ID after each of ID_FORMS. The digits once were asked for apart
-     * from the forms, so "7" anywhere in a post with any block made it a
-     * candidate, and nearly every post was read (review after 1.4.37).
+     * One per stem fragment, '%fragment%'. The ID is asked apart, with
+     * idRegexSql(): one REGEXP per column instead of a LIKE per form of it,
+     * each of which had LOWER() work out the whole column again (review
+     * after 1.4.38).
      *
      * @param string[] $stems
-     * @return array<int, string[]>
+     * @return string[]
      */
-    public static function patterns(int $imageId, array $stems): array
+    public static function patterns(array $stems): array
     {
-        $patterns = [];
-        foreach (self::fragments($stems) as $fragment) {
-            $patterns[] = [$fragment];
-        }
-        $patterns[] = ['wp-image-' . $imageId];
-        foreach (self::ID_FORMS as $form) {
-            $patterns[] = [$form, (string) $imageId];
-        }
-
-        return $patterns;
+        return self::fragments($stems);
     }
 
     /**
      * Whether a post could show the image, as the SQL that narrows the posts read asks it
      *
-     * One of patterns(), ignoring case. idsIn() and stemsIn() then decide.
+     * A stem fragment, ignoring case, or the ID where an ID could stand.
+     * idsIn(), idsInContext() and stemsIn() then decide.
      *
      * @param string[] $stems
      */
     public static function candidate(string $content, int $imageId, array $stems): bool
     {
-        $content = strtr($content, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz');
-        foreach (self::patterns($imageId, $stems) as $pieces) {
-            $at = 0;
-            foreach ($pieces as $piece) {
-                $at = strpos($content, $piece, $at);
-                if (false === $at) {
-                    continue 2;
-                }
-                $at += strlen($piece);
-            }
-
+        if (1 === preg_match('/' . self::ID_CONTEXT . $imageId . '(?![0-9])/', self::unescapeJson($content))) {
             return true;
+        }
+        $content = strtr($content, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz');
+        foreach (self::patterns($stems) as $fragment) {
+            if (false !== strpos($content, $fragment)) {
+                return true;
+            }
         }
 
         return false;
@@ -397,6 +501,10 @@ final class ContentUse
     public static function shows(string $content, int $imageId, array $stems): bool
     {
         if (isset(self::idsIn($content)[$imageId])) {
+            return true;
+        }
+        $context = self::idsInContext($content);
+        if (null === $context || isset($context[$imageId])) {
             return true;
         }
 

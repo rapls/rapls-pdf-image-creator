@@ -336,7 +336,7 @@ final class Generator
         // Check if thumbnail already exists
         if (!$force && $this->hasThumbnail($pdfId)) {
             $existing = $this->getThumbnailId($pdfId);
-            $this->outcomes[$pdfId] = ['ok' => true, 'thumbnail_id' => $existing, 'code' => '', 'message' => ''];
+            $this->outcomes[$pdfId] = ['ok' => true, 'thumbnail_id' => $existing, 'code' => '', 'message' => '', 'kept_previous' => null];
 
             return $existing;
         }
@@ -539,7 +539,7 @@ final class Generator
 
             if (null !== $meanwhile && $meanwhile !== $thumbnailId) {
                 $this->discardNewThumbnail($thumbnailId, $pdfId, 'was not needed: another request made one first');
-                $this->outcomes[$pdfId] = ['ok' => true, 'thumbnail_id' => $meanwhile, 'code' => '', 'message' => ''];
+                $this->outcomes[$pdfId] = ['ok' => true, 'thumbnail_id' => $meanwhile, 'code' => '', 'message' => '', 'kept_previous' => null];
 
                 return $meanwhile;
             }
@@ -713,12 +713,39 @@ final class Generator
      * attempt ended in an exception before it came to anything.
      *
      * @since 1.4.17
-     * @since 1.4.38 kept_previous.
+     * @since 1.4.39 kept_previous.
      * @return array{ok: bool, thumbnail_id: int|null, code: string, message: string, kept_previous: int|null}|null
      */
     public function outcomeFor(int $pdfId): ?array
     {
         return $this->outcomes[$pdfId] ?? null;
+    }
+
+    /** keptReasonFor(): a post's content shows the image. */
+    public const KEPT_SHOWN = 'shown';
+    /** keptReasonFor(): a post uses it as its featured image. */
+    public const KEPT_FEATURED = 'featured';
+    /** keptReasonFor(): another PDF -- a translation's copy -- names it. */
+    public const KEPT_SHARED = 'shared';
+    /** keptReasonFor(): whether anything uses it could not be told. */
+    public const KEPT_UNKNOWN = 'unknown';
+
+    /** Why the last release of each PDF's image kept it, by PDF ID. */
+    private $keptReasons = [];
+
+    /**
+     * Why the last image this PDF let go of was kept, in this request
+     *
+     * One of the KEPT_* constants; null when nothing was kept. A
+     * regeneration that kept the old thumbnail said a post showed it
+     * whatever the reason, also when a featured image, another PDF or a
+     * lookup that did not answer had kept it (review after 1.4.38).
+     *
+     * @since 1.4.39
+     */
+    public function keptReasonFor(int $pdfId): ?string
+    {
+        return $this->keptReasons[$pdfId] ?? null;
     }
 
     /**
@@ -803,6 +830,11 @@ final class Generator
      * Whether another attachment -- a translation's copy of the PDF -- names
      * this image as its thumbnail
      *
+     * Another PDF only: an audio file's or a video's cover image names its
+     * picture by `_thumbnail_id` too, and was counted as another PDF's
+     * thumbnail, so the image stayed marked and hidden while it was in use
+     * (review after 1.4.38).
+     *
      * Such an image is still a thumbnail, that PDF's, and keeps its two
      * markers. One only a post's featured image names is not anybody's
      * thumbnail once this PDF lets go of it, and becomes an ordinary image,
@@ -822,7 +854,7 @@ final class Generator
 
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.SlowDBQuery.slow_db_query_meta_key, WordPress.DB.SlowDBQuery.slow_db_query_meta_value
         $found = $wpdb->get_var($wpdb->prepare(
-            "SELECT meta.post_id FROM {$wpdb->postmeta} meta INNER JOIN {$wpdb->posts} named ON named.ID = meta.post_id AND named.post_type = 'attachment'
+            "SELECT meta.post_id FROM {$wpdb->postmeta} meta INNER JOIN {$wpdb->posts} named ON named.ID = meta.post_id AND named.post_type = 'attachment' AND named.post_mime_type = 'application/pdf'
              WHERE meta.meta_key IN (%s, %s) AND meta.meta_value = %s AND meta.post_id <> %d LIMIT 1",
             self::THUMBNAIL_META_KEY,
             '_thumbnail_id',
@@ -848,16 +880,18 @@ final class Generator
      * ContentUse makes the test, the same one uninstall.php makes: the file
      * name in any size, before and after an edit, as it is and
      * percent-encoded, compared whole; or the image's ID in a "wp-image-"
-     * class, an image block, a gallery block or a [gallery] shortcode. SQL
-     * only narrows the posts read, with LIKE on fragments every one of those
-     * leaves behind; PHP decides. "%name%" in SQL alone kept
+     * class, an image block, a gallery block or a [gallery] shortcode -- or
+     * the ID wherever an ID could stand, as page builders keep an image by
+     * ID alone (review after 1.4.38). SQL only narrows the posts read, with
+     * LIKE on the name's fragments and REGEXP for the ID; PHP decides. "%name%" in SQL alone kept
      * "report-pdf-thumbnail" because a post showed
      * "annual-report-pdf-thumbnail", and nothing found a gallery naming the
      * image by ID (review of 1.4.36).
      *
      * Revisions, auto-drafts and attachments are not read; a trashed post
      * is, as it can come back (review after 1.4.37). The content and the
-     * excerpt are: not widgets, options or a page builder's meta.
+     * excerpt are: not widgets, options or a page builder's meta kept
+     * outside them.
      * It runs only when an image of this plugin's own is about to be
      * deleted: a forced regeneration, or deleting a PDF.
      *
@@ -873,28 +907,59 @@ final class Generator
 
         class_exists(ContentUse::class) || require_once __DIR__ . '/ContentUse.php';
 
-        $stems = ContentUse::stemsOf(
-            (string) get_post_meta($thumbnailId, '_wp_attached_file', true),
-            get_post_meta($thumbnailId, '_wp_attachment_backup_sizes', true)
-        );
-        // ContentUse::candidate(), as SQL: each pattern's pieces in order,
-        // in the content or the excerpt, ignoring case whatever the
-        // collation -- LOWER(), since a case-sensitive one (utf8mb4_bin,
-        // utf8mb4_ja_0900_as_cs) missed "Report-pdf-thumbnail.jpg" and the
-        // image was deleted (review after 1.4.37). Each column on its own:
-        // CONCAT_WS() of the two failed with "Illegal mix of collations"
-        // where they differ, and joined them into a value built for every
-        // row and every pattern (review of 1.4.37's fixes). A pattern never
-        // needs both: its pieces are one name or one ID's spelling.
-        // LOWER() of each column is so worked out once per pattern, five to
-        // seven times a row; MySQL does not keep it between them. Accepted:
-        // '%...%' reads every row either way, and this runs only when an
-        // image of the plugin's own is about to be deleted.
+        $file = (string) get_post_meta($thumbnailId, '_wp_attached_file', true);
+        if ('' === $file) {
+            // No file recorded -- an import, a cleanup plugin: the address
+            // WordPress gave it, for its name. Without a name a post
+            // showing it by address could not be found, and it was deleted
+            // under the post (review after 1.4.38). With neither, its ID
+            // alone is looked for.
+            $image = get_post($thumbnailId);
+            $guid = is_object($image) ? (string) ($image->guid ?? '') : '';
+            $file = (string) (function_exists('wp_parse_url') ? wp_parse_url($guid, PHP_URL_PATH) : parse_url($guid, PHP_URL_PATH)); // phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- core's own where it is loaded
+            // An address is percent-encoded; the name in a post is compared
+            // decoded, as _wp_attached_file holds it (review of 1.4.38's
+            // fixes).
+            $file = rawurldecode($file);
+        }
+        $stems = ContentUse::stemsOf($file, get_post_meta($thumbnailId, '_wp_attachment_backup_sizes', true));
+        // ContentUse::candidate(), as SQL. The ID where an ID could stand,
+        // one REGEXP per column: digits and punctuation, the same in any
+        // collation. Each name fragment, LOWER() of each column on its own
+        // (a case-sensitive collation, utf8mb4_bin or
+        // utf8mb4_ja_0900_as_cs, missed "Report-pdf-thumbnail.jpg" and the
+        // image was deleted -- review after 1.4.37; CONCAT_WS() of the two
+        // failed with "Illegal mix of collations" where they differ --
+        // review of 1.4.37's fixes). The ID's five spellings were five
+        // LIKEs on LOWER() of both columns, the whole of each worked out
+        // again for every one (review after 1.4.38); a REGEXP that cannot
+        // be read on some server fails the query, and a failed query keeps
+        // the image.
+        // The ID: a [gallery] holding it, as up to 1.4.38's lookup asked; the
+        // ID after white space (a list that spaces divide), as LIKEs; or the
+        // digits anywhere and, only then, the REGEXP for the rest of
+        // ContentUse::ID_CONTEXT. MySQL 8 runs REGEXP through ICU under
+        // regexp_time_limit, counted over the whole value: a post of some
+        // megabytes could run past it and fail the query -- the image is
+        // then kept, but kept every time. The LIKE in front leaves the
+        // REGEXP to the posts that hold the digits at all, and the REGEXP
+        // has no "[0-9]" left to try at every digit of them (review of
+        // 1.4.38's fixes).
         $likes = [];
         $patterns = [];
-        foreach (ContentUse::patterns($thumbnailId, $stems) as $pieces) {
-            $pattern = '%' . implode('%', array_map([$wpdb, 'esc_like'], $pieces)) . '%';
-            $likes[] = '(LOWER(post_content) LIKE %s OR LOWER(post_excerpt) LIKE %s)';
+        $idRegex = ContentUse::idRegexSql($thumbnailId);
+        $gallery = '%' . $wpdb->esc_like('[gallery') . '%' . $thumbnailId . '%';
+        $digits = '%' . $thumbnailId . '%';
+        $afterSpace = ContentUse::idLikesSql($thumbnailId);
+        foreach (['post_content', 'post_excerpt'] as $column) {
+            $likes[] = implode(' OR ', array_fill(0, 1 + count($afterSpace), "{$column} LIKE %s")) . " OR ({$column} LIKE %s AND {$column} REGEXP %s)";
+            array_push($patterns, $gallery, ...$afterSpace);
+            array_push($patterns, $digits, $idRegex);
+        }
+        foreach (ContentUse::patterns($stems) as $fragment) {
+            $pattern = '%' . $wpdb->esc_like($fragment) . '%';
+            $likes[] = 'LOWER(post_content) LIKE %s';
+            $likes[] = 'LOWER(post_excerpt) LIKE %s';
             $patterns[] = $pattern;
             $patterns[] = $pattern;
         }
@@ -977,6 +1042,7 @@ final class Generator
     private function releaseThumbnail(int $pdfId, int $thumbnailId, bool $pdfGoing = false): string
     {
         $result = self::RELEASE_KEPT;
+        unset($this->keptReasons[$pdfId]);
 
         // Made from this PDF is not enough when something else shows it too:
         // a translation's copy of this PDF that shares its thumbnail, or a
@@ -989,6 +1055,7 @@ final class Generator
                 // ordinary image, said -- kept and visible is recoverable,
                 // marked with nothing pointing at it is lost in the library.
                 $byAttachment = $this->namedByAttachment($thumbnailId, $pdfId);
+                $this->keptReasons[$pdfId] = true === $byAttachment ? self::KEPT_SHARED : (false === $byAttachment ? self::KEPT_FEATURED : self::KEPT_UNKNOWN);
                 if (true !== $byAttachment) {
                     $this->makeOrdinary($thumbnailId, $pdfId, $pdfGoing);
                 }
@@ -999,6 +1066,7 @@ final class Generator
             } else {
                 $shown = $this->shownInContent($thumbnailId);
                 if (null === $shown) {
+                    $this->keptReasons[$pdfId] = self::KEPT_UNKNOWN;
                     // Not known: kept as an ordinary image, and said. Left
                     // marked and linked "for the next attempt", it was
                     // neither: the PDF already names its new thumbnail, or
@@ -1008,6 +1076,7 @@ final class Generator
                     // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
                     error_log(sprintf('Rapls PDF Image Creator: could not tell whether a post shows image #%d; PDF #%d let go of it and it was kept as an ordinary image.', $thumbnailId, $pdfId));
                 } elseif ($shown) {
+                    $this->keptReasons[$pdfId] = self::KEPT_SHOWN;
                     // Shown in a post's content: kept, and made an ordinary
                     // image -- visible in the Media Library with "Hide
                     // Generated Images" on, and no longer this PDF's to
@@ -1015,6 +1084,16 @@ final class Generator
                     $this->makeOrdinary($thumbnailId, $pdfId, $pdfGoing);
                 } elseif ($this->deleteAttachment($thumbnailId)) {
                     $result = self::RELEASE_DELETED;
+                } elseif ($pdfGoing) {
+                    // Refused (pre_delete_attachment) while the PDF itself
+                    // goes: there is no next attempt to find it, and it
+                    // stayed marked, hidden by "Hide Generated Images",
+                    // attached to nothing (review after 1.4.38). Kept as an
+                    // ordinary image, and said.
+                    $this->makeOrdinary($thumbnailId, $pdfId, true);
+                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+                    error_log(sprintf('Rapls PDF Image Creator: image #%d of PDF #%d could not be deleted with the PDF; it was kept as an ordinary image.', $thumbnailId, $pdfId));
+                    $result = self::RELEASE_FAILED;
                 } else {
                     // Not deleted: the PDF keeps its link, so the image is
                     // not left behind with nothing naming it, and the next
@@ -1064,6 +1143,47 @@ final class Generator
             $wpdb->update($wpdb->posts, ['post_parent' => is_object($pdf) ? (int) ($pdf->post_parent ?? 0) : 0], ['ID' => $imageId], ['%d'], ['%d']);
             if (function_exists('clean_post_cache')) {
                 clean_post_cache($imageId);
+            }
+        }
+    }
+
+    /**
+     * Attach the ordinary images still attached to a PDF that is going to its parent
+     *
+     * An old thumbnail kept by a regeneration, because a post showed it, is
+     * an ordinary image still attached to the PDF; deleting the PDF later
+     * left its "Uploaded to" naming an item that was gone (review after
+     * 1.4.38). WordPress moves a deleted post's attachments to its parent
+     * the same way; it does not for a deleted attachment's. Images that
+     * still carry this plugin's marker are not touched: they are a PDF's
+     * thumbnail, this one's to delete or another's to keep. One another PDF
+     * shares stays attached to this PDF once it is gone, "Uploaded to"
+     * naming nothing; nothing reads that, and which PDF it should name
+     * instead is that PDF's to say -- left (review of 1.4.38's fixes).
+     */
+    public function reparentKeptImages(int $pdfId): void
+    {
+        global $wpdb;
+
+        if ($pdfId < 1 || !is_object($wpdb) || !isset($wpdb->posts, $wpdb->postmeta) || !method_exists($wpdb, 'get_col') || !method_exists($wpdb, 'update')) {
+            return;
+        }
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+        $ids = $wpdb->get_col($wpdb->prepare(
+            "SELECT p.ID FROM {$wpdb->posts} p WHERE p.post_parent = %d AND p.post_type = 'attachment'
+             AND NOT EXISTS (SELECT 1 FROM {$wpdb->postmeta} m WHERE m.post_id = p.ID AND m.meta_key = '_rapls_pic_is_thumbnail')",
+            $pdfId
+        ));
+        if (!is_array($ids) || '' !== (string) $wpdb->last_error) {
+            return;
+        }
+        $pdf = get_post($pdfId);
+        $parent = is_object($pdf) ? (int) ($pdf->post_parent ?? 0) : 0;
+        foreach ($ids as $id) {
+            $wpdb->update($wpdb->posts, ['post_parent' => $parent], ['ID' => (int) $id], ['%d'], ['%d']);
+            if (function_exists('clean_post_cache')) {
+                clean_post_cache((int) $id);
             }
         }
     }

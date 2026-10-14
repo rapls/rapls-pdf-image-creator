@@ -294,7 +294,8 @@ final class BulkProcessor
                     'thumbnail_id' => $result,
                     'thumbnail_url' => $this->generator->getThumbnailUrl($pdfId, 'thumbnail'),
                     'message' => null !== $kept
-                        ? __('Thumbnail generated.', 'rapls-pdf-image-creator') . ' ' . Admin::keptPreviousNote()
+                        /* translators: 1: "Thumbnail generated.", 2: why the previous thumbnail was kept. */
+                        ? sprintf(__('%1$s %2$s', 'rapls-pdf-image-creator'), __('Thumbnail generated.', 'rapls-pdf-image-creator'), Admin::keptPreviousNote($this->generator->keptReasonFor($pdfId) ?? Generator::KEPT_SHOWN))
                         : __('Thumbnail generated.', 'rapls-pdf-image-creator'),
                     'kept_previous' => $kept,
                 ]);

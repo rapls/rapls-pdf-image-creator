@@ -4,7 +4,7 @@
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: Rapls PDF Image Creator 1.4.38\n"
+"Project-Id-Version: Rapls PDF Image Creator 1.4.39\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-14 12:00+0900\n"
 "PO-Revision-Date: 2026-10-14 12:00+0900\n"
@@ -42,16 +42,16 @@ msgid "Image Settings"
 msgstr "画像設定"
 
 msgid "Max Width"
-msgstr "最大の幅"
+msgstr "幅の上限"
 
 msgid "Maximum width of generated thumbnail. (100-4096)"
-msgstr "生成されるサムネイルの最大の幅 (100-4096)。"
+msgstr "生成されるサムネイルの幅の上限 (100-4096)。"
 
 msgid "Max Height"
-msgstr "最大の高さ"
+msgstr "高さの上限"
 
 msgid "Maximum height of generated thumbnail. (100-4096)"
-msgstr "生成されるサムネイルの最大の高さ (100-4096)。"
+msgstr "生成されるサムネイルの高さの上限 (100-4096)。"
 
 msgid "Rendering Resolution"
 msgstr "描画解像度"
@@ -64,7 +64,7 @@ msgid ""
 "scale the rendered page down, never up. Higher values use more memory during "
 "generation."
 msgstr ""
-"サムネイルを大きくするには、この値を上げてください。上の最大の幅と高さは、"
+"サムネイルを大きくするには、この値を上げてください。上の幅と高さの上限は、"
 "描画されたページを縮小するだけで、拡大はしません。値を大きくすると、生成時の"
 "メモリ使用量が増えます。"
 
@@ -468,8 +468,21 @@ msgstr "PDF ファイルではありません。"
 msgid "Thumbnail generated."
 msgstr "サムネイルを生成しました。"
 
-msgid "The previous thumbnail is still shown in a post, so it was kept in the Media Library as an ordinary image. That post still shows the old picture; replace it there to show the new one."
-msgstr "前のサムネイルは投稿で表示されているので、普通の画像としてメディアライブラリに残しました。その投稿には前の画像が表示されたままです。新しい画像にするには、その投稿で差し替えてください。"
+msgid "A post may still show the previous thumbnail, so it was kept in the Media Library as an ordinary image. If one does, it still shows the old picture; replace it there to show the new one."
+msgstr "前のサムネイルを表示している投稿があるかもしれないので、通常の画像としてメディアライブラリに残しました。表示している投稿があれば、前の画像が表示されたままです。新しい画像にするには、その投稿で差し替えてください。"
+
+#. translators: 1: the first sentence, 2: the next.
+msgid "%1$s %2$s"
+msgstr "%1$s%2$s"
+
+msgid "The previous thumbnail is a post's featured image, or another item's cover image, so it was kept in the Media Library as an ordinary image."
+msgstr "前のサムネイルは投稿のアイキャッチ画像か、ほかの項目のカバー画像として使われているため、通常の画像としてメディアライブラリに残しました。"
+
+msgid "The previous thumbnail is also another PDF's thumbnail (a translated copy's), so it was kept for that PDF."
+msgstr "前のサムネイルは別の PDF (翻訳されたコピー) のサムネイルでもあるため、その PDF 用に残しました。"
+
+msgid "Whether a post still shows the previous thumbnail could not be checked, so it was kept in the Media Library as an ordinary image."
+msgstr "前のサムネイルを投稿がまだ表示しているかを確認できなかったため、通常の画像としてメディアライブラリに残しました。"
 
 msgid "Failed to generate thumbnail."
 msgstr "サムネイルの生成に失敗しました。"

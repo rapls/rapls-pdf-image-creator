@@ -190,7 +190,8 @@ function rapls_pic_uninstall_move_featured(): bool
  * gallery showed its thumbnail, and without the plugin it shows nothing, so
  * the image is kept for the post to be pointed at again (review of 1.4.36).
  * This plugin's own shortcodes naming the PDF count the same way (review
- * after 1.4.37).
+ * after 1.4.37), and so does either ID wherever an ID could stand, as page
+ * builders keep an image (review after 1.4.38).
  *
  * The content and the excerpt are read: not widgets, not options, not a page
  * builder's own meta. Revisions and auto-drafts are not read: a revision
@@ -251,7 +252,14 @@ function rapls_pic_uninstall_shown_in_content(array $thumbnails): ?array
             foreach (\Rapls\PDFImageCreator\ContentUse::stemsShown($rapls_pic_content, array_keys($rapls_pic_by_stem)) as $rapls_pic_stem) {
                 $rapls_pic_shown += array_fill_keys($rapls_pic_by_stem[$rapls_pic_stem], true);
             }
-            $rapls_pic_named = \Rapls\PDFImageCreator\ContentUse::idsIn($rapls_pic_content) + \Rapls\PDFImageCreator\ContentUse::shortcodePdfIdsIn($rapls_pic_content);
+            // Any number where an ID could stand counts, as for
+            // regenerating: page builders keep an image by ID alone (review
+            // after 1.4.38). Not read: every image is kept.
+            $rapls_pic_context = \Rapls\PDFImageCreator\ContentUse::idsInContext($rapls_pic_content);
+            if (null === $rapls_pic_context) {
+                return array_values(array_unique(array_map('intval', array_column($thumbnails, 'id'))));
+            }
+            $rapls_pic_named = \Rapls\PDFImageCreator\ContentUse::idsIn($rapls_pic_content) + $rapls_pic_context + \Rapls\PDFImageCreator\ContentUse::shortcodePdfIdsIn($rapls_pic_content);
             foreach (array_intersect_key($rapls_pic_by_id, $rapls_pic_named) as $rapls_pic_ids) {
                 $rapls_pic_shown += array_fill_keys($rapls_pic_ids, true);
             }

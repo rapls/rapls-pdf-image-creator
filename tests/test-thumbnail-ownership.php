@@ -36,6 +36,10 @@ namespace {
     }
     function clean_post_cache($id) { $GLOBALS['cleaned'][] = $id; }
     function wp_delete_attachment($id, $force = false) {
+        // Refused, as pre_delete_attachment can: nothing deleted.
+        if (in_array((int) $id, $GLOBALS['refuse_delete'] ?? [], true)) {
+            return $GLOBALS['posts'][$id] ?? false;
+        }
         $GLOBALS['deleted'][] = $id;
         $post = $GLOBALS['posts'][$id] ?? null;
         unset($GLOBALS['posts'][$id]);
@@ -91,6 +95,22 @@ namespace {
             $GLOBALS['content_read'] = array_merge($GLOBALS['content_read'] ?? [], array_column($rows, 'ID'));
             return $rows;
         }
+        /** The ordinary images still attached to a PDF (reparentKeptImages()). */
+        public function get_col($q) {
+            $this->last_error = '';
+            if (false === strpos($q[0], 'p.post_parent = %d')) {
+                throw new \RuntimeException('unexpected get_col: ' . $q[0]);
+            }
+            $ids = [];
+            // Marked images left out only by the clause that says so.
+            $unmarkedOnly = false !== strpos($q[0], "NOT EXISTS (SELECT 1 FROM {$this->postmeta} m WHERE m.post_id = p.ID AND m.meta_key = '_rapls_pic_is_thumbnail')");
+            foreach ($GLOBALS['posts'] as $id => $post) {
+                if ((int) ($post->post_parent ?? 0) === (int) $q[1][0] && 'attachment' === ($post->post_type ?? '') && !($unmarkedOnly && isset($GLOBALS['meta'][$id]['_rapls_pic_is_thumbnail']))) {
+                    $ids[] = (string) $id;
+                }
+            }
+            return $ids;
+        }
         /** Fails only the "named by another attachment" lookup. */
         public $attachmentLookupFails = false;
         public function get_var($q) {
@@ -103,9 +123,13 @@ namespace {
             $except = preg_match('/\bAND (?:meta\.)?post_id <> %d\b/', $q[0]) ? ($q[1][3] ?? null) : null;
             // Only attachments name it, when the SQL says so (another PDF).
             $attachmentsOnly = false !== strpos($q[0], "post_type = 'attachment'");
+            // Only PDFs, when the SQL says so: an audio file's cover image is
+            // not another PDF's thumbnail (review after 1.4.38).
+            $pdfsOnly = false !== strpos($q[0], "post_mime_type = 'application/pdf'");
             foreach ($GLOBALS['meta'] as $post => $keys) {
                 if (null !== $except && (int) $post === (int) $except) { continue; }
                 if ($attachmentsOnly && 'attachment' !== ($GLOBALS['posts'][$post]->post_type ?? '')) { continue; }
+                if ($pdfsOnly && 'application/pdf' !== ($GLOBALS['posts'][$post]->post_mime_type ?? 'application/pdf')) { continue; }
                 foreach ([$metaA, $metaB] as $key) {
                     if (isset($keys[$key]) && (string) $keys[$key] === $value) { return (string) $post; }
                 }
@@ -420,12 +444,153 @@ namespace {
     $generator->deleteThumbnail(390);
     $sql = (string) ($GLOBALS['content_sql'][0] ?? '');
     check('the SQL: content and excerpt each on its own, lowered, trash read, revisions and auto-drafts not', [
-        false !== strpos($sql, '(LOWER(post_content) LIKE %s OR LOWER(post_excerpt) LIKE %s)') && false === strpos($sql, 'CONCAT'),
+        false !== strpos($sql, implode(' OR ', array_fill(0, 1 + count(\Rapls\PDFImageCreator\ContentUse::idLikesSql(392)), 'post_content LIKE %s')) . ' OR (post_content LIKE %s AND post_content REGEXP %s) OR post_excerpt LIKE %s') && false !== strpos($sql, 'LOWER(post_content) LIKE %s OR LOWER(post_excerpt) LIKE %s') && false === strpos($sql, 'CONCAT') && 1 === substr_count($sql, 'LOWER(post_content)'),
         false !== strpos($sql, "post_type NOT IN ('attachment', 'revision')"),
         false !== strpos($sql, "post_status NOT IN ('auto-draft')"),
         1 === preg_match('/\bID > %d\b/', $sql),
     ], [true, true, true, true]);
     $GLOBALS['content'] = [];
+
+    // Review after 1.4.38: a page builder keeps an image by ID alone.
+    $GLOBALS['deleted'] = [];
+    $shown(402, 400, '2026/10/w-pdf-thumbnail.jpg');
+    $GLOBALS['content'] = [735 => '[vc_row][vc_column][vc_single_image image="402" img_size="full"][/vc_column][/vc_row]'];
+    check('an image a page builder keeps by ID alone: kept', [$generator->deleteThumbnail(400), $GLOBALS['deleted']], [false, []]);
+    // Review of 1.4.38's fixes: the second ID of a list that a space divides.
+    $GLOBALS['deleted'] = [];
+    $shown(452, 450, '2026/10/g-pdf-thumbnail.jpg');
+    $GLOBALS['content'] = [739 => '[gallery ids="7 452" columns="2"]'];
+    check('a [gallery] that a space divides, the image second: kept', [$generator->deleteThumbnail(450), $GLOBALS['deleted']], [false, []]);
+    $GLOBALS['deleted'] = [];
+    $shown(462, 460, '2026/10/h-pdf-thumbnail.jpg');
+    $GLOBALS['content'] = [740 => '[acme_image image=\\"462\\"]', 741 => '<!-- wp:acme/card {"id":"0472"} /-->'];
+    check('  ...an attribute quoted inside a string: kept', [$generator->deleteThumbnail(460), $GLOBALS['deleted']], [false, []]);
+    $GLOBALS['deleted'] = [];
+    $shown(482, 480, '2026/10/i-pdf-thumbnail.jpg');
+    $GLOBALS['content'] = [742 => '[et_pb_gallery gallery_ids="7 482"]'];
+    check('  ...a page builder\'s list that a space divides: kept', [$generator->deleteThumbnail(480), $GLOBALS['deleted']], [false, []]);
+    $GLOBALS['deleted'] = [];
+    $shown(492, 490, '2026/10/j-pdf-thumbnail.jpg');
+    $GLOBALS['content'] = [744 => '[acme image_ids="1 0492"]'];
+    check('  ...leading zeros after a space: kept', [$generator->deleteThumbnail(490), $GLOBALS['deleted']], [false, []]);
+    $GLOBALS['deleted'] = [];
+    $shown(502, 500, '2026/10/k-pdf-thumbnail.jpg');
+    $GLOBALS['content'] = [745 => '{"html":"[acme image=\\u0022502\\u0022]"}'];
+    check('  ...a quote JSON wrote as \\u0022: kept', [$generator->deleteThumbnail(500), $GLOBALS['deleted']], [false, []]);
+    $GLOBALS['deleted'] = [];
+    $shown(412, 410, '2026/10/x-pdf-thumbnail.jpg');
+    $GLOBALS['content'] = [736 => '[et_pb_gallery gallery_ids="7,4120"]', 737 => '<p>412 apples</p>'];
+    check('  ...a longer number, or one in running text: deleted', [$generator->deleteThumbnail(410), $GLOBALS['deleted']], [true, [412]]);
+    // The content and the excerpt are read as two, not run together: a
+    // name ending the content must not take the excerpt's first word.
+    $GLOBALS['deleted'] = [];
+    $shown(422, 420, '2026/10/y-pdf-thumbnail.jpg');
+    $GLOBALS['content'] = [738 => 'See /wp-content/uploads/2026/10/y-pdf-thumbnail.jpg'];
+    $GLOBALS['excerpts'] = [738 => 'more'];
+    check('  ...a name that ends the content, an excerpt after it: kept', [$generator->deleteThumbnail(420), $GLOBALS['deleted']], [false, []]);
+    $GLOBALS['content'] = [];
+    $GLOBALS['excerpts'] = [];
+
+    echo "\n--- Review after 1.4.38: why it was kept, and what is left ---\n";
+    // Why a release kept the image, for the notice to say.
+    $GLOBALS['deleted'] = [];
+    $shown(432, 430, '2026/10/z1-pdf-thumbnail.jpg');
+    $GLOBALS['content'] = [740 => '<img src="/u/z1-pdf-thumbnail.jpg">'];
+    $generator->deleteThumbnail(430);
+    $reasons = [$generator->keptReasonFor(430)];
+    $GLOBALS['content'] = [];
+    $shown(442, 440, '2026/10/z2-pdf-thumbnail.jpg');
+    $GLOBALS['meta'][802]['_thumbnail_id'] = '442';
+    $generator->deleteThumbnail(440);
+    $reasons[] = $generator->keptReasonFor(440);
+    unset($GLOBALS['meta'][802]);
+    $shown(452, 450, '2026/10/z3-pdf-thumbnail.jpg');
+    $GLOBALS['posts'][451] = (object) ['ID' => 451, 'post_type' => 'attachment', 'post_mime_type' => 'application/pdf'];
+    $GLOBALS['meta'][451]['_rapls_pic_thumbnail_id'] = 452;
+    $generator->deleteThumbnail(450);
+    $reasons[] = $generator->keptReasonFor(450);
+    $shown(462, 460, '2026/10/z4-pdf-thumbnail.jpg');
+    $GLOBALS['wpdb']->contentFails = true;
+    $quiet = ini_set('error_log', '/dev/null');
+    $generator->deleteThumbnail(460);
+    ini_set('error_log', (string) $quiet);
+    $GLOBALS['wpdb']->contentFails = false;
+    $reasons[] = $generator->keptReasonFor(460);
+    $shown(472, 470, '2026/10/z5-pdf-thumbnail.jpg');
+    $generator->deleteThumbnail(470);
+    $reasons[] = $generator->keptReasonFor(470);
+    check('why it was kept: shown, featured, another PDF\'s, not known; deleted: none', $reasons, ['shown', 'featured', 'shared', 'unknown', null]);
+
+    // Another attachment that is not a PDF -- an audio file's cover -- is a
+    // featured image, not another PDF's thumbnail: ordinary, not left marked.
+    $GLOBALS['deleted'] = [];
+    $shown(482, 480, '2026/10/z6-pdf-thumbnail.jpg');
+    $GLOBALS['posts'][481] = (object) ['ID' => 481, 'post_type' => 'attachment', 'post_mime_type' => 'audio/mpeg'];
+    $GLOBALS['meta'][481]['_thumbnail_id'] = '482';
+    check('an audio file\'s cover image is no other PDF\'s thumbnail: ordinary', [$generator->deleteThumbnail(480), $GLOBALS['meta'][482]['_rapls_pic_is_thumbnail'] ?? '', $generator->keptReasonFor(480)], [false, '', 'featured']);
+    unset($GLOBALS['meta'][481], $GLOBALS['posts'][481]);
+
+    // Refused while the PDF itself is deleted: no next attempt, so ordinary.
+    $GLOBALS['deleted'] = [];
+    $shown(492, 490, '2026/10/z7-pdf-thumbnail.jpg');
+    $GLOBALS['meta'][490]['_rapls_pic_thumbnail_id'] = 492;
+    $GLOBALS['refuse_delete'] = [492];
+    $refusedLog = sys_get_temp_dir() . '/rapls-pic-own-log-' . bin2hex(random_bytes(4));
+    $refusedLogWas = ini_set('error_log', $refusedLog);
+    $refused = [$generator->deleteThumbnail(490, true), $GLOBALS['deleted'], $GLOBALS['meta'][492]['_rapls_pic_is_thumbnail'] ?? '', $GLOBALS['meta'][490]['_rapls_pic_thumbnail_id'] ?? ''];
+    ini_set('error_log', (string) $refusedLogWas);
+    $refusedLogged = is_file($refusedLog) ? (string) file_get_contents($refusedLog) : '';
+    @unlink($refusedLog);
+    $GLOBALS['refuse_delete'] = [];
+    check('deletion refused while the PDF goes: ordinary, let go of, and said', [$refused, false !== strpos($refusedLogged, 'image #492 of PDF #490 could not be deleted with the PDF')], [[false, [], '', ''], true]);
+
+    // An old thumbnail a regeneration kept, still attached to the PDF, goes
+    // to the PDF's parent when the PDF is deleted; a marked one stays.
+    $GLOBALS['posts'][500] = (object) ['ID' => 500, 'post_type' => 'attachment', 'post_parent' => 77];
+    $GLOBALS['posts'][501] = (object) ['ID' => 501, 'post_type' => 'attachment', 'post_parent' => 500];
+    $own(502, 500);
+    $GLOBALS['posts'][502]->post_parent = 500;
+    $generator->reparentKeptImages(500);
+    check('the PDF\'s ordinary images go to its parent; its marked thumbnail stays', [$GLOBALS['posts'][501]->post_parent, $GLOBALS['posts'][502]->post_parent], [77, 500]);
+    unset($GLOBALS['posts'][500], $GLOBALS['posts'][501], $GLOBALS['posts'][502]);
+
+    // No file recorded: its address names it; with neither, kept.
+    $GLOBALS['deleted'] = [];
+    $own(532, 530);
+    $GLOBALS['meta'][530]['_rapls_pic_thumbnail_id'] = 532;
+    $GLOBALS['posts'][532]->guid = 'https://example.test/wp-content/uploads/2026/10/zz-pdf-thumbnail.jpg';
+    $GLOBALS['content'] = [741 => '<img src="/wp-content/uploads/2026/10/zz-pdf-thumbnail-300x200.jpg">'];
+    $noFile = [$generator->deleteThumbnail(530), $GLOBALS['deleted']];
+    $GLOBALS['content'] = [];
+    check('no file recorded: found by the address WordPress gave it', $noFile, [false, []]);
+    // The address is percent-encoded; the post holds the name as it is
+    // (review of 1.4.38's fixes).
+    $GLOBALS['deleted'] = [];
+    $own(534, 533);
+    $GLOBALS['meta'][533]['_rapls_pic_thumbnail_id'] = 534;
+    $GLOBALS['posts'][534]->guid = 'https://example.test/wp-content/uploads/2026/10/' . rawurlencode('報告') . '-pdf-thumbnail.jpg';
+    $GLOBALS['content'] = [743 => '<img src="/wp-content/uploads/2026/10/報告-pdf-thumbnail.jpg">'];
+    $encodedGuid = [$generator->deleteThumbnail(533), $GLOBALS['deleted']];
+    $GLOBALS['content'] = [];
+    check('  ...an address percent-encoded, a post naming it as it is: kept', $encodedGuid, [false, []]);
+
+    // "_" in a name is a letter, not LIKE's any-character: escaped.
+    $GLOBALS['deleted'] = [];
+    $GLOBALS['content_read'] = [];
+    $shown(552, 550, '2026/10/q_r-pdf-thumbnail.jpg');
+    $GLOBALS['content'] = [742 => '<img src="/u/qxr-pdf-thumbnail.jpg">'];
+    check('"_" in a name is matched as itself: another name is not read', [$generator->deleteThumbnail(550), $GLOBALS['content_read']], [true, []]);
+    $GLOBALS['content'] = [];
+
+    // No postmeta table to ask whether another post names it: kept.
+    $GLOBALS['deleted'] = [];
+    $shown(562, 560, '2026/10/zy-pdf-thumbnail.jpg');
+    $postmetaTable = $GLOBALS['wpdb']->postmeta;
+    $GLOBALS['wpdb']->postmeta = null;
+    $quietMeta = ini_set('error_log', '/dev/null');
+    check('no postmeta table: kept', [$generator->deleteThumbnail(560), $GLOBALS['deleted']], [false, []]);
+    ini_set('error_log', (string) $quietMeta);
+    $GLOBALS['wpdb']->postmeta = $postmetaTable;
 
     echo "\n--- Review of 1.4.36: deleting a thumbnail, or its PDF ---\n";
 
@@ -464,6 +629,14 @@ namespace {
     $GLOBALS['mimes'][315] = 'application/pdf';
     $library->onAttachmentDeleted(315);
     check('  ...one attached to something else stays there', $GLOBALS['posts'][317]->post_parent, 555);
+    // An old thumbnail a regeneration kept, an ordinary image still
+    // attached to the PDF: moved to the PDF's parent too (review after 1.4.38).
+    $GLOBALS['posts'][520] = (object) ['ID' => 520, 'post_type' => 'attachment', 'post_parent' => 8];
+    $GLOBALS['posts'][521] = (object) ['ID' => 521, 'post_type' => 'attachment', 'post_parent' => 520];
+    $GLOBALS['mimes'][520] = 'application/pdf';
+    $library->onAttachmentDeleted(520);
+    check('  ...an old thumbnail a regeneration kept goes to the PDF\'s parent too', $GLOBALS['posts'][521]->post_parent, 8);
+    unset($GLOBALS['posts'][520], $GLOBALS['posts'][521]);
 
     // With it on, and a post showing the image: the same.
     $prop->setValue($settings, ['hide_generated_images' => true]);

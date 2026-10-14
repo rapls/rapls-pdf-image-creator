@@ -420,14 +420,43 @@ final class Admin
     /**
      * What a regeneration says when it kept the previous thumbnail
      *
-     * A post shows the old image, so it was kept, and the post still shows
-     * the old picture until it is pointed at the new one (review after
-     * 1.4.37).
+     * For each reason it was kept (Generator::KEPT_*). One sentence for
+     * all of them said a post showed it, also when a featured image,
+     * another PDF or a lookup that did not answer had kept it (review
+     * after 1.4.38). "Shown" says "may": a number that only looks like the
+     * image's ID keeps it too, as an ID kept by a page builder does, and
+     * the sentence said for certain that a post showed it. "Featured" also
+     * covers an audio file's or a video's cover image (review of 1.4.38's
+     * fixes).
+     *
+     * @param string $reason One of Generator::KEPT_*, as it is spelt: 'shown',
+     *                       'featured', 'shared' or 'unknown'.
      */
-    public static function keptPreviousNote(): string
+    public static function keptPreviousNote(string $reason = 'shown'): string
     {
-        return __('The previous thumbnail is still shown in a post, so it was kept in the Media Library as an ordinary image. That post still shows the old picture; replace it there to show the new one.', 'rapls-pdf-image-creator');
+        switch ($reason) {
+            case 'featured':
+                return __('The previous thumbnail is a post\'s featured image, or another item\'s cover image, so it was kept in the Media Library as an ordinary image.', 'rapls-pdf-image-creator');
+            case 'shared':
+                return __('The previous thumbnail is also another PDF\'s thumbnail (a translated copy\'s), so it was kept for that PDF.', 'rapls-pdf-image-creator');
+            case 'unknown':
+                return __('Whether a post still shows the previous thumbnail could not be checked, so it was kept in the Media Library as an ordinary image.', 'rapls-pdf-image-creator');
+            default:
+                return __('A post may still show the previous thumbnail, so it was kept in the Media Library as an ordinary image. If one does, it still shows the old picture; replace it there to show the new one.', 'rapls-pdf-image-creator');
+        }
     }
+
+    /**
+     * The reasons a "kept" notice can carry in the address, by its value there
+     *
+     * "kept" alone is a post's content, as the first version said.
+     */
+    public const KEPT_IN_ADDRESS = [
+        'kept' => 'shown',
+        'kept-featured' => 'featured',
+        'kept-shared' => 'shared',
+        'kept-unknown' => 'unknown',
+    ];
 
     /**
      * The notice after the Media Library's "Regenerate Thumbnail"
@@ -438,12 +467,16 @@ final class Admin
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Display-only notice, no data processing
         if (isset($_GET['rapls_pic_generated'])) {
             echo '<div class="notice notice-success is-dismissible">';
-            echo '<p>' . esc_html__('PDF thumbnail generated successfully.', 'rapls-pdf-image-creator');
+            $message = __('PDF thumbnail generated successfully.', 'rapls-pdf-image-creator');
             // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Display-only notice, no data processing
-            if ('kept' === $_GET['rapls_pic_generated']) {
-                echo ' ' . esc_html(self::keptPreviousNote());
+            $kept = is_string($_GET['rapls_pic_generated']) ? (self::KEPT_IN_ADDRESS[$_GET['rapls_pic_generated']] ?? null) : null;
+            if (null !== $kept) {
+                // Joined by a translatable pattern: a language that puts no
+                // space after a sentence got one (review after 1.4.38).
+                /* translators: 1: the first sentence, 2: the next. */
+                $message = sprintf(__('%1$s %2$s', 'rapls-pdf-image-creator'), $message, self::keptPreviousNote($kept));
             }
-            echo '</p>';
+            echo '<p>' . esc_html($message) . '</p>';
             echo '</div>';
         }
 

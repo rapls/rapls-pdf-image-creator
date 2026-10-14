@@ -6,6 +6,8 @@ assets/ export-ignore
 CLAUDE.md export-ignore
 .claude/ export-ignore
 .serena/ export-ignore
+.codex/ export-ignore
+AGENTS.md export-ignore
 .gitignore export-ignore
 doc/ export-ignore
 docs/ export-ignore

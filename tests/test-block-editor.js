@@ -265,6 +265,12 @@ async function chooseUploaded(how, options = {}) {
         const frameOff = new off.Frame({ state: { get: () => ({ props: libraryOff }) } });
         frameOff.initialize();
         frameOff.trigger('ready');
+        // A frame listing something else -- video -- is left as it is (review after 1.4.38).
+        const libraryVideo = { type: 'video', get(key) { return this[key]; }, set(key, value) { this[key] = value; } };
+        const frameVideo = new on.Frame({ state: { get: () => ({ props: libraryVideo }) } });
+        frameVideo.initialize();
+        frameVideo.trigger('ready');
+        check('  ...a frame listing video, not images, is left as it is', libraryVideo.type, 'video');
         check('Every image picker, when the site asks: PDFs in its types and in the frame\'s library; not otherwise',
             JSON.stringify([theirsOn.element.props.allowedTypes, library.type, theirsOff.element.props.allowedTypes, libraryOff.type]),
             JSON.stringify([['image', 'application/pdf'], ['image', 'application/pdf'], ['image'], 'image']));

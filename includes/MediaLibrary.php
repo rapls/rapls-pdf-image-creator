@@ -299,6 +299,9 @@ final class MediaLibrary
             delete_post_meta($attachmentId, Generator::THUMBNAIL_META_KEY);
             delete_post_meta($attachmentId, '_thumbnail_id');
         }
+
+        // An old thumbnail a regeneration kept, still attached to this PDF.
+        $this->generator->reparentKeptImages($attachmentId);
     }
 
     /**
@@ -939,7 +942,14 @@ final class MediaLibrary
             // "kept": the old thumbnail stays, a post shows it, and the
             // notice says so (review after 1.4.37).
             $kept = $this->generator->outcomeFor($attachmentId)['kept_previous'] ?? null;
-            $redirectUrl = add_query_arg('rapls_pic_generated', null !== $kept ? 'kept' : '1', $redirectUrl);
+            $generated = '1';
+            if (null !== $kept) {
+                // Why it was kept, as the notice says it (Admin::KEPT_IN_ADDRESS):
+                // "kept" alone for a post's content, as it first was.
+                $reason = $this->generator->keptReasonFor($attachmentId) ?? Generator::KEPT_SHOWN;
+                $generated = Generator::KEPT_SHOWN === $reason ? 'kept' : 'kept-' . $reason;
+            }
+            $redirectUrl = add_query_arg('rapls_pic_generated', $generated, $redirectUrl);
         } else {
             // The code, not the message: the notice says it in words of its
             // own, so nothing from ImageMagick -- a command line, a server
@@ -1026,13 +1036,16 @@ final class MediaLibrary
              * Whether every image picker is given PDFs with thumbnails, as in 1.4.20
              *
              * Off by default: only WordPress's own image block, gallery and
-             * featured image pickers are. On, any media query for "image" --
-             * a page builder's, a field plugin's, the classic "Create
-             * Gallery" -- lists PDFs that have a thumbnail too, as every one
-             * did up to 1.4.20. A picker that can take only images may then
-             * be handed a PDF.
+             * featured image pickers are. On, any media query for "image"
+             * lists PDFs that have a thumbnail too, as every one did up to
+             * 1.4.20, and in the block editor every image picker is told it
+             * may take them. A picker whose media window filters by type
+             * itself -- the classic "Create Gallery", most page builders'
+             * own screens, where this plugin's block editor script does not
+             * load -- still leaves PDFs out, as it did with 1.4.20. A picker
+             * that can take only images may be handed a PDF.
              *
-             * @since 1.4.38
+             * @since 1.4.39
              *
              * @param bool  $every Whether to.
              * @param array $query The media query's arguments. Asked once

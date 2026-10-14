@@ -236,6 +236,11 @@ namespace {
     $GLOBALS['no_image_html'] = true;
     $ownImg = $insert(['insert_type' => 'image', 'insert_link' => 'none', 'insert_size' => 'medium'], ['id' => 7]);
     check('core gives no markup: the plugin\'s own <img>, its alt escaped', [0 === strpos($ownImg, '<img src="'), false !== strpos($ownImg, 'alt="A &quot;q&quot; &lt;b&gt;"'), false !== strpos($ownImg, '<b>')], [true, true, false]);
+    // ...and its address escaped (review after 1.4.38).
+    $GLOBALS['image_url'] = 'https://example.test/x.jpg" onerror="y';
+    $ownSrc = $insert(['insert_type' => 'image', 'insert_link' => 'none', 'insert_size' => 'medium'], ['id' => 7]);
+    unset($GLOBALS['image_url']);
+    check('  ...and its address escaped', [false !== strpos($ownSrc, 'onerror="y'), false !== strpos($ownSrc, 'x.jpg%22%20onerror=%22y')], [false, true]);
     unset($GLOBALS['title'], $GLOBALS['no_image_html']);
 
     echo "\n--- \"Insert into post\" honours the media window's Size ---\n";
@@ -349,6 +354,15 @@ namespace {
     $GLOBALS['can_edit'][300] = true;
     check('  ...to one who may', '' !== $shortcode('rapls_pdf_thumbnail', ['id' => 300]), true);
     check('  ...a post that does not exist: nothing', $shortcode('rapls_pdf_thumbnail', ['id' => 999]), '');
+    // An attachment that is not a PDF is asked as a PDF is: by its
+    // parent's password, not its own, which no attachment has (review
+    // after 1.4.38).
+    $GLOBALS['posts'][310] = (object) ['ID' => 310, 'post_type' => 'attachment'];
+    $GLOBALS['mime_of'][310] = 'image/jpeg';
+    $GLOBALS['parent_of'][310] = 311;
+    $GLOBALS['password'][311] = true;
+    check('  ...an image attached to a post behind a password: not to a reader who may not edit it', $shortcode('rapls_pdf_download_link', ['id' => 310]), '');
+    unset($GLOBALS['posts'][310], $GLOBALS['mime_of'][310], $GLOBALS['parent_of'][310], $GLOBALS['password'][311]);
     $GLOBALS['filtered']['rapls_pdf_image_creator_shortcode_any_post'] = static function () { return 1; };
     check('  ...a filter answering anything but true: nothing', $shortcode('rapls_pdf_thumbnail', ['id' => 300]), '');
     unset($GLOBALS['filtered']['rapls_pdf_image_creator_shortcode_any_post'], $GLOBALS['password'][300], $GLOBALS['can_edit'][300], $GLOBALS['can_read'][300]);

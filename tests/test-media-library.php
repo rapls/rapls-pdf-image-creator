@@ -243,6 +243,25 @@ namespace {
     $brokenRest = $library->filterRestAttachment(new WP_REST_Response(['id' => 300, 'mime_type' => 'application/pdf', 'source_url' => 'https://example.test/300.pdf', 'media_details' => []]), new WP_Post(300, 0, 'application/pdf'), new WP_REST_Request())->get_data();
     unset($GLOBALS['attachment_meta'][3000]['sizes']['broken'], $GLOBALS['attachment_meta'][3000]['sizes']['odd']);
     check('  ...a size without its file or measures is left out, the others kept', [isset($brokenJs['sizes']['broken']) || isset($brokenJs['sizes']['odd']), isset($brokenRest['media_details']['sizes']['broken']), isset($brokenJs['sizes']['medium'])], [false, false, true]);
+    // Review after 1.4.38: "sizes" that is not a list at all is no list of
+    // sizes, not a warning from foreach.
+    $sizesWere = $GLOBALS['attachment_meta'][3000]['sizes'];
+    $GLOBALS['attachment_meta'][3000]['sizes'] = 'x';
+    $noSizesWarned = null;
+    set_error_handler(static function (int $no, string $message) use (&$noSizesWarned): bool { $noSizesWarned = $message; return true; });
+    $noSizesJs = $library->filterAttachmentForJs(['url' => 'https://example.test/300.pdf', 'mime' => 'application/pdf'], new WP_Post(300, 0, 'application/pdf'), []);
+    $noSizesRest = $library->filterRestAttachment(new WP_REST_Response(['id' => 300, 'mime_type' => 'application/pdf', 'source_url' => 'https://example.test/300.pdf', 'media_details' => []]), new WP_Post(300, 0, 'application/pdf'), new WP_REST_Request())->get_data();
+    restore_error_handler();
+    $GLOBALS['attachment_meta'][3000]['sizes'] = $sizesWere;
+    $GLOBALS['attachment_meta'][3000]['sizes']['arrfile'] = ['file' => ['a.jpg'], 'width' => 10, 'height' => 10];
+    $GLOBALS['attachment_meta'][3000]['sizes']['wordwide'] = ['file' => 'a-10x10.jpg', 'width' => 'wide', 'height' => 10];
+    $oddWarned = null;
+    set_error_handler(static function (int $no, string $message) use (&$oddWarned): bool { $oddWarned = $message; return true; });
+    $oddJs = $library->filterAttachmentForJs(['url' => 'https://example.test/300.pdf', 'mime' => 'application/pdf'], new WP_Post(300, 0, 'application/pdf'), []);
+    restore_error_handler();
+    unset($GLOBALS['attachment_meta'][3000]['sizes']['arrfile'], $GLOBALS['attachment_meta'][3000]['sizes']['wordwide']);
+    check('  ...a size whose file is not a name, or whose width is a word: left out, no warning', [$oddWarned, isset($oddJs['sizes']['arrfile']), isset($oddJs['sizes']['wordwide'])], [null, false, false]);
+    check('  ..."sizes" that is not a list: the full image only, and no warning', [$noSizesWarned, isset($noSizesJs['sizes']['full']), isset($noSizesRest['media_details']['sizes']['full'])], [null, true, true]);
     // Review of 1.4.32: a size the thumbnail has no file for -- "large" for a
     // 1024-pixel image -- is the full image, never the PDF the block editor
     // would fall back to (a gallery asks for "large").

@@ -101,5 +101,36 @@ check('the summary, the action and the detail are escaped', [
     $result['status'],
 ], [true, true, true, true, 'critical']);
 
+
+echo "\n--- a server that renders (review after 1.4.38) ---\n";
+// The good result and the requirements in debug information had no test:
+// a working engine gives "good" and no actions, and its requirements are
+// listed, pdf_support aside.
+$enginesProp->setValue($generator, ['stub' => new class implements \Rapls\PDFImageCreator\Engine\EngineInterface {
+    public function getName(): string { return 'stub'; }
+    public function getDisplayName(): string { return 'Stub'; }
+    public function isAvailable(): bool { return true; }
+    public function getAvailabilityStatus(): array {
+        return ['code' => 'ok', 'label' => 'Available', 'summary' => '', 'action' => '', 'detail' => ''];
+    }
+    public function getRequirements(): array {
+        return [
+            'imagick' => ['name' => 'Imagick', 'met' => true, 'message' => 'Loaded'],
+            'pdf_support' => ['name' => 'PDF', 'met' => true, 'message' => 'Yes'],
+        ];
+    }
+    public function convert(string $pdfPath, string $outputPath, array $options = []): \Rapls\PDFImageCreator\Engine\ConversionResult { throw new \RuntimeException('not here'); }
+}]);
+$result = $health->runTest();
+$fields = $health->registerDebugInformation([])['rapls-pdf-image-creator']['fields'] ?? [];
+check('a server that renders: good, no actions; its requirements listed, PDF support aside', [
+    $result['status'],
+    $result['actions'],
+    $fields['availability']['debug'] ?? null,
+    $fields['stub_imagick']['value'] ?? null,
+    isset($fields['stub_pdf_support']),
+    isset($fields['availability_detail']),
+], ['good', '', 'ok', 'Loaded', false, false]);
+
 printf("\n%d passed, %d failed\n", $pass, $fail);
 exit(0 === $fail ? 0 : 1);

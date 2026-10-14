@@ -629,8 +629,11 @@ boxes([595, 842], [4000, 5000]);
 $page([14400, 14400]);
 [, $log] = run(['format' => 'jpeg']);
 // Measured at 32 dpi for the largest box, it is refused by the width limit
-// there, and measured again at 2: 14,436 points.
-check('  ...a page measured larger than its boxes is drawn at its measured size', $resolutionRead($log), 'setResolution(31.54)');
+// there, and measured again at 2: 14,436 points -- and, lowered by that, once
+// more at the density that holds it to four million pixels, which gives its
+// own 14,400 (review after 1.4.38: a page put at 2 dpi by a refusal was left
+// at the coarse figure).
+check('  ...a page measured larger than its boxes is drawn at its measured size', $resolutionRead($log), 'setResolution(31.6)');
 
 // The measuring read failing. Not for its size: measured again at 36 dpi (a
 // page under a pixel at the measuring density fails to draw at all), and a
@@ -731,7 +734,7 @@ $page([14400, 14400]);
 Imagick::$resourceLimits = [10 => 1500];
 [$r, $log] = run(['format' => 'jpeg']);
 Imagick::$resourceLimits = [];
-check('  ...a page refused at the measuring density is measured again at 2 dpi, and drawn within the site\'s limit', [$densities($log), $r->isSuccess()], [['setResolution(10)', 'setResolution(2)', 'setResolution(7.47)'], true]);
+check('  ...a page refused at the measuring density is measured again at 2 dpi, then finer, and drawn within the site\'s limit', [$densities($log), $r->isSuccess()], [['setResolution(10)', 'setResolution(2)', 'setResolution(9.9750623441397)', 'setResolution(7.47)'], true]);
 boxes([150000, 150000]);
 $page([150000, 150000]);
 [$r, $log] = run(['format' => 'jpeg']);
@@ -1229,6 +1232,157 @@ foreach (["\x89PNG\r\n\x1a\nraster", "P7\nWIDTH 1\n", "P6\n1 1\n", "\xFF\xD8\xFF
 @unlink(RAPLS_PIC_TEST_TMP . '/raster.img');
 $page(null);
 check('  ...an EPS file is measured and drawn within the limit; a raster of any kind is read once, as it is', [$eps, $rasters], [['setResolution(2)', 3, 'setResolution(31.6)', true], [1, 1, 1, 1, 1, 1, 1, 1, 1]]);
+
+// Review after 1.4.38: only what Ghostscript draws is bounded. A list of the
+// rasters let past turned away the ones it did not name -- BigTIFF, HEIC,
+// AVIF, JPEG 2000 -- once a side was past the measuring read's bound.
+$others = [];
+// Review of 1.4.38's fixes: a raster whose text chunk or compressed data
+// holds "%!" or "%PDF-" is still a raster, read as it is -- bounded as a
+// page, one past 6,325 pixels a side was refused for good.
+$pngWithText = "\x89PNG\r\n\x1a\n" . pack('N', 13) . 'IHDR' . pack('NN', 20000, 20000) . "\x08\x02\0\0\0" . 'crc0'
+    . pack('N', 30) . 'tEXt' . "Comment\0%!PS-Adobe %PDF-1.4 x" . 'crc1';
+foreach (["II+\0\x08\0\0\0", "\0\0\0\x18ftypheic", "\0\0\0\x1CftypAVIF", "\0\0\0\x0CjP  \r\n\x87\n", "\xFF\x0A", "8BPS", "\x05\0\x02\0\0\0\0\0\0\0\0\0\x10\0\x10\0\x18\0", "\x09junk" . str_repeat("\xAA", 40) . "\0\0\0\0\0\0\0\0TRUEVISION-XFILE.\0", "\0\0\x01\0\x01\0",
+    // Review of 1.4.38's fixes: the other rasters ImageMagick reads by
+    // itself, each by its own magic -- a 7,000-pixel side was refused.
+    "\x0A\x05\x01\x08\0\0\0\0\x57\x1B\xE7\x03", "\x76\x2F\x31\x01\x02\0\0\0", "id=ImageMagick  version=1.0\nclass=DirectClass colors=0 columns=7000 rows=1000\n", "SDPX\0\0\x20\0", "XPDS\0\x20\0\0",
+    "DDS \x7C\0\0\0\x07\x10\0\0", "SIMPLE  =                    T / conforms\n", "#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n", "\x01\xDA\x01\x01\0\x03\x1B\x58", "/* XPM */\nstatic char *x[] = {\n", "#define big_width 7000\n#define big_height 1000\n", "gimp xcf v011\0", "qoif\0\0\x1B\x58\0\0\x03\xE8", str_repeat("\0", 128) . "DICM\x02\0",
+    $pngWithText, "\xFF\xD8\xFF\xE0..%!..", "GIF89a %PDF-1.4", "8BPS\0\x01 text %!PS inside"] as $magic) {
+    $pdf = RAPLS_PIC_TEST_TMP . '/other.img';
+    file_put_contents($pdf, $magic);
+    [$r, $log] = run(['format' => 'jpeg']);
+    $others[] = count($densities($log));
+}
+$ghostscript = [];
+// By its bytes, under a name that says nothing: PostScript after a Ctrl-D,
+// after white space, after a printer's job header (review of 1.4.38's
+// fixes); a DOS EPS; a late PDF header.
+// Review of 1.4.38's fixes, the third round: a byte order mark, a comment
+// line before "%!", "%!PSftyp" (not ISO media), a PDF header past the first
+// 1024 bytes, and anything else that is not a known raster -- measured.
+foreach (["\x04%!PS-Adobe-3.0\n", "%!PS\n", "\n  %!PS-Adobe-3.0\n", "\x1B%-12345X@PJL JOB\r\n@PJL ENTER LANGUAGE=POSTSCRIPT\r\n%!PS\n", "\xC5\xD0\xD3\xC6 binary EPS", str_repeat(' ', 500) . "%PDF-1.4\n", "\xEF\xBB\xBF%!PS\n", "% a comment\n%!PS\n", "%!PSftyp", str_repeat("\x01", 2000) . "%PDF-1.4\n", "\x7FELF junk"] as $magic) {
+    $pdf = RAPLS_PIC_TEST_TMP . '/drawn.img';
+    file_put_contents($pdf, $magic);
+    [$r, $log] = run(['format' => 'jpeg']);
+    $ghostscript[] = $densities($log)[0] ?? null;
+}
+// By its name: a PDF whose header comes after the first 1024 bytes, and
+// PostScript with no header, which ImageMagick still hands Ghostscript for
+// the name (review of 1.4.38's fixes).
+foreach (['late.pdf' => str_repeat(' ', 2000) . "%PDF-1.4\n", 'bare.ps' => "0 0 moveto showpage\n", 'art.AI' => "binary"] as $name => $bytes) {
+    $pdf = RAPLS_PIC_TEST_TMP . '/' . $name;
+    file_put_contents($pdf, $bytes);
+    [$r, $log] = run(['format' => 'jpeg']);
+    $ghostscript[] = $densities($log)[0] ?? null;
+    @unlink($pdf);
+}
+@unlink(RAPLS_PIC_TEST_TMP . '/other.img');
+@unlink(RAPLS_PIC_TEST_TMP . '/drawn.img');
+$page(null);
+check('  ...any other file is read once, as it is, a raster holding "%!" or "%PDF-" too; what Ghostscript draws, by its bytes or by its name, is measured', [$others, $ghostscript], [array_fill(0, 27, 1), array_fill(0, 14, 'setResolution(2)')]);
+
+// Review after 1.4.38: a number past what a float holds is INF, INF - INF is
+// NaN, and on PHP 8.2 and earlier max() and min() answer a NaN by the order
+// of their arguments -- a 400-digit box after a 14,400-point one made the
+// largest Letter and A4. A size that is not one is no answer, whatever the
+// order, and so is a /UserUnit past a float.
+$huge = str_repeat('9', 400);
+$nanBoxes = [
+    ImagickEngine::largestPageBox($boxFile("<< /MediaBox [0 0 14400 14400] >>\n<< /MediaBox [0 0 $huge $huge] >>")),
+    ImagickEngine::largestPageBox($boxFile("<< /MediaBox [0 0 $huge $huge] >>\n<< /MediaBox [0 0 14400 14400] >>")),
+    ImagickEngine::largestPageBox($boxFile("<< /MediaBox [0 0 14400 14400] >>\n<< /MediaBox [$huge 0 $huge 10] >>")),
+    ImagickEngine::largestPageBox($boxFile("<< /MediaBox [0 0 14400 14400] >>\n<< /MediaBox [0 0 $huge 0] >>")),
+];
+$scan = new ReflectionMethod(ImagickEngine::class, 'scanPageBoxes');
+if (PHP_VERSION_ID < 80100) { $scan->setAccessible(true); }
+$nanUnits = $scan->invoke(null, $boxFile("<< /MediaBox [0 0 14400 14400] /UserUnit 1 >>\n<< /UserUnit $huge >>"));
+check('  ...a box or a /UserUnit past what a float holds: no answer, in either order', [$nanBoxes, $nanUnits], [[null, null, null, null], null]);
+$pdf = $boxFile("<< /Type /Page /MediaBox [0 0 14400 14400] >>\n<< /MediaBox [0 0 $huge $huge] >>");
+$page([14400, 14400]);
+[$r, $log] = run(['format' => 'jpeg']);
+check('  ...and such a file is measured, not drawn at 150 on its boxes', [$densities($log)[0] ?? null, $r->isSuccess()], ['setResolution(2)', true]);
+$page(null);
+
+// A side a float holds but an int does not -- a box 10^300 points long and
+// 10^-300 wide, a small area -- gives the measuring read a side bounded below
+// PHP_INT_MAX: cast as it was, PHP 8.5 warned (review after 1.4.38).
+$tiny = '0.' . str_repeat('0', 299) . '1';
+$long = '1' . str_repeat('0', 300);
+$pdf = $boxFile("<< /Type /Page /MediaBox [0 0 $tiny $long] >>");
+$page([10, 10]);
+$castWarnings = [];
+set_error_handler(static function ($no, $message) use (&$castWarnings) { $castWarnings[] = $message; return true; });
+[$r, $log] = run(['format' => 'jpeg']);
+restore_error_handler();
+check('  ...a side past what an int holds: measured, and nothing warned', [$readsOf($log) > 0, $castWarnings], [true, []]);
+$page(null);
+
+// Measured at 2 dpi because a far larger page is in the file, an A4 page
+// is measured once more, finer, and drawn at 600 as asked: it was left at
+// the coarse figure (review after 1.4.38).
+$pdf = $boxFile("<< /Type /Page /MediaBox [0 0 595 842] >>\n<< /Type /Page /MediaBox [0 0 10000000 10000000] >>");
+$page([595, 842]);
+[$r, $log] = run(['format' => 'jpeg', 'resolution' => 600, 'max_width' => 4096, 'max_height' => 4096]);
+check('  ...an A4 page measured at 2 dpi for a larger page elsewhere: measured finer, drawn at 600', [$densities($log)[0] ?? null, $resolutionRead($log)], ['setResolution(2)', 'setResolution(600)']);
+// Not measured finer where that would be under twice the least: a
+// 100,000-point page with no box, measured once at 2 dpi and drawn.
+$pdf = $boxFile("<< /Type /Page /MediaBox [0 0 595 842] >>\n<< /Type /Page /UserUnit 1 >>");
+$page([100000, 100000]);
+[$r, $log] = run(['format' => 'jpeg']);
+check('  ...a page that would be measured finer at under 4 dpi is not measured again', [$readsOf($log), $r->isSuccess()], [2, true]);
+// Measured finer, a long page is given a side as long as it is there.
+$page([595, 100000]);
+[$r, $log] = run(['format' => 'jpeg']);
+check('  ...a long page measured finer is given the side it needs', [$readsOf($log), $resolutionRead($log)], [3, 'setResolution(58.86)']);
+$page(null);
+// /UserUnit of 0 or less, or past BOX_MAX_COUNT of them: no answer.
+check('  .../UserUnit 0, -1, and 100,001 of them: no answer', [
+    $scan->invoke(null, $boxFile($a4 . "\n<< /UserUnit 0 >>")),
+    $scan->invoke(null, $boxFile($a4 . "\n<< /UserUnit -1 >>")),
+    $scan->invoke(null, $boxFile($a4 . "\n" . str_repeat("<< /UserUnit 1 >>\n", 100001))),
+], [null, null, null]);
+// Inflated a kilobyte at a time, the last piece read whatever its length,
+// and no byte past the stream's own.
+$incompressible = '';
+for ($n = 0; strlen(gzcompress($incompressible, 0)) % 1024 !== 1; $n++) {
+    $incompressible .= chr($n * 7 % 256);
+}
+$deflated = gzcompress($incompressible, 0);
+$inflateAt = new ReflectionMethod(ImagickEngine::class, 'inflateWithin');
+if (PHP_VERSION_ID < 80100) { $inflateAt->setAccessible(true); }
+check('  ...a stream a byte past a whole kilobyte is inflated to its end; one inside a file, without the bytes after it', [
+    $inflateAt->invoke(null, $deflated, 1 << 20) === $incompressible,
+    $inflateAt->invoke(null, 'head' . $deflated . "\xFF\xFF\xFF\xFF", 1 << 20, 4, strlen($deflated)) === $incompressible,
+], [true, true]);
+
+// A name right after an escaped one is read too: searched on from a byte
+// later, "/Media#42ox" after "/A#41" was stepped over (review of 1.4.36's
+// fixes), and the box behind it went unseen.
+check('  .../A#41/Media#42ox: the second name is seen, no answer', ImagickEngine::largestPageBox($boxFile($a4 . "\n<< /A#41/Media#42ox [0 0 14400 14400] >>")), null);
+
+// The lower bound is asked before an Imagick with no limit to set lets the
+// page through as asked (review after 1.4.38).
+$names->setValue(null, ['RESOURCETYPE_NO_SUCH_WIDTH', 'RESOURCETYPE_HEIGHT']);
+$cacheNames->setValue(null, ['RESOURCETYPE_NO_SUCH_MEMORY']);
+$pdf = $boxFile("<< /Type /Page /MediaBox [0 0 10000000 10000000] /UserUnit 1 >>");
+$page([10000000, 10000000]);
+[$r, $log] = run(['format' => 'jpeg']);
+$names->setValue(null, $namesWere);
+$cacheNames->setValue(null, $cacheWere);
+check('  ...with no limit to set, a file every page of which is past the bound is refused, not drawn as asked', [$readsOf($log), $r->getCode()], [0, 'resource_limit']);
+$page(null);
+
+// The lower bound's edge: refused just past the measuring bound at 2 dpi,
+// measured at it -- the area times (2/72)^2 against 40,000,000 pixels.
+$edge = sqrt(40000000) * 36;
+$leastAt = static function (float $side) use ($boxFile, &$pdf, $page, $readsOf): int {
+    $pdf = $boxFile('<< /Type /Page /MediaBox [0 0 ' . sprintf('%.4F', $side) . ' ' . sprintf('%.4F', $side) . '] /UserUnit 1 >>');
+    $page([1000, 1000]);
+    [, $log] = run(['format' => 'jpeg']);
+    return $readsOf($log);
+};
+check('  ...a page whose lower bound is at the measuring bound is measured; a point past it, not read', [$leastAt($edge - 1) > 0, $leastAt($edge + 1)], [true, 0]);
+$page(null);
 $pdf = $pdfWas;
 
 // Review after 1.4.37: the measuring reads and the blank-page retry put back
@@ -1699,6 +1853,24 @@ $noBoxTree = [$r->getCode(), in_array('pingImage', $log, true)];
 Imagick::$countSays = null;
 $pdf = $pdfWas;
 check('  ...not counted by ImageMagick where a box is too large to draw small, or there is no box: the page tree\'s figure', [$hugeTree, $noBoxTree], [['page_out_of_range', false], ['page_out_of_range', false]]);
+// Review after 1.4.38: the count draws every page, so the bound is the
+// pages' together, and this site's limit where it set a lower one. Review of
+// 1.4.38's fixes: not the pages the file states -- a /Count of 1 holding
+// thousands was counted on its word -- but PAGES_ASSUMED (10,000) of the
+// largest. The box answer is at least Letter-by-A4, about 398 pixels at
+// 2 dpi: 10,000 of them are 4.0 million, whatever /Count says; a
+// 2,500-point page is about 4,800, and 10,000 of those are past 40 million.
+$counted = static function (int $count, ?int $limit = null, string $box = '595 842') use ($treeFile, &$pdf): bool {
+    $pdf = $treeFile("2 0 obj << /Type /Pages /Kids [3 0 R 4 0 R] /Count $count /MediaBox [0 0 $box] >> endobj");
+    Imagick::$countSays = 2;
+    [, $log] = run(['format' => 'jpeg', 'page' => 2], Imagick::COLORSPACE_CMYK, true, null === $limit ? null : function () use ($limit) {
+        add_filter('rapls_pdf_image_creator_max_render_pixels', function () use ($limit) { return $limit; });
+    });
+    Imagick::$countSays = null;
+    return in_array('pingImage', $log, true);
+};
+check('  ...counted by ImageMagick only where 10,000 of the largest page fit together, at this site\'s limit, whatever /Count says', [$counted(1), $counted(120000), $counted(1, null, '2500 2500'), $counted(1, 4000000), $counted(1, 3900000)], [true, true, false, true, false]);
+$pdf = $pdfWas;
 // Verification of 1.4.34: a page past the server's width or height limit is
 // left out of a ping of the whole document, and was then called missing. When
 // ImageMagick says the page was too large, it is too large.

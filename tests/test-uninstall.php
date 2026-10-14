@@ -206,12 +206,27 @@ $GLOBALS['wpdb'] = new class {
             $withExcerpt = 1 === preg_match('/SELECT ID, post_content, post_excerpt FROM/', $sql);
             $ids = array_unique(array_merge(array_keys(site()['posts']), array_keys(site()['excerpts'] ?? [])));
             sort($ids);
+            // "post_content <> ''" read as MySQL would: a post with an empty
+            // content and an excerpt is read only when the excerpt is asked
+            // about too (review after 1.4.38).
+            $nonEmptyContent = false !== strpos($sql, "post_content <> ''");
+            $nonEmptyExcerpt = false !== strpos($sql, "post_excerpt <> ''");
             foreach ($ids as $id) {
+                if ($nonEmptyContent && '' === (site()['posts'][$id] ?? '') && !($nonEmptyExcerpt && '' !== (site()['excerpts'][$id] ?? ''))) {
+                    continue;
+                }
                 if ($id > (int) $m[1] && count($rows) < (int) $m[2] && !in_array($id, $skip, true)) {
                     $row = ['ID' => (string) $id, 'post_content' => site()['posts'][$id] ?? ''];
                     if ($withExcerpt) { $row['post_excerpt'] = site()['excerpts'][$id] ?? ''; }
                     $rows[] = $row;
                 }
+            }
+            // A post PCRE then cannot be run over (review after 1.4.38):
+            // starved only once this answer is read, so the stand-in itself
+            // still reads the SQL.
+            if (!empty($GLOBALS['starve_pcre'])) {
+                ini_set('pcre.jit', '0');
+                ini_set('pcre.backtrack_limit', '1');
             }
             return $rows;
         }
@@ -447,6 +462,44 @@ ini_set('pcre.backtrack_limit', '1000');
 rapls_pic_uninstall_site();
 ini_set('pcre.backtrack_limit', (string) $rapls_limit_was);
 check('past PCRE\'s backtrack limit, the image the post names is kept', $GLOBALS['sites'][1]['deleted'], []);
+
+echo "\n--- Review after 1.4.38 ---\n";
+
+// An excerpt on a post with no content at all: read too.
+seed_site();
+$GLOBALS['sites'][1]['excerpts'][400] = '<img src="/wp-content/uploads/2026/10/d-pdf-thumbnail-150x150.jpg">';
+rapls_pic_uninstall_site();
+check('an image shown in the excerpt of a post with no content is kept', $GLOBALS['sites'][1]['deleted'], []);
+
+// A page builder keeps the image, or its PDF, by ID alone.
+seed_site();
+$GLOBALS['sites'][1]['posts'][206] = '[vc_single_image image="71" img_size="full"]';
+rapls_pic_uninstall_site();
+check('an image a page builder keeps by ID alone is kept', $GLOBALS['sites'][1]['deleted'], []);
+seed_site();
+$GLOBALS['sites'][1]['posts'][207] = '<p>71 apples</p> [vc_single_image image="710"]';
+rapls_pic_uninstall_site();
+check('  ...not for 71 in running text, nor for 710', $GLOBALS['sites'][1]['deleted'], [71]);
+// Review of 1.4.38's fixes: a [gallery] list that a space divides.
+seed_site();
+$GLOBALS['sites'][1]['posts'][209] = '[gallery ids="5 71"]';
+rapls_pic_uninstall_site();
+check('an image second in a [gallery] that a space divides is kept', $GLOBALS['sites'][1]['deleted'], []);
+
+// A post whose numbers cannot be read keeps every image.
+seed_site();
+$GLOBALS['sites'][1]['posts'][208] = str_repeat('=" " "', 2000) . '5';
+$rapls_limit_was = ini_get('pcre.backtrack_limit');
+$rapls_jit_was = ini_get('pcre.jit');
+$GLOBALS['starve_pcre'] = true;
+try {
+    rapls_pic_uninstall_site();
+} finally {
+    $GLOBALS['starve_pcre'] = false;
+    ini_set('pcre.backtrack_limit', (string) $rapls_limit_was);
+    ini_set('pcre.jit', (string) $rapls_jit_was);
+}
+check('  ...a post whose numbers cannot be read: every image kept', $GLOBALS['sites'][1]['deleted'], []);
 
 echo "\n$pass passed, $fail failed\n";
 exit($fail ? 1 : 0);

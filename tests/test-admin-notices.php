@@ -103,14 +103,14 @@ $partial = $admin->sanitizeSettings(['page' => 1]);
 check('a save that leaves keys out keeps their defaults, not null', [$partial['format'], $partial['bgcolor'], $partial['insert_type'], $partial['insert_size'], $partial['insert_link']], ['jpeg', 'white', 'image', 'medium', 'file']);
 // Review after 1.4.37: what is saved stays where a save leaves it out; a
 // checkbox the settings form leaves out is one unticked.
-$GLOBALS['options'][Settings::OPTION_NAME] = ['format' => 'png', 'set_featured' => true, 'keep_on_uninstall' => true];
+$GLOBALS['options'][Settings::OPTION_NAME] = ['format' => 'png', 'set_featured' => true, 'keep_on_uninstall' => true, 'auto_generate' => true, 'display_thumbnail_icon' => true, 'hide_generated_images' => true];
 $fromCode = $admin->sanitizeSettings(['page' => 2]);
 $fromForm = $admin->sanitizeSettings(['page' => 2, Admin::FORM_MARKER => '1']);
 unset($GLOBALS['options'][Settings::OPTION_NAME]);
-check('a save of a few keys keeps the rest as saved; the form\'s leaves its unticked boxes off', [
-    [$fromCode['format'], $fromCode['set_featured'], $fromCode['keep_on_uninstall'], $fromCode['page']],
-    [$fromForm['format'], $fromForm['set_featured'], $fromForm['keep_on_uninstall'], array_key_exists(Admin::FORM_MARKER, $fromForm)],
-], [['png', true, true, 2], ['png', false, false, false]]);
+check('a save of a few keys keeps the rest as saved; the form\'s leaves every unticked box off', [
+    [$fromCode['format'], $fromCode['set_featured'], $fromCode['keep_on_uninstall'], $fromCode['auto_generate'], $fromCode['display_thumbnail_icon'], $fromCode['hide_generated_images'], $fromCode['page']],
+    [$fromForm['format'], $fromForm['set_featured'], $fromForm['keep_on_uninstall'], $fromForm['auto_generate'], $fromForm['display_thumbnail_icon'], $fromForm['hide_generated_images'], array_key_exists(Admin::FORM_MARKER, $fromForm)],
+], [['png', true, true, true, true, true, 2], ['png', false, false, false, false, false, false]]);
 
 echo "\n=== A failure's reason, in this plugin's words ===\n";
 check('a code with a label says it', Admin::failureReason(FailureCode::PAGE_OUT_OF_RANGE), 'The chosen page is not in this PDF.');
@@ -138,12 +138,13 @@ check('the regeneration notice for code 1 does not blame the server; for policy 
 ], [true, false, true]);
 
 echo "\n=== The engine notice ===\n";
-$broken = ['code' => FailureCode::PDF_BLOCKED_BY_POLICY, 'label' => 'PDF blocked', 'summary' => 'Policy says no.', 'action' => 'Ask the host.', 'detail' => 'not authorized `<b>/tmp/x.pdf</b>\''];
+$broken = ['code' => FailureCode::PDF_BLOCKED_BY_POLICY, 'label' => 'PDF <u>blocked</u>', 'summary' => 'Policy <i>says</i> no.', 'action' => 'Ask the host.', 'detail' => 'not authorized `<b>/tmp/x.pdf</b>\''];
 StatusEngine::$status = $broken;
 $GLOBALS['screen'] = (object) ['id' => 'upload'];
 $GLOBALS['user_meta'] = [];
 $out = $private('showEngineNotice');
 check('ImageMagick\'s own text is shown as text', [false !== strpos($out, '&lt;b&gt;/tmp/x.pdf&lt;/b&gt;'), false !== strpos($out, '<b>')], [true, false]);
+check('  ...its label and summary are escaped too (review after 1.4.38)', [false !== strpos($out, 'PDF &lt;u&gt;blocked&lt;/u&gt;'), false !== strpos($out, 'Policy &lt;i&gt;says&lt;/i&gt; no.'), false !== strpos($out, '<i>') || false !== strpos($out, '<u>')], [true, true, false]);
 
 // On another screen it speaks only after an upload failed or just after
 // activation, and not once this reason has been dismissed.

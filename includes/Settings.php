@@ -170,6 +170,46 @@ final class Settings
     }
 
     /**
+     * The file extension of the output format
+     *
+     * Nothing in this plugin calls it. It stays because it was public, and
+     * code elsewhere that called it through Plugin::getInstance()->getSettings()
+     * would stop with a fatal error if it went (review after 1.4.38).
+     *
+     * @deprecated 1.4.39 Read getFormat() instead.
+     */
+    public function getFileExtension(): string
+    {
+        switch ($this->getFormat()) {
+            case 'png':
+                return 'png';
+            case 'webp':
+                return 'webp';
+            default:
+                return 'jpg';
+        }
+    }
+
+    /**
+     * The MIME type of the output format
+     *
+     * Kept for the same reason as getFileExtension().
+     *
+     * @deprecated 1.4.39 Read getFormat() instead.
+     */
+    public function getMimeType(): string
+    {
+        switch ($this->getFormat()) {
+            case 'png':
+                return 'image/png';
+            case 'webp':
+                return 'image/webp';
+            default:
+                return 'image/jpeg';
+        }
+    }
+
+    /**
      * Get background color
      */
     public function getBgColor(): string

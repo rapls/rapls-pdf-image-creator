@@ -161,6 +161,7 @@ namespace {
     function rapls_test_json($success, $d, $s) {
         $GLOBALS['json'] = $GLOBALS['json'] ?? [$success, $s];
         $GLOBALS['json_message'] = $GLOBALS['json_message'] ?? (is_array($d) ? ($d['message'] ?? null) : null);
+        $GLOBALS['json_data'] = $GLOBALS['json_data'] ?? $d;
         throw new JsonSent($success, $d, $s);
     }
     function wp_send_json_error($d = null, $s = null) { rapls_test_json(false, $d, $s); }
@@ -173,6 +174,8 @@ namespace {
     require RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/EngineInterface.php';
     require RAPLS_PIC_PLUGIN_DIR . 'includes/Generator.php';
     require RAPLS_PIC_PLUGIN_DIR . 'includes/BulkProcessor.php';
+    // Bulk Generate says why an old thumbnail was kept in Admin's words.
+    require RAPLS_PIC_PLUGIN_DIR . 'includes/Admin.php';
     require RAPLS_PIC_PLUGIN_DIR . 'includes/MediaLibrary.php';
 
     $pass = 0;
@@ -196,7 +199,20 @@ namespace {
         public function esc_like($text) { return addcslashes($text, '_%\\'); }
         public $contentFails = false;
         public $contentQueries = 0;
-        public function get_var($q) { $this->last_error = ''; return null; }
+        /** Whether another post names the image, from $GLOBALS['meta'] (review after 1.4.38). */
+        public function get_var($q) {
+            $this->last_error = '';
+            [$keyA, $keyB, $value, $except] = $q[1] + [null, null, null, null];
+            $pdfsOnly = false !== strpos($q[0], "post_mime_type = 'application/pdf'");
+            foreach ($GLOBALS['meta'] as $post => $keys) {
+                if ((int) $post === (int) $except) { continue; }
+                if ($pdfsOnly && 'application/pdf' !== ($GLOBALS['mimes'][$post] ?? '')) { continue; }
+                foreach ([$keyA, $keyB] as $key) {
+                    if (isset($keys[$key]) && (string) $keys[$key] === (string) $value) { return (string) $post; }
+                }
+            }
+            return null;
+        }
         public function get_results($q, $output = null) {
             if (false === strpos($q[0], 'post_content')) { return []; }
             $this->contentQueries++;
@@ -637,6 +653,12 @@ namespace {
         $GLOBALS['get_post_throws'] = 0;
         check('R62-02: the first check throws: no outcome, not the last ' . ($lastWorked ? 'success' : 'failure'), $generator->outcomeFor(330), null);
     }
+    // Review after 1.4.38: every outcome has the keys its docblock lists,
+    // kept_previous among them, also for a thumbnail that was already there.
+    $pdf(340, 341);
+    $generator->generate(340, true);
+    $generator->generate(340, false);
+    check('outcomeFor: a thumbnail already there has kept_previous too (null)', array_key_exists('kept_previous', (array) $generator->outcomeFor(340)) && null === $generator->outcomeFor(340)['kept_previous'], true);
     check('outcomeFor: a new attempt forgets the last one; unknown PDF is null', [$generator->outcomeFor(310)['ok'] ?? null, $generator->outcomeFor(999999)], [false, null]);
     ini_set('error_log', (string) $logWas);
     @unlink($log);
@@ -771,6 +793,33 @@ namespace {
     $engine->renders = true;
     check('  ...a failure goes back with its code', $failedTo, 'to: https://example.test/wp-admin/upload.php?paged=2&rapls_pic_error=' . ($generator->outcomeFor(95)['code'] ?? 'none'));
     check('  ...which is a code, not 1', in_array($generator->outcomeFor(95)['code'] ?? '', ['', '1'], true), false);
+    // Review after 1.4.38: a kept old thumbnail goes back with why it was
+    // kept, for the notice to say it; Bulk Generate says it the same way.
+    $pdf(97, 98);
+    $GLOBALS['meta'][98]['_wp_attached_file'] = '2026/10/doc-97-pdf-thumbnail.jpg';
+    $GLOBALS['content'] = [905 => '<img src="/wp-content/uploads/2026/10/doc-97-pdf-thumbnail.jpg">'];
+    $GLOBALS['caps'] = ['edit_post:97' => true];
+    $keptTo = $rowAction(97, 'ok:rapls_pic_regenerate_97', 'https://example.test/wp-admin/upload.php');
+    $GLOBALS['content'] = [];
+    $pdf(99, 100);
+    $GLOBALS['meta'][906]['_thumbnail_id'] = '100';
+    $GLOBALS['caps'] = ['edit_post:99' => true];
+    $featuredTo = $rowAction(99, 'ok:rapls_pic_regenerate_99', 'https://example.test/wp-admin/upload.php');
+    unset($GLOBALS['meta'][906]);
+    check('  ...a kept old thumbnail goes back with why: shown in a post, a featured image', [$keptTo, $featuredTo], ['to: https://example.test/wp-admin/upload.php?rapls_pic_generated=kept', 'to: https://example.test/wp-admin/upload.php?rapls_pic_generated=kept-featured']);
+    $pdf(101, 102);
+    $GLOBALS['meta'][102]['_wp_attached_file'] = '2026/10/doc-101-pdf-thumbnail.jpg';
+    $GLOBALS['content'] = [907 => '[vc_single_image image="102"]'];
+    $GLOBALS['caps'] = ['manage_options' => true, 'edit_post:101' => true];
+    $GLOBALS['json_message'] = null;
+    $GLOBALS['json_data'] = null;
+    $bulkKept = $call([$bulk, 'ajaxGenerate'], ['pdf_id' => 101, 'force' => 1]);
+    $GLOBALS['content'] = [];
+    check('  ...and Bulk Generate says why it kept one, and which', [$bulkKept[0], false !== strpos((string) $GLOBALS['json_message'], 'Thumbnail generated. A post may still show the previous thumbnail'), $GLOBALS['json_data']['kept_previous'] ?? null], [true, true, 102]);
+    $GLOBALS['json_message'] = null;
+    $GLOBALS['json_data'] = null;
+    $call([$bulk, 'ajaxGenerate'], ['pdf_id' => 101, 'force' => 1]);
+    check('  ...and says nothing of it when none was kept', [$GLOBALS['json_message'], is_array($GLOBALS['json_data']) && array_key_exists('kept_previous', $GLOBALS['json_data']) ? $GLOBALS['json_data']['kept_previous'] : 'missing'], ['Thumbnail generated.', null]);
     $GLOBALS['caps'] = ['manage_options' => true, 'edit_post:80' => true];
     check('Bulk Generate: an admin may regenerate a PDF they may edit', $call([$bulk, 'ajaxGenerate'], ['pdf_id' => 80, 'force' => 1]), [true, null]);
     check('Bulk Generate: ...but not one edit_post refuses', $call([$bulk, 'ajaxGenerate'], ['pdf_id' => 90, 'force' => 1]), [false, 403]);
