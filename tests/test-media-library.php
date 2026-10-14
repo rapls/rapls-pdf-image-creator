@@ -325,13 +325,19 @@ namespace {
     if (!function_exists('current_user_can')) { function current_user_can($cap, ...$a) { return !empty($GLOBALS['can_edit']); } }
     if (!function_exists('wp_nonce_url')) { function wp_nonce_url($u, $a) { return $u . '&_wpnonce=n'; } }
     if (!function_exists('admin_url')) { function admin_url($p = '') { return 'https://example.test/wp-admin/' . $p; } }
-    if (!function_exists('esc_url')) { function esc_url($u) { return $u; } }
-    if (!function_exists('esc_html__')) { function esc_html__($s, $d = null) { return $s; } }
+    // Translated and escaped, as core's are: a link that left either out was
+    // not caught (mutation testing of 1.4.39).
+    if (!function_exists('esc_url')) { function esc_url($u) { return str_replace('&', '&#038;', (string) $u); } }
+    if (!function_exists('esc_html__')) { function esc_html__($s, $d = null) { return htmlspecialchars((string) ($GLOBALS['translations'][$s] ?? $s), ENT_QUOTES); } }
     $GLOBALS['can_edit'] = false;
     $withoutEdit = $library->addRowActions(['edit' => 'Edit'], new WP_Post(10, 0, 'application/pdf'));
     $GLOBALS['can_edit'] = true;
     $withEdit = $library->addRowActions(['edit' => 'Edit'], new WP_Post(10, 0, 'application/pdf'));
     check('  ...the regenerate link only for someone who may edit the PDF', [array_keys($withoutEdit), isset($withEdit['rapls_pic_regenerate'])], [['edit'], true]);
+    $GLOBALS['translations']['Regenerate Thumbnail'] = 'Re<b>generate</b>';
+    $translatedAction = (string) ($library->addRowActions([], new WP_Post(10, 0, 'application/pdf'))['rapls_pic_regenerate'] ?? '');
+    unset($GLOBALS['translations']['Regenerate Thumbnail']);
+    check('  ...its address and its words escaped, translated or not', [false !== strpos($translatedAction, 'attachment_id=10&#038;_wpnonce=n'), false !== strpos($translatedAction, 'Re&lt;b&gt;generate&lt;/b&gt;'), false !== strpos($translatedAction, '<b>')], [true, true, false]);
 
     // Review of 1.4.34: the list view's rows read their images in one query.
     if (!function_exists('_prime_post_caches')) { function _prime_post_caches($ids, $terms = true, $meta = true) { $GLOBALS['primed_posts'][] = array_values($ids); } }

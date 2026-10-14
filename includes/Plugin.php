@@ -272,6 +272,17 @@ final class Plugin
             return current_user_can('edit_post', $id);
         }
 
+        // A post of a type with no public pages -- a private custom type, a
+        // reusable block -- is shown by nothing to a visitor; published, it
+        // was shown here to anyone (review of 1.4.39). Only someone who may
+        // edit it sees it: read_post of a published post is plain "read".
+        // Asked here only, for a post that is not an attachment: viewable()
+        // must not ask it of a PDF's parent (it hid PDFs in reusable blocks,
+        // review after 1.4.34).
+        if (function_exists('is_post_type_viewable') && !is_post_type_viewable((string) ($post->post_type ?? ''))) {
+            return current_user_can('edit_post', $id);
+        }
+
         return self::publicOrReadable($id);
     }
 

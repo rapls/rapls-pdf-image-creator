@@ -376,6 +376,15 @@
             });
         },
 
+        // A file's name and what happened to it, in the language's own
+        // pattern: ": " is not every language's (review of 1.4.39). One
+        // pass, so a name holding "%2$s" stays as it is.
+        fileResult: function(filename, text) {
+            return (raplsPicAdmin.i18n.fileResult || '%1$s: %2$s').replace(/%([12])\$s/g, function(match, which) {
+                return '1' === which ? filename : String(text);
+            });
+        },
+
         generate: function(pdfId, filename) {
             const self = this;
 
@@ -411,16 +420,16 @@
                         self.generated++;
                         // The old thumbnail kept, a post showing it: said
                         // (review after 1.4.37).
-                        self.log('✓ ' + filename + (response.data && response.data.kept_previous ? ': ' + response.data.message : ''), 'success');
+                        self.log('✓ ' + (response.data && response.data.kept_previous ? self.fileResult(filename, response.data.message) : filename), 'success');
                     } else {
                         self.failed++;
-                        self.log('✗ ' + filename + ': ' + ((response.data && response.data.message) || raplsPicAdmin.i18n.failed), 'error');
+                        self.log('✗ ' + self.fileResult(filename, (response.data && response.data.message) || raplsPicAdmin.i18n.failed), 'error');
                     }
                     next();
                 },
                 error: function() {
                     self.failed++;
-                    self.log('✗ ' + filename + ': ' + raplsPicAdmin.i18n.requestFailed, 'error');
+                    self.log('✗ ' + self.fileResult(filename, raplsPicAdmin.i18n.requestFailed), 'error');
                     next();
                 }
             });

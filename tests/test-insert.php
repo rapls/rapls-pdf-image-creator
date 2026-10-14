@@ -35,6 +35,8 @@ namespace {
     function get_post_status_object($status) { return in_array($status, ['publish', 'private', 'draft', 'future'], true) ? (object) ['public' => 'publish' === $status] : null; }
     function wp_get_post_parent_id($id) { return $GLOBALS['parent_of'][(int) $id] ?? 0; }
     function post_password_required($post = null) { return !empty($GLOBALS['password'][(int) $post]); }
+    // Types with no public pages, as register_post_type()'s public => false makes them.
+    function is_post_type_viewable($type) { return !in_array(is_object($type) ? ($type->name ?? '') : (string) $type, $GLOBALS['private_types'] ?? ['wp_block'], true); }
     // As core's map_meta_cap() answers: read_post on a published post is plain
     // "read", whatever its password, so any logged-in user has it.
     function current_user_can($cap, ...$args) {
@@ -363,6 +365,16 @@ namespace {
     $GLOBALS['password'][311] = true;
     check('  ...an image attached to a post behind a password: not to a reader who may not edit it', $shortcode('rapls_pdf_download_link', ['id' => 310]), '');
     unset($GLOBALS['posts'][310], $GLOBALS['mime_of'][310], $GLOBALS['parent_of'][310], $GLOBALS['password'][311]);
+    // Review of 1.4.39: a published post of a type with no public pages
+    // gave its featured image and title to anyone.
+    $GLOBALS['posts'][320] = (object) ['ID' => 320, 'post_type' => 'secret_cpt'];
+    $GLOBALS['meta'][320]['_thumbnail_id'] = 301;
+    $GLOBALS['private_types'] = ['secret_cpt', 'wp_block'];
+    $GLOBALS['can_read'][320] = true;
+    $hidden = $shortcode('rapls_pdf_thumbnail', ['id' => 320]);
+    $GLOBALS['can_edit'][320] = true;
+    check('  ...a published post of a type with no public pages: not to a reader, to one who may edit it', [$hidden, '' !== $shortcode('rapls_pdf_thumbnail', ['id' => 320])], ['', true]);
+    unset($GLOBALS['posts'][320], $GLOBALS['meta'][320], $GLOBALS['private_types'], $GLOBALS['can_read'][320], $GLOBALS['can_edit'][320]);
     $GLOBALS['filtered']['rapls_pdf_image_creator_shortcode_any_post'] = static function () { return 1; };
     check('  ...a filter answering anything but true: nothing', $shortcode('rapls_pdf_thumbnail', ['id' => 300]), '');
     unset($GLOBALS['filtered']['rapls_pdf_image_creator_shortcode_any_post'], $GLOBALS['password'][300], $GLOBALS['can_edit'][300], $GLOBALS['can_read'][300]);

@@ -1806,10 +1806,15 @@ echo "\n=== Review after 1.4.31: a page past the end of the PDF says so ===\n";
 Imagick::$emptyFor = ['suffix' => false, 'whole' => false];
 Imagick::$throwPastEnd = true;
 $pagesWas = Imagick::$pageCount;
+$pdfWas = $pdf;
 Imagick::$pageCount = 2;
-[$r] = run(['format' => 'jpeg', 'page' => 3]);
+$pdf = $treeFile("1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n2 0 obj << /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 /MediaBox [0 0 595 842] >> endobj");
+[$r, $log] = run(['format' => 'jpeg', 'page' => 3]);
 check('a page past the end is page_out_of_range, with both numbers', [$r->getCode(), false !== strpos((string) $r->getError(), 'Page 3 was asked for (counting from 0), but this PDF has 2 pages.')], ['page_out_of_range', true]);
 check('  ...a permanent failure', \Rapls\PDFImageCreator\FailureCode::isPermanent('page_out_of_range'), true);
+// Review of 1.4.39: counted from the file's page tree only. ImageMagick's
+// count had Ghostscript draw every page it found, bounded by nothing.
+check('  ...counted from the page tree; ImageMagick is not asked to count', in_array('pingImage', $log, true), false);
 [$r] = run(['format' => 'jpeg', 'page' => 1]);
 check('  ...a page the file has is drawn as before', $r->isSuccess(), true);
 // Verification of the change: the page equal to the count is past the end too
@@ -1817,60 +1822,24 @@ check('  ...a page the file has is drawn as before', $r->isSuccess(), true);
 [$r] = run(['format' => 'jpeg', 'page' => 2]);
 $atCount = $r->getCode();
 Imagick::$pageCount = 1;
+$pdf = $treeFile("2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 595 842] >> endobj");
 [$r] = run(['format' => 'jpeg', 'page' => 1]);
 check('  ...the page equal to the count is past the end; a one-page PDF has "1 page"', [$atCount, $r->getCode(), false !== strpos((string) $r->getError(), 'but this PDF has 1 page.')], ['page_out_of_range', 'page_out_of_range', true]);
-// The count comes from the file's page tree where it can. A page the tree
-// has is not counted again by ImageMagick; a page the tree does not have is
-// confirmed by it first, since a damaged file can state fewer pages than
-// Ghostscript finds (review after 1.4.32).
-$pdfWas = $pdf;
-$pdf = $treeFile("1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n2 0 obj << /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 /MediaBox [0 0 595 842] >> endobj");
-[$r, $log] = run(['format' => 'jpeg', 'page' => 2]);
-$confirmed = [$r->getCode(), in_array('pingImage', $log, true)];
-Imagick::$countSays = 9;
-[$r, $log] = run(['format' => 'jpeg', 'page' => 2]);
-$understated = $r->getCode();
-Imagick::$countSays = null;
+// Accepted with the count gone: a tree that states more pages than the file
+// holds, or none the bytes can read, leaves a page past the end a render
+// error -- whatever the page's size, and with nothing drawn to count.
+Imagick::$pageCount = 2;
 $pdf = $treeFile("2 0 obj << /Type /Pages /Kids [3 0 R] /Count 5 /MediaBox [0 0 595 842] >> endobj");
-[$r, $log] = run(['format' => 'jpeg', 'page' => 1]);
-$within = [$r->getCode(), in_array('pingImage', $log, true)];
-$pdf = $pdfWas;
-// Review after 1.4.34: the tree's figure is the largest /Count in the file,
-// which a file can overstate and an update deleting pages leaves behind --
-// a page that is not there came back as a render error. ImageMagick counts
-// first now, on a failure only.
-check('  ...counted by ImageMagick first, whatever the page tree says', [$confirmed, $understated, $within], [['page_out_of_range', true], 'render_error', ['page_out_of_range', true]]);
-// Review after 1.4.37: not where a page in the file is too large to draw at
-// 2 dpi within the default limit, or the boxes cannot say -- the count draws
-// every page at 2 dpi, under no limit of ours. The file's own figure then.
+[$r, $log] = run(['format' => 'jpeg', 'page' => 3]);
+$overstated = [$r->getCode(), in_array('pingImage', $log, true)];
 $pdf = $treeFile("2 0 obj << /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 /MediaBox [0 0 300000 300000] >> endobj");
-Imagick::$countSays = 9;
 [$r, $log] = run(['format' => 'jpeg', 'page' => 2]);
 $hugeTree = [$r->getCode(), in_array('pingImage', $log, true)];
-$pdf = $treeFile("2 0 obj << /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >> endobj");
+$pdf = $treeFile("5 0 obj << /Type /ObjStm /N 1 >> endobj\n<< /MediaBox [0 0 595 842] >>");
 [$r, $log] = run(['format' => 'jpeg', 'page' => 2]);
-$noBoxTree = [$r->getCode(), in_array('pingImage', $log, true)];
-Imagick::$countSays = null;
+$unreadTree = [$r->getCode(), in_array('pingImage', $log, true)];
 $pdf = $pdfWas;
-check('  ...not counted by ImageMagick where a box is too large to draw small, or there is no box: the page tree\'s figure', [$hugeTree, $noBoxTree], [['page_out_of_range', false], ['page_out_of_range', false]]);
-// Review after 1.4.38: the count draws every page, so the bound is the
-// pages' together, and this site's limit where it set a lower one. Review of
-// 1.4.38's fixes: not the pages the file states -- a /Count of 1 holding
-// thousands was counted on its word -- but PAGES_ASSUMED (10,000) of the
-// largest. The box answer is at least Letter-by-A4, about 398 pixels at
-// 2 dpi: 10,000 of them are 4.0 million, whatever /Count says; a
-// 2,500-point page is about 4,800, and 10,000 of those are past 40 million.
-$counted = static function (int $count, ?int $limit = null, string $box = '595 842') use ($treeFile, &$pdf): bool {
-    $pdf = $treeFile("2 0 obj << /Type /Pages /Kids [3 0 R 4 0 R] /Count $count /MediaBox [0 0 $box] >> endobj");
-    Imagick::$countSays = 2;
-    [, $log] = run(['format' => 'jpeg', 'page' => 2], Imagick::COLORSPACE_CMYK, true, null === $limit ? null : function () use ($limit) {
-        add_filter('rapls_pdf_image_creator_max_render_pixels', function () use ($limit) { return $limit; });
-    });
-    Imagick::$countSays = null;
-    return in_array('pingImage', $log, true);
-};
-check('  ...counted by ImageMagick only where 10,000 of the largest page fit together, at this site\'s limit, whatever /Count says', [$counted(1), $counted(120000), $counted(1, null, '2500 2500'), $counted(1, 4000000), $counted(1, 3900000)], [true, true, false, true, false]);
-$pdf = $pdfWas;
+check('  ...an overstated tree is a render error; a large page is counted all the same; an unread tree is a render error -- none of them pinged', [$overstated, $hugeTree, $unreadTree], [['render_error', false], ['page_out_of_range', false], ['render_error', false]]);
 // Verification of 1.4.34: a page past the server's width or height limit is
 // left out of a ping of the whole document, and was then called missing. When
 // ImageMagick says the page was too large, it is too large.
@@ -1945,11 +1914,8 @@ check('  ...and one whose header is not at the start is measured before it is dr
 check('a size of 0 either way is no resolution, not the one asked', [$priv('fittedResolution', 0.0, 100.0, 150.0, 1000.0), $priv('fittedResolution', 100.0, 0.0, 150.0, 1000.0), $priv('fittedResolution', -5.0, 100.0, 150.0, 1000.0)], [null, null, null]);
 // Exactly 2 dpi is drawn; less is not.
 check('  ...a page that fits at exactly 2 dpi is drawn at 2; one that fits at less, refused', [$priv('fittedResolution', 2592.0, 2592.0, 150.0, 5184.0), $priv('fittedResolution', 2592.0, 2592.0, 150.0, 5183.0)], [2.0, null]);
-// No pages counted is no answer, from ImageMagick or from the file.
-Imagick::$countSays = 0;
-$noneCounted = $priv('pagesPinged', $pdf);
-Imagick::$countSays = null;
-check('a count of 0 is no answer, from ImageMagick or the page tree', [$noneCounted, ImagickEngine::pagesFromBytes($treeFile("2 0 obj << /Type /Pages /Kids [] /Count 0 >> endobj"))], [null, null]);
+// No pages counted is no answer.
+check('a count of 0 is no answer from the page tree', ImagickEngine::pagesFromBytes($treeFile("2 0 obj << /Type /Pages /Kids [] /Count 0 >> endobj")), null);
 // The page tree's own limits.
 check('  ...matches inside one dictionary, read once over: no answer', ImagickEngine::pagesFromBytes($treeFile('<< /Type /Pages /Count 3 /Type /Pages /Count 3 >>')), null);
 $nodes = RAPLS_PIC_TEST_TMP . '/nodes.pdf';
@@ -1981,18 +1947,13 @@ Imagick::$failReads = 1;
 [$r, $log] = run(['format' => 'jpeg']);
 Imagick::$failReads = 0;
 check('a read that fails: the instance is cleared', [$r->getCode(), array_slice($log, -2)], ['render_error', ['readImage[n]', 'clear']]);
-// One count from ImageMagick on a failure, and the file's figure only when
-// ImageMagick cannot count.
+// A page past the end is counted from the page tree alone (review of 1.4.39).
 Imagick::$throwPastEnd = true;
 Imagick::$pageCount = 2;
-[$r, $log] = run(['format' => 'jpeg', 'page' => 3]);
-check('a page past the end: ImageMagick counts once', [$r->getCode(), count(array_keys($log, 'pingImage', true))], ['page_out_of_range', 1]);
 $pdfWas = $pdf;
 $pdf = $treeFile("<< /MediaBox [0 0 595 842] >>\n2 0 obj << /Type /Pages /Kids [3 0 R] /Count 2 >> endobj");
-Imagick::$pingThrows = true;
 [$r, $log] = run(['format' => 'jpeg', 'page' => 3]);
-Imagick::$pingThrows = false;
-check('  ...one ImageMagick cannot count is counted from the page tree', [$r->getCode(), false !== strpos((string) $r->getError(), 'has 2 pages')], ['page_out_of_range', true]);
+check('a page past the end: counted from the page tree, with no ping', [$r->getCode(), false !== strpos((string) $r->getError(), 'has 2 pages'), count(array_keys($log, 'pingImage', true))], ['page_out_of_range', true, 0]);
 // A policy, or no Ghostscript, on a page past the first: that, not a missing
 // page, and nothing counted.
 $pdf = $pdfWas;
@@ -2007,6 +1968,70 @@ foreach (['not authorized `PDF\' @ error/constitute.c/IsCoderAuthorized/426' => 
 Imagick::$failReads = 0;
 Imagick::$failMessage = 'Failed to read the file';
 Imagick::$pageCount = $pagesWas;
+
+
+echo "\n=== Review of 1.4.39 ===\n";
+// A listener on the render limit that throws is not reached from the
+// failure path: the count that asked it there is gone, and its exception
+// escaped convert() from inside a catch.
+$pdfWas = $pdf;
+$pdf = RAPLS_PIC_TEST_TMP . '/listener-raster.png';
+file_put_contents($pdf, "\x89PNG\r\n\x1A\n" . str_repeat("\0", 64));
+Imagick::$failReads = 1;
+$escaped = null;
+try {
+    [$r] = run(['format' => 'jpeg', 'page' => 2], Imagick::COLORSPACE_CMYK, true, function () {
+        add_filter('rapls_pdf_image_creator_max_render_pixels', function () { throw new RuntimeException('listener'); });
+    });
+} catch (\Throwable $e) {
+    $escaped = $e->getMessage();
+}
+Imagick::$failReads = 0;
+@unlink($pdf);
+$pdf = $pdfWas;
+check('a read that fails on a raster: no listener asked from the failure path, nothing escapes', [$escaped, $r->getCode()], [null, 'render_error']);
+// A page that failed to measure at 2 dpi, in a file whose largest box keeps
+// it from being measured more finely, says so instead of the read's words.
+boxes([595, 842], [230000, 230000]);
+Imagick::$failReads = 1;
+Imagick::$failMessage = "UnableToOpenConfigureFile `delegates.xml' @ warning/configure.c/GetConfigureOptions/722";
+[$r, $log] = run(['format' => 'jpeg']);
+Imagick::$failReads = 0;
+Imagick::$failMessage = 'Failed to read the file';
+boxes([595, 842]);
+check('  ...a page that could not be measured beside a far larger one is said so, a render error, after one read', [$readsOf($log), $r->getCode(), false !== strpos((string) $r->getError(), 'could not be measured at 2 dpi')], [1, 'render_error', true]);
+check('  ...and the message names both causes: a page not in the PDF, or one too thin', [false !== strpos((string) $r->getError(), 'may not be in this PDF'), false !== strpos((string) $r->getError(), 'too thin to draw')], [true, true]);
+// Named as a Ghostscript format: bounded, unless the bytes are a raster
+// ImageMagick reads by its own magic and no PDF or PostScript header is in
+// the first 1024 bytes.
+$named = static function (string $name, string $head) use ($priv): bool {
+    $f = RAPLS_PIC_TEST_TMP . '/' . $name;
+    file_put_contents($f, $head . str_repeat("\0", 64));
+    $result = $priv('drawnByGhostscript', $f);
+    @unlink($f);
+    return $result;
+};
+$tga = "\x00\x00\x02" . str_repeat("\x00", 9) . "\x10\x00\x10\x00\x18\x00";
+check('  ...named xps, pcl, ps2, ept, epi, a TGA\'s shape inside: bounded', [$named('a.xps', $tga), $named('a.pcl', $tga), $named('a.ps2', $tga), $named('a.ept', $tga), $named('a.epi', $tga), $named('a.bin', $tga)], [true, true, true, true, true, false]);
+check('  ...a PNG or a JPEG named .pdf: read as it is; with a PDF header too, or a TGA\'s shape, or ISO media: bounded', [$named('png.pdf', "\x89PNG\r\n\x1A\n"), $named('jpg.pdf', "\xFF\xD8\xFF\xE0"), $named('both.pdf', "\x89PNG\r\n\x1A\n%PDF-1.4"), $named('tga.pdf', $tga), $named('heic.pdf', "\x00\x00\x00\x18ftypheic")], [false, false, true, true, true]);
+// Review of r105: BigTIFF by its whole 8-byte header, and no QOI by magic
+// (ImageMagick 6 has no QOI coder, so a .pdf name sends it to Ghostscript).
+check('  ...BigTIFF named .pdf: read as it is only with its 8-byte header; a QOI named .pdf: bounded', [$named('bt.pdf', "II+\0\x08\0\0\0"), $named('bm.pdf', "MM\0+\0\x08\0\0"), $named('bx.pdf', "II+\0\x04\0\0\0"), $named('q.pdf', "qoif\0\0\x1B\x58\0\0\x03\xE8")], [false, false, true, true]);
+check('  ...a PCX by ImageMagick\'s magic only: versions 2 and 5, not 0 or 3', [$named('a.bin', "\x0A\x05\x01\x08"), $named('b.bin', "\x0A\x02\x01\x01"), $named('c.bin', "\x0A\x00\x01\x08"), $named('d.bin', "\x0A\x03\x01\x08")], [false, false, true, true]);
+check('  ...PFM, icons, JPEG 2000 codestream, JPEG XL file, a TGA with a colour map: read as they are', [$named('a.bin', "Pf\n"), $named('b.bin', "\x00\x00\x01\x00"), $named('c.bin', "\x00\x00\x02\x00"), $named('d.bin', "\xFF\x4F\xFF\x51"), $named('e.bin', "\x00\x00\x00\x0CJXL \r\n\x87\n"), $named('f.bin', "\x00\x01\x01" . str_repeat("\x00", 4) . "\x18" . str_repeat("\x00", 8) . "\x08\x00")], [false, false, false, false, false, false]);
+check('  ...a TGA with a colour map of a size TGA does not allow: bounded', $named('g.bin', "\x00\x01\x01" . str_repeat("\x00", 4) . "\x07" . str_repeat("\x00", 8) . "\x08\x00"), true);
+// Switches that change how much is drawn, or which interpreter draws it.
+check('  ...GS_OPTIONS: copies, the PDF interpreter and EPS cropping are refused', [$priv('safeGhostscriptSwitch', '-dNumCopies=2'), $priv('safeGhostscriptSwitch', '-dNEWPDF=false'), $priv('safeGhostscriptSwitch', '-dEPSCrop'), $priv('safeGhostscriptSwitch', '-dNOTRANSPARENCY')], [false, false, false, true]);
+// ImageMagick 7.1.1's width or height refusal arrives as its tag.
+check('  ...WidthOrHeightExceedsLimit is the page\'s size', \Rapls\PDFImageCreator\FailureCode::fromExceptionMessage('WidthOrHeightExceedsLimit `/tmp/magick-x\'', true), \Rapls\PDFImageCreator\FailureCode::RESOURCE_LIMIT);
+// A /UserUnit over 1 makes no page smaller: the least is the box as it is.
+$scanOf = new ReflectionMethod(ImagickEngine::class, 'scanPageBoxes');
+if (PHP_VERSION_ID < 80100) { $scanOf->setAccessible(true); }
+$overOne = $scanOf->invoke(null, $boxFile("<< /MediaBox [0 0 100000 100000] /UserUnit 3 >>"));
+check('  ...a /UserUnit over 1 leaves the least as the box', [is_array($overOne), $overOne['largest'] ?? null, $overOne['least'] ?? null], [true, null, 1.0E10]);
+// The colour profile resolver, public up to 1.4.20, is there for code that
+// still asks for it.
+check('  ...getColorProfile() is still there', (new ImagickEngine())->getColorProfile() instanceof \Rapls\PDFImageCreator\Engine\ColorProfile, true);
 
 printf("\n%d passed, %d failed\n", $pass, $fail);
 exit($fail === 0 ? 0 : 1);

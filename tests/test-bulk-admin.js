@@ -116,6 +116,8 @@ const i18n = {
     stopping: 'Stopping after the current PDF...', continueRun: 'Continue', scanning: 'Scanning... %d PDFs so far',
     processingFile: 'Processing: %s', failed: 'Failed', requestFailed: 'Request failed', errorShort: 'Error',
     httpStatus: 'Status: %s', httpError: 'Error: %s', statsFailed: 'Stats failed', rescan: 'Scan again',
+    // Not ": ": the language's own pattern is the one used (review of 1.4.39).
+    fileResult: '%1$s \u2014 %2$s',
 };
 const replaced = [];
 const windowStub = { location: { hash: '' }, history: { replaceState(state, title, url) { replaced.push(url); } } };
@@ -215,10 +217,13 @@ const logged = () => made.filter((e) => /^log-/.test(e.cls)).map((e) => e.text()
 answer({ pdf_id: 1006, filename: 'x$&y$\'.pdf', after: 1006, done: false });
 const processing = logged().slice(-1)[0];
 answer({ pdf_id: 1006, kept_previous: 77, message: 'Thumbnail generated. The previous one is kept.' });
-check('  ...a name with "$&" in it is logged as it is; a kept old thumbnail is said', [processing, logged().slice(-1)[0]], ['Processing: x$&y$\'.pdf', "✓ x$&y$'.pdf: Thumbnail generated. The previous one is kept."]);
+check('  ...a name with "$&" in it is logged as it is; a kept old thumbnail is said', [processing, logged().slice(-1)[0]], ['Processing: x$&y$\'.pdf', "✓ x$&y$'.pdf \u2014 Thumbnail generated. The previous one is kept."]);
 answer({ pdf_id: 1008, filename: 'd.pdf', after: 1008, done: false });
 answer({ pdf_id: 1008 });
 check('  ...one that kept nothing is logged by name alone', logged().slice(-1)[0], '✓ d.pdf');
+answer({ pdf_id: 1009, filename: 'e%2$s.pdf', after: 1009, done: false });
+answer({ message: 'No page.' }, false);
+check('  ...a failure in the language\'s pattern, a name holding "%2$s" kept as it is', logged().slice(-1)[0], '✗ e%2$s.pdf \u2014 No page.');
 
 // Review after 1.4.33: the box changed while a run is going changes nothing.
 $('#rapls-pic-include-existing')._handlers.change.call($('#rapls-pic-include-existing'));

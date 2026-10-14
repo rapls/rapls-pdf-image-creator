@@ -27,7 +27,12 @@ namespace {
         return $single ? $GLOBALS['meta'][$id][$key] : [$GLOBALS['meta'][$id][$key]];
     }
     function delete_post_meta($id, $key) { unset($GLOBALS['meta'][$id][$key]); return true; }
+    function update_post_meta($id, $key, $value) { $GLOBALS['meta'][$id][$key] = $value; return true; }
     function get_post($id) { return $GLOBALS['posts'][$id] ?? null; }
+    // Core's, which every supported WordPress has; the calls are kept so a
+    // test can see the component asked for (mutation testing of 1.4.39: with
+    // no stand-in, only the parse_url() fallback ever ran).
+    function wp_parse_url($url, $component = -1) { $GLOBALS['wp_parse_url_calls'][] = [$url, $component]; return parse_url((string) $url, $component); }
     function get_option($key, $default = false) { return $GLOBALS['options'][$key] ?? $default; }
     // Review after 1.4.36: the parent is written to the row, not through wp_update_post() and its hooks.
     function wp_update_post($args) {
@@ -187,9 +192,13 @@ namespace {
     $own(42, 40);
     $GLOBALS['meta'][40]['_rapls_pic_thumbnail_id'] = 42;
     $GLOBALS['meta'][41]['_rapls_pic_thumbnail_id'] = 42;   // the translation shares it
+    $GLOBALS['posts'][41] = (object) ['ID' => 41, 'post_type' => 'attachment', 'post_mime_type' => 'application/pdf'];
     check('own thumbnail shared with a translation: kept', [$generator->deleteThumbnail(40), $GLOBALS['deleted'], isset($GLOBALS['posts'][42])], [false, [], true]);
     check('  ...the translation still points at it', $GLOBALS['meta'][41]['_rapls_pic_thumbnail_id'] ?? '', 42);
     check('  ...this PDF lets go of it', $GLOBALS['meta'][40]['_rapls_pic_thumbnail_id'] ?? '', '');
+    // Review of 1.4.39: still that PDF's, so its own regeneration or
+    // deletion finds it; left naming PDF 40, it was nobody's.
+    check('  ...and is now the translation\'s: its source names PDF 41, still marked', [(int) ($GLOBALS['meta'][42]['_rapls_pic_source_pdf'] ?? 0), $GLOBALS['meta'][42]['_rapls_pic_is_thumbnail'] ?? '', $generator->isOwnThumbnail(42, 41)], [41, '1', true]);
 
     $own(52, 50);
     $GLOBALS['meta'][50]['_rapls_pic_thumbnail_id'] = 52;
@@ -372,7 +381,7 @@ namespace {
     $GLOBALS['wpdb']->attachmentLookupFails = false;
     $namedLogged = is_file($namedLog) ? (string) file_get_contents($namedLog) : '';
     @unlink($namedLog);
-    check('named elsewhere, whether by another PDF unknown: ordinary, and said', [$namedKept, false !== strpos($namedLogged, 'could not tell whether another PDF uses image #266')], [[false, [], ''], true]);
+    check('named elsewhere, whether by another PDF unknown: ordinary, and said', [$namedKept, false !== strpos($namedLogged, 'could not tell whether another PDF uses image #266'), $generator->keptReasonFor(265)], [[false, [], ''], true, 'unknown']);
     unset($GLOBALS['meta'][801]);
 
     // The content is read once, by 100s, until one shows it.
@@ -444,12 +453,44 @@ namespace {
     $generator->deleteThumbnail(390);
     $sql = (string) ($GLOBALS['content_sql'][0] ?? '');
     check('the SQL: content and excerpt each on its own, lowered, trash read, revisions and auto-drafts not', [
-        false !== strpos($sql, implode(' OR ', array_fill(0, 1 + count(\Rapls\PDFImageCreator\ContentUse::idLikesSql(392)), 'post_content LIKE %s')) . ' OR (post_content LIKE %s AND post_content REGEXP %s) OR post_excerpt LIKE %s') && false !== strpos($sql, 'LOWER(post_content) LIKE %s OR LOWER(post_excerpt) LIKE %s') && false === strpos($sql, 'CONCAT') && 1 === substr_count($sql, 'LOWER(post_content)'),
+        false !== strpos($sql, '(post_content LIKE %s AND (' . implode(' OR ', array_fill(0, count(\Rapls\PDFImageCreator\ContentUse::idLikesSql(392, 'strval')), 'post_content LIKE %s')) . ')) OR (post_excerpt LIKE %s AND (post_excerpt LIKE %s') && false === strpos($sql, 'REGEXP') && false !== strpos($sql, 'LOWER(post_content) LIKE %s OR LOWER(post_excerpt) LIKE %s') && false === strpos($sql, 'CONCAT') && 1 === substr_count($sql, 'LOWER(post_content)'),
         false !== strpos($sql, "post_type NOT IN ('attachment', 'revision')"),
         false !== strpos($sql, "post_status NOT IN ('auto-draft')"),
         1 === preg_match('/\bID > %d\b/', $sql),
     ], [true, true, true, true]);
+    // Review of 1.4.39's fixes: each column's ID LIKEs stand behind one for the
+    // ID's digits, so a post without them is passed over in one scan.
+    check('the SQL: the ID\'s digits asked first, each form only where they are', [
+        2 === substr_count($sql, 'LIKE %s AND ('),
+        in_array('%392%', (array) ($GLOBALS['content_patterns'][0] ?? []), true) || !isset($GLOBALS['content_patterns']),
+    ], [true, true]);
     $GLOBALS['content'] = [];
+
+    // Review of 1.4.39: a widget shows it -- a block widget by its name, an
+    // Image widget by its ID; neither was read.
+    $GLOBALS['deleted'] = [];
+    $shown(412, 410, '2026/10/wg-pdf-thumbnail.jpg');
+    $GLOBALS['content'] = [];
+    $GLOBALS['options']['widget_block'] = [2 => ['content' => '<!-- wp:image --><figure class="wp-block-image"><img src="https://example.test/wp-content/uploads/2026/10/wg-pdf-thumbnail-300x200.jpg" alt=""/></figure><!-- /wp:image -->'], '_multiwidget' => 1];
+    $byBlockWidget = [$generator->deleteThumbnail(410), $GLOBALS['deleted']];
+    unset($GLOBALS['options']['widget_block']);
+    $shown(414, 413, '2026/10/wi-pdf-thumbnail.jpg');
+    $GLOBALS['options']['widget_media_image'] = [3 => ['attachment_id' => 414, 'url' => 'https://cdn.example.test/x.jpg', 'size' => 'medium'], '_multiwidget' => 1];
+    $byImageWidget = [$generator->deleteThumbnail(413), $GLOBALS['deleted']];
+    unset($GLOBALS['options']['widget_media_image']);
+    $shown(416, 415, '2026/10/wn-pdf-thumbnail.jpg');
+    $GLOBALS['options']['widget_media_image'] = [3 => ['attachment_id' => 4160, 'url' => 'https://cdn.example.test/x.jpg'], '_multiwidget' => 1];
+    $notWidget = [$generator->deleteThumbnail(415), $GLOBALS['deleted']];
+    unset($GLOBALS['options']['widget_media_image']);
+    check('an image a widget shows is kept: a block widget by name, an Image widget by ID; another ID is not it', [$byBlockWidget, $byImageWidget, $notWidget], [[false, []], [false, []], [true, [416]]]);
+    // Review of 1.4.39's fixes: a byte that is not UTF-8 in a widget's text
+    // dropped that whole string from the JSON, the image named in it too.
+    $GLOBALS['deleted'] = [];
+    $shown(418, 417, '2026/10/wu-pdf-thumbnail.jpg');
+    $GLOBALS['options']['widget_text'] = [4 => ['text' => "caf\xE9 <img src=\"https://example.test/wp-content/uploads/2026/10/wu-pdf-thumbnail.jpg\">"], '_multiwidget' => 1];
+    $byBadText = [$generator->deleteThumbnail(417), $GLOBALS['deleted']];
+    unset($GLOBALS['options']['widget_text']);
+    check('  ...a widget\'s text with a stray non-UTF-8 byte still shows its image: kept', $byBadText, [false, []]);
 
     // Review after 1.4.38: a page builder keeps an image by ID alone.
     $GLOBALS['deleted'] = [];
@@ -520,6 +561,11 @@ namespace {
     $generator->deleteThumbnail(470);
     $reasons[] = $generator->keptReasonFor(470);
     check('why it was kept: shown, featured, another PDF\'s, not known; deleted: none', $reasons, ['shown', 'featured', 'shared', 'unknown', null]);
+    // Mutation testing of 1.4.39: a reason is this release's, not one left
+    // from the PDF's last.
+    $shown(434, 430, '2026/10/z6-pdf-thumbnail.jpg');
+    $generator->deleteThumbnail(430);
+    check('  ...the same PDF\'s next release, deleted: no reason left from the last', $generator->keptReasonFor(430), null);
 
     // Another attachment that is not a PDF -- an audio file's cover -- is a
     // featured image, not another PDF's thumbnail: ordinary, not left marked.
@@ -543,6 +589,16 @@ namespace {
     @unlink($refusedLog);
     $GLOBALS['refuse_delete'] = [];
     check('deletion refused while the PDF goes: ordinary, let go of, and said', [$refused, false !== strpos($refusedLogged, 'image #492 of PDF #490 could not be deleted with the PDF')], [[false, [], '', ''], true]);
+    // Mutation testing of 1.4.39: and said to be a failure, not a keep.
+    $shown(496, 495, '2026/10/z8-pdf-thumbnail.jpg');
+    $GLOBALS['refuse_delete'] = [496];
+    $release = new ReflectionMethod(\Rapls\PDFImageCreator\Generator::class, 'releaseThumbnail');
+    if (PHP_VERSION_ID < 80100) { $release->setAccessible(true); }
+    $refusedLogWas = ini_set('error_log', '/dev/null');
+    $releasedAs = $release->invoke($generator, 495, 496, true);
+    ini_set('error_log', (string) $refusedLogWas);
+    $GLOBALS['refuse_delete'] = [];
+    check('  ...released as failed', $releasedAs, 'failed');
 
     // An old thumbnail a regeneration kept, still attached to the PDF, goes
     // to the PDF's parent when the PDF is deleted; a marked one stays.
@@ -550,8 +606,9 @@ namespace {
     $GLOBALS['posts'][501] = (object) ['ID' => 501, 'post_type' => 'attachment', 'post_parent' => 500];
     $own(502, 500);
     $GLOBALS['posts'][502]->post_parent = 500;
+    $GLOBALS['cleaned'] = [];
     $generator->reparentKeptImages(500);
-    check('the PDF\'s ordinary images go to its parent; its marked thumbnail stays', [$GLOBALS['posts'][501]->post_parent, $GLOBALS['posts'][502]->post_parent], [77, 500]);
+    check('the PDF\'s ordinary images go to its parent, their cache cleared; its marked thumbnail stays', [$GLOBALS['posts'][501]->post_parent, $GLOBALS['posts'][502]->post_parent, $GLOBALS['cleaned']], [77, 500, [501]]);
     unset($GLOBALS['posts'][500], $GLOBALS['posts'][501], $GLOBALS['posts'][502]);
 
     // No file recorded: its address names it; with neither, kept.
@@ -560,9 +617,10 @@ namespace {
     $GLOBALS['meta'][530]['_rapls_pic_thumbnail_id'] = 532;
     $GLOBALS['posts'][532]->guid = 'https://example.test/wp-content/uploads/2026/10/zz-pdf-thumbnail.jpg';
     $GLOBALS['content'] = [741 => '<img src="/wp-content/uploads/2026/10/zz-pdf-thumbnail-300x200.jpg">'];
-    $noFile = [$generator->deleteThumbnail(530), $GLOBALS['deleted']];
+    $GLOBALS['wp_parse_url_calls'] = [];
+    $noFile = [$generator->deleteThumbnail(530), $GLOBALS['deleted'], $GLOBALS['wp_parse_url_calls']];
     $GLOBALS['content'] = [];
-    check('no file recorded: found by the address WordPress gave it', $noFile, [false, []]);
+    check('no file recorded: found by the address WordPress gave it, its path read by core\'s wp_parse_url()', $noFile, [false, [], [['https://example.test/wp-content/uploads/2026/10/zz-pdf-thumbnail.jpg', PHP_URL_PATH]]]);
     // The address is percent-encoded; the post holds the name as it is
     // (review of 1.4.38's fixes).
     $GLOBALS['deleted'] = [];
@@ -637,6 +695,24 @@ namespace {
     $library->onAttachmentDeleted(520);
     check('  ...an old thumbnail a regeneration kept goes to the PDF\'s parent too', $GLOBALS['posts'][521]->post_parent, 8);
     unset($GLOBALS['posts'][520], $GLOBALS['posts'][521]);
+    // A thumbnail shared with a translation's copy, its PDF deleted with
+    // "Hide Generated Images" on (off, the image is let go of as an ordinary
+    // one, as above): the
+    // translation's now, attached to it, not to the PDF that is gone (review
+    // of 1.4.39's fixes).
+    $own(532, 530);
+    $GLOBALS['posts'][530] = (object) ['ID' => 530, 'post_type' => 'attachment', 'post_parent' => 9];
+    $GLOBALS['posts'][531] = (object) ['ID' => 531, 'post_type' => 'attachment', 'post_parent' => 9, 'post_mime_type' => 'application/pdf'];
+    $GLOBALS['posts'][532]->post_parent = 530;
+    $GLOBALS['meta'][530]['_rapls_pic_thumbnail_id'] = 532;
+    $GLOBALS['meta'][531]['_rapls_pic_thumbnail_id'] = 532;
+    $GLOBALS['mimes'][530] = 'application/pdf';
+    $GLOBALS['mimes'][531] = 'application/pdf';
+    $prop->setValue($settings, ['hide_generated_images' => true]);
+    $library->onAttachmentDeleted(530);
+    $prop->setValue($settings, ['hide_generated_images' => false]);
+    check('  ...one a translation shares goes to that translation, still its thumbnail', [$GLOBALS['posts'][532]->post_parent, (int) ($GLOBALS['meta'][532]['_rapls_pic_source_pdf'] ?? 0), $GLOBALS['meta'][532]['_rapls_pic_is_thumbnail'] ?? ''], [531, 531, '1']);
+    unset($GLOBALS['posts'][530], $GLOBALS['posts'][531], $GLOBALS['posts'][532]);
 
     // With it on, and a post showing the image: the same.
     $prop->setValue($settings, ['hide_generated_images' => true]);

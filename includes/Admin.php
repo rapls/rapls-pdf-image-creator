@@ -316,6 +316,8 @@ final class Admin
                 'processingFile' => __('Processing: %s', 'rapls-pdf-image-creator'),
                 'failed' => __('Failed', 'rapls-pdf-image-creator'),
                 'requestFailed' => __('Request failed', 'rapls-pdf-image-creator'),
+                /* translators: 1: PDF file name, 2: what happened to it */
+                'fileResult' => __('%1$s: %2$s', 'rapls-pdf-image-creator'),
                 'errorShort' => __('Error', 'rapls-pdf-image-creator'),
                 /* translators: %s: HTTP status text from the server */
                 'httpStatus' => __('Status: %s', 'rapls-pdf-image-creator'),
@@ -498,16 +500,22 @@ final class Admin
             $code = is_string($_GET['rapls_pic_error']) ? sanitize_key(wp_unslash($_GET['rapls_pic_error'])) : '';
             $reason = self::failureReason($code);
 
-            echo '<div class="notice notice-error is-dismissible">';
-            echo '<p>' . esc_html__('Failed to generate PDF thumbnail.', 'rapls-pdf-image-creator');
+            // Each sentence joined by the translatable pattern the success
+            // notice uses: a language that puts no space after a sentence
+            // got one (review of 1.4.39).
+            $message = esc_html__('Failed to generate PDF thumbnail.', 'rapls-pdf-image-creator');
             if ('' !== $reason) {
-                echo ' ' . esc_html($reason);
+                /* translators: 1: the first sentence, 2: the next. */
+                $message = sprintf(esc_html(__('%1$s %2$s', 'rapls-pdf-image-creator')), $message, esc_html($reason));
             }
             if (current_user_can('manage_options')) {
-                echo ' <a href="' . esc_url(admin_url('options-general.php?page=' . self::PAGE_SLUG . '#tab-status')) . '">'
-                    . esc_html__('See the Status tab', 'rapls-pdf-image-creator') . '</a>';
+                /* translators: 1: the first sentence, 2: the next. */
+                $message = sprintf(esc_html(__('%1$s %2$s', 'rapls-pdf-image-creator')), $message, '<a href="' . esc_url(admin_url('options-general.php?page=' . self::PAGE_SLUG . '#tab-status')) . '">'
+                    . esc_html__('See the Status tab', 'rapls-pdf-image-creator') . '</a>');
             }
-            echo '</p>';
+            echo '<div class="notice notice-error is-dismissible">';
+            // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- each part escaped above
+            echo '<p>' . $message . '</p>';
             echo '</div>';
         }
     }

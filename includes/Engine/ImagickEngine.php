@@ -35,6 +35,20 @@ final class ImagickEngine implements EngineInterface
     }
 
     /**
+     * Get the colour profile resolver
+     *
+     * @deprecated 1.4.40 Kept for code that reached it through
+     *             Generator::getEngines() or the
+     *             rapls_pdf_image_creator_engines filter: it was public up to
+     *             1.4.20, and taking a public method away is a fatal error in
+     *             whatever still calls it. Nothing here calls it.
+     */
+    public function getColorProfile(): ColorProfile
+    {
+        return $this->colorProfile;
+    }
+
+    /**
      * {@inheritdoc}
      */
     public function getName(): string
@@ -1014,18 +1028,19 @@ final class ImagickEngine implements EngineInterface
             $code = \Rapls\PDFImageCreator\FailureCode::fromExceptionMessage($e->getMessage(), true);
             $pages = null;
 
-            // ImageMagick's count draws every page, at 2 dpi and under no
-            // limit of ours: not asked where the file's boxes say a page in it
-            // is too large to draw small, or cannot say (review after 1.4.37).
+            // The count is the file's own page tree, read from its bytes.
+            // ImageMagick's count (pingImage) was asked first until the review
+            // of 1.4.39: it has Ghostscript draw every page it finds at 2 dpi,
+            // and nothing bounds how many pages a file holds -- no limit of
+            // ours bounded its time or its temporary files, and the filter it
+            // was sized on was asked here, inside a catch, where a listener's
+            // exception escaped the conversion. The file's figure can be
+            // wrong: a /Count it overstates, or one an update deleting pages
+            // left behind, makes a page that is not there a render error
+            // rather than page_out_of_range. Accepted: the reason is a
+            // message; the pass was unbounded.
             if ((int) $options['page'] > 0 && \Rapls\PDFImageCreator\FailureCode::RENDER_ERROR === $code) {
-                // ImageMagick's count first: the file's own figure is the
-                // largest /Count it states, which a file can overstate and an
-                // update that deletes pages leaves behind -- and the page then
-                // came back as a render error (review after 1.4.34). One
-                // Ghostscript pass over the document, on a failure only; the
-                // file's figure where ImageMagick cannot count.
-                $pages = self::smallEnoughToCount($pdfPath, $this->renderPixelLimit($pdfPath, $options)) ? self::pagesPinged($pdfPath) : null;
-                $pages = null !== $pages ? $pages : self::pagesFromBytes($pdfPath);
+                $pages = self::pagesFromBytes($pdfPath);
             }
 
             if (null !== $pages && $pages <= (int) $options['page']) {
@@ -1095,38 +1110,6 @@ final class ImagickEngine implements EngineInterface
      */
     private const PAGE_SUFFIX_TRANSIENT = 'rapls_pic_page_suffix';
 
-    /**
-     * How many pages ImageMagick finds, by pingImage() -- a Ghostscript pass
-     * over the whole document
-     *
-     * Not free: Ghostscript draws every page at 2 dpi for it (measured, IM
-     * 7.1.1 and gs 10.04: 2.7 s for a 100-page document, against 0.13 s to
-     * draw one page; review of 1.4.32), so it is asked once, on a failure
-     * only. Not under the measuring read's limits: the memory is
-     * Ghostscript's, which they do not reach (291 MB for a document holding
-     * a 300,000-point page, with them or without), and a page past them is
-     * left out of the count -- that document was counted as one page
-     * (review after 1.4.34).
-     */
-    private static function pagesPinged(string $pdfPath): ?int
-    {
-        $count = null;
-
-        try {
-            $count = new \Imagick();
-            $count->pingImage($pdfPath);
-            $pages = (int) $count->getNumberImages();
-
-            return $pages > 0 ? $pages : null;
-        } catch (\Throwable $e) {
-            return null;
-        } finally {
-            if (null !== $count) {
-                $count->clear();
-            }
-        }
-    }
-
     /** The most page-tree dictionaries read from one file's bytes (pagesFromBytes()). */
     private const PAGE_TREE_MAX_NODES = 10000;
 
@@ -1140,13 +1123,13 @@ final class ImagickEngine implements EngineInterface
      * and, in a file saved over itself, never less than the newest root's.
      * Null when the tree cannot be read plainly -- in object streams (a
      * compressed tree), in a dictionary with another inside it, past
-     * PAGE_TREE_MAX_BYTES -- and the caller asks ImageMagick instead.
-     * The figure is the file's word, and Ghostscript does not go by it: it
-     * draws the pages it finds by walking the tree. A damaged file can state
-     * fewer, a file can simply lie, and an update that deletes pages leaves
-     * the old /Count behind -- so convert() asks ImageMagick first and falls
-     * back on this only where ImageMagick cannot count, and nothing is ever
-     * sized on it (readPage()).
+     * PAGE_TREE_MAX_BYTES -- and a page past the end is then a render
+     * error. The figure is the file's word, and Ghostscript does not go by
+     * it: it draws the pages it finds by walking the tree. A damaged file can
+     * state fewer, a file can simply lie, and an update that deletes pages
+     * leaves the old /Count behind -- so it only words a failure message,
+     * and nothing is ever sized on it (readPage()). ImageMagick is not asked
+     * to count instead: its count draws every page (review of 1.4.39).
      */
     public static function pagesFromBytes(string $pdfPath): ?int
     {
@@ -1346,7 +1329,10 @@ final class ImagickEngine implements EngineInterface
      * points -- fails the measuring read. Where that read's error is
      * libpng's "Invalid IHDR data" it is reported as too large, as before
      * 1.4.34; a build that fails it otherwise (a delegates error was seen on
-     * one) reports a render error. Either way it is not drawn. Left so: drawing
+     * one) reports a render error, which says the page could not be measured
+     * where the file's largest box keeps it from being measured more finely
+     * (review of 1.4.39: it gave the read's words, about a configuration
+     * file). Either way it is not drawn. Left so: drawing
      * it wider to get one pixel would draw its length past the limit, and
      * such a page has nothing a thumbnail could show (review after 1.4.36).
      *
@@ -1459,6 +1445,24 @@ final class ImagickEngine implements EngineInterface
                 // fails there too fails as the read would.
                 $measureAt = min($resolution, self::SMALL_PAGE_RESOLUTION);
                 $measured = $this->measurePage($pdfPath . '[' . $page . ']', $measureAt, (int) ceil(sqrt($pixels)), $pixels);
+            } elseif ($measureAt < min($resolution, self::SMALL_PAGE_RESOLUTION)
+                && \Rapls\PDFImageCreator\FailureCode::RENDER_ERROR === \Rapls\PDFImageCreator\FailureCode::fromExceptionMessage($e->getMessage(), true)) {
+                // A page under a pixel at the measuring density, in a file
+                // with a page far too large to measure it more finely: not
+                // measured again, since the page asked might be that large
+                // one, and Ghostscript would draw it before any limit could
+                // refuse it. 1.4.20 drew a 300,000 by 10 point strip beside a
+                // 230,000-point page; it is not drawn now. Accepted, and said
+                // as it is -- the read's own words named a configuration file
+                // on one build (review of 1.4.39). A page past the end fails
+                // the same way where the file's page count cannot be read, so
+                // both are named (review of 1.4.39's fixes).
+                throw new \ImagickException(sprintf(
+                    /* translators: 1: the lowest resolution, in dpi; 2: ImageMagick's own message */
+                    __('This page could not be measured at %1$s dpi, the lowest resolution used, and this PDF holds a page too large to measure it more finely. The page may not be in this PDF, or it may be too thin to draw. (%2$s)', 'rapls-pdf-image-creator'),
+                    (string) self::MIN_RESOLUTION,
+                    $e->getMessage()
+                ));
             } else {
                 throw $e;
             }
@@ -1511,39 +1515,6 @@ final class ImagickEngine implements EngineInterface
         return $box[0] * ($density / 72) ** 2 <= $pixels && $box[1] * $density / 72 <= ceil(sqrt($pixels));
     }
 
-    /**
-     * Whether ImageMagick may be asked to count this file's pages
-     *
-     * The count draws every page at 2 dpi, under no limit of ours, on a
-     * failure only (pagesPinged()). Asked only where the file's boxes say
-     * PAGES_ASSUMED pages of the largest size fit this site's limit even so
-     * -- not the pages the file states: its /Count is its word, a file can
-     * state 1 and hold thousands, and Ghostscript draws what it finds by
-     * walking the tree. Sizing the count on /Count was the bound this file
-     * forbids everywhere else (review of 1.4.38's fixes; the bound was one
-     * page's before that, review after 1.4.38). Under the default limit
-     * that is a file whose largest page is up to about 2,280 points square
-     * (A0 is 2,384 by 3,370): a page past the end of a document with larger
-     * pages is reported from the file's own figure, as a message only --
-     * where the page tree is in an object stream, as a render error.
-     * Accepted: a better reason for a missing page is not worth an
-     * unbounded Ghostscript pass.
-     */
-    private static function smallEnoughToCount(string $pdfPath, float $limit): bool
-    {
-        $box = self::largestPageBox($pdfPath);
-
-        if (null === $box) {
-            return false;
-        }
-
-        return $box[0] * (self::MIN_RESOLUTION / 72) ** 2 * self::PAGES_ASSUMED
-            <= min($limit, (float) self::RENDER_MAX_PIXELS);
-    }
-
-    /** The pages a file is taken to hold, for smallEnoughToCount(): never the figure it states. */
-    private const PAGES_ASSUMED = 10000;
-
     /** The longest side a measuring read is given, in pixels: an int, whatever the box says. */
     private const SIDE_MAX = 1000000000;
 
@@ -1583,9 +1554,11 @@ final class ImagickEngine implements EngineInterface
     /**
      * The resolution a page of this size in points is drawn at within the limit
      *
-     * A size of 0 or less is a guard, not a case: the boxes are at least
-     * Letter and A4 (largestPageBox()) and a measured page a pixel more each
-     * way (measurePage()), so none reaches here. A page whose box really is
+     * A size of 0 or less, or one that is not a finite number, is a guard
+     * here as well as where the sizes come from: scanPageBoxes() gives no
+     * answer for a box that is not finite (review after 1.4.38), the boxes
+     * are at least Letter and A4, and a measured page is a pixel more each
+     * way (measurePage()), so an ordinary file never reaches it. A page whose box really is
      * 0 by 0 fails in Ghostscript before anything is measured -- measured on
      * Ghostscript 10.04: "/undefined in --runpdf--", "[/PageSize [0 0]]", a
      * render error -- so the "too large" convert() would report for the null
@@ -1902,8 +1875,9 @@ final class ImagickEngine implements EngineInterface
                 $height = abs((float) $numbers[4] - (float) $numbers[2]);
 
                 // A number past what a float holds is INF, and INF - INF is
-                // NaN. Where max() and min() meet a NaN, PHP 8.2 and earlier
-                // answer by the order of the arguments: a box of 400-digit
+                // NaN. Where max() and min() meet a NaN, PHP answers by the
+                // order of the arguments -- 8.5 as well as 8.2, measured
+                // (review of 1.4.39; this said 8.2 and earlier): a box of 400-digit
                 // numbers after a 14,400-point one made the largest Letter
                 // and A4, and the page was drawn at 150 dpi, unmeasured
                 // (review after 1.4.38). A size that is not one is no answer.
@@ -2688,9 +2662,18 @@ final class ImagickEngine implements EngineInterface
         // By the name first: ImageMagick goes by it as well as by the bytes,
         // so a file named .pdf whose header comes after the first 1024 bytes,
         // or PostScript with no header at all, is drawn by Ghostscript too,
-        // and each was read unbounded (review of 1.4.38's fixes).
-        if (1 === preg_match('/\.(?:pdf|ps|eps|epsf|epsi|ai)\z/i', $path)) {
-            return true;
+        // and each was read unbounded (review of 1.4.38's fixes). The names
+        // of ImageMagick's Ghostscript coders: PDF, PostScript and EPS in
+        // their spellings, Illustrator, XPS and PCL (review of 1.4.39). Not a
+        // file whose bytes ImageMagick reads as a raster by their own magic
+        // -- a PNG named .pdf is read as a PNG, and bounded as a page one
+        // past 6,325 pixels a side was refused, which 1.4.20 read -- unless
+        // a PDF or PostScript header is in its first 1024 bytes too. Only
+        // the magics readByOwnMagic() lists: a TGA's shape is no magic at
+        // all, and a format whose coder needs a library a build may lack
+        // could fall back to the name, and to Ghostscript.
+        if (1 === preg_match('/\.(?:pdf|ps|ps2|ps3|eps|eps2|eps3|epsf|epsi|epi|ept|ept2|ept3|ai|xps|pcl)\z/i', $path)) {
+            return !(self::readByOwnMagic($head) && false === strpos($head, '%PDF-') && false === strpos($head, '%!'));
         }
 
         // PostScript and PDF begin with "%": at the start, or after a byte
@@ -2734,7 +2717,7 @@ final class ImagickEngine implements EngineInterface
         if (1 === preg_match('/\A(?:\x89PNG\r\n\x1A\n|P[1-7Ff]\s|\xFF\xD8\xFF|\x00\x00\x00\x0CjP  \r\n\x87\n|\xFF\x4F\xFF\x51|\xFF\x0A|\x00\x00\x00\x0CJXL \r\n\x87\n|II\*\x00|MM\x00\*|II\+\x00|MM\x00\+|GIF8[79]a|BM|RIFF....WEBP|....ftyp|8BPS|\x00\x00[\x01\x02]\x00)/s', $head)) {
             return true;
         }
-        if (1 === preg_match('/\A(?:\x0A[\x00\x02-\x05]\x01[\x01\x02\x04\x08]|\x76\x2F\x31\x01|id=ImageMagick|SDPX|XPDS|DDS \x7C\x00\x00\x00|SIMPLE  = {20}T|#\?(?:RADIANCE|RGBE)\n|\x01\xDA[\x00\x01][\x01\x02]|\/\* XPM \*\/|#define [^\s]+_width |gimp xcf |qoif)/', $head)) {
+        if (1 === preg_match('/\A(?:\x0A[\x02\x05]\x01[\x01\x02\x04\x08]|\x76\x2F\x31\x01|id=ImageMagick|SDPX|XPDS|DDS \x7C\x00\x00\x00|SIMPLE  = {20}T|#\?(?:RADIANCE|RGBE)\n|\x01\xDA[\x00\x01][\x01\x02]|\/\* XPM \*\/|#define [^\s]+_width |gimp xcf |qoif)/', $head)) {
             return true;
         }
         if (strlen($head) >= 132 && 'DICM' === substr($head, 128, 4)) {
@@ -2764,6 +2747,31 @@ final class ImagickEngine implements EngineInterface
         }
 
         return false;
+    }
+
+    /**
+     * Does the file start with a magic ImageMagick reads it by, over its name?
+     *
+     * For a file named as a Ghostscript format (drawnByGhostscript()): the
+     * bytes choose the coder where ImageMagick knows them, and then nothing
+     * reaches Ghostscript. Only rasters it reads by itself or with a library
+     * every build that reads PDF has -- PNG, JPEG, GIF, TIFF, BMP, PNM, PAM
+     * and PFM, Photoshop, PCX, MIFF, SGI, XBM, XPM, DDS, FITS, Radiance HDR,
+     * DPX and DICOM. Not ISO media, JPEG 2000, JPEG XL, WebP or OpenEXR,
+     * whose coders need a library a build may lack, nor QOI, which
+     * ImageMagick 6 has no coder for, nor TGA or icons, which have no magic
+     * it reads: named .pdf, any of those may go to Ghostscript by the name,
+     * and is bounded. BigTIFF by the eight bytes ImageMagick's IsTIFF()
+     * asks for, not four: four let other bytes named .pdf past the bound
+     * (review of 1.4.39's fixes).
+     */
+    private static function readByOwnMagic(string $head): bool
+    {
+        if (1 === preg_match('/\A(?:\x89PNG\r\n\x1A\n|\xFF\xD8\xFF|GIF8[79]a|II\*\x00|MM\x00\*|II\+\x00\x08\x00\x00\x00|MM\x00\+\x00\x08\x00\x00|BM|P[1-7Ff]\s|8BPS|\x0A[\x02\x05]\x01[\x01\x02\x04\x08]|id=ImageMagick|\x01\xDA[\x00\x01][\x01\x02]|#define [^\s]+_width |\/\* XPM \*\/|DDS \x7C\x00\x00\x00|SIMPLE  = {20}T|#\?(?:RADIANCE|RGBE)\n|SDPX|XPDS)/', $head)) {
+            return true;
+        }
+
+        return strlen($head) >= 132 && 'DICM' === substr($head, 128, 4);
     }
 
     /** GS_OPTIONS as it was before the retry set it; null when it was unset. */
@@ -3038,7 +3046,7 @@ final class ImagickEngine implements EngineInterface
         if (in_array($name, ['NOSAFER', 'DELAYSAFER', 'DOPS', 'OUTPUTFILE', 'DEVICE', 'STDOUT', 'STDERR', 'FIXEDMEDIA', 'FIXEDRESOLUTION', 'PAPERSIZE', 'WRITESYSTEMDICT', 'DELAYBIND', 'NOOUTERSAVE', 'FIRSTPAGE', 'LASTPAGE', 'PAGELIST'], true)
             || preg_match('/(?:DIR|PATH|PROFILE|FILE)\z/', $name)
             || preg_match('/MAP\z/', $name)
-            || preg_match('/BUFFER|BITMAP|BAND|THREAD/', $name)
+            || preg_match('/BUFFER|BITMAP|BAND|THREAD|COPIES|NEWPDF/', $name)
             || (false !== strpos($name, 'INTERPOLATE') && 'NOINTERPOLATE' !== $name)
             || 0 === strpos($name, 'PERMIT')
             || 0 === strpos($name, 'DEVICE')

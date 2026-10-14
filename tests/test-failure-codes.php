@@ -167,8 +167,9 @@ check('  ...Ghostscript not found at all is still no PDF support', [FailureCode:
 check('  ...no decode delegate for PDF is no PDF support', FailureCode::fromExceptionMessage("NoDecodeDelegateForThisImageFormat `PDF' @ error/constitute.c/ReadImage/741", true), FailureCode::PDF_UNSUPPORTED);
 check('  ...and the availability check reads them as before', FailureCode::fromExceptionMessage($gsFailed), FailureCode::PDF_UNSUPPORTED);
 $engineSource = (string) file_get_contents(RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/ImagickEngine.php');
-// Twice in convert(), and once where a measuring read is judged too large.
-check('  ...convert() asks as a conversion', substr_count($engineSource, 'FailureCode::fromExceptionMessage($e->getMessage(), true)'), 3);
+// Twice in convert(), once where a measuring read is judged too large, and
+// once where a page that failed to measure is told apart (review of 1.4.39).
+check('  ...convert() asks as a conversion', substr_count($engineSource, 'FailureCode::fromExceptionMessage($e->getMessage(), true)'), 4);
 
 echo "\n=== Review after 1.4.32: ImageMagick 6's per-file words, and one reading for the check ===\n";
 

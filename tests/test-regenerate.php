@@ -121,6 +121,15 @@ namespace {
         if (!empty($GLOBALS['metadata_dies'])) {
             throw new \RuntimeException('a listener died');
         }
+        // As core past big_image_size_threshold, on an output-format
+        // conversion or an EXIF rotation: a copy beside the file, named by the
+        // attachment, the drawn file kept as original_image (review of 1.4.39).
+        if (!empty($GLOBALS['core_scales'])) {
+            $scaled = preg_replace('/(\.[^.]+)$/', '-scaled$1', $file);
+            copy($file, $scaled);
+            $GLOBALS['files'][(int) $id] = $scaled;
+            return ['file' => basename($scaled), 'sizes' => [], 'original_image' => $GLOBALS['core_scales'] === 'elsewhere' ? 'someone-elses.jpg' : basename($file)];
+        }
         return !empty($GLOBALS['no_metadata']) ? false : ['file' => basename($file), 'sizes' => []];
     }
     function wp_update_attachment_metadata($id, $meta) {
@@ -575,6 +584,22 @@ namespace {
     $GLOBALS['attach_stuck'] = false;
     check('  ...cannot be pointed back: nothing deleted, not even the other file', [$made, isset($GLOBALS['posts'][$before]), is_file($other)], [null, true, true]);
 
+    // Review of 1.4.39: core's own "-scaled" copy past 2560 pixels a side
+    // names the attachment, the drawn file is its original_image. Every
+    // such thumbnail was thrown away, and the -scaled file left on disk.
+    $pdf(242, 243);
+    $GLOBALS['core_scales'] = true;
+    $before = $GLOBALS['next_id'];
+    $made = $generator->generate(242, true);
+    unset($GLOBALS['core_scales']);
+    check('core named its -scaled copy, the drawn file as original_image: kept, and the PDF names it', [$made, (int) ($GLOBALS['meta'][242]['_rapls_pic_thumbnail_id'] ?? 0), (bool) preg_match('/-scaled\.[a-z]+$/', (string) ($GLOBALS['files'][$before] ?? ''))], [$before, $before, true]);
+    $pdf(244, 245);
+    $GLOBALS['core_scales'] = 'elsewhere';
+    $before = $GLOBALS['next_id'];
+    $made = $generator->generate(244, true);
+    unset($GLOBALS['core_scales']);
+    check('  ...but an original_image that is another file is still another file: removed, old kept', [$made, isset($GLOBALS['posts'][$before]), $GLOBALS['meta'][244]['_rapls_pic_thumbnail_id'] ?? null], [null, false, 245]);
+
     echo "\n--- R58-03: an old thumbnail that cannot be deleted does not fail the new one ---\n";
 
     $pdf(280, 281);
@@ -582,6 +607,9 @@ namespace {
     $made = $generator->generate(280, true);
     $GLOBALS['undeletable'] = 0;
     check('old delete refused: new one kept and returned, old one still there', [is_int($made), (int) ($GLOBALS['meta'][280]['_rapls_pic_thumbnail_id'] ?? 0) === $made, isset($GLOBALS['posts'][281])], [true, true, true]);
+    // Review of 1.4.39: and an ordinary image, not one marked and hidden
+    // that nothing names.
+    check('  ...the old one kept as an ordinary image', [isset($GLOBALS['meta'][281]['_rapls_pic_is_thumbnail']), isset($GLOBALS['meta'][281]['_rapls_pic_source_pdf'])], [false, false]);
 
     echo "\n--- R58-04: exceptions do not leave files, nor turn success into failure ---\n";
 
@@ -816,6 +844,16 @@ namespace {
     $bulkKept = $call([$bulk, 'ajaxGenerate'], ['pdf_id' => 101, 'force' => 1]);
     $GLOBALS['content'] = [];
     check('  ...and Bulk Generate says why it kept one, and which', [$bulkKept[0], false !== strpos((string) $GLOBALS['json_message'], 'Thumbnail generated. A post may still show the previous thumbnail'), $GLOBALS['json_data']['kept_previous'] ?? null], [true, true, 102]);
+    $GLOBALS['json_message'] = null;
+    $GLOBALS['json_data'] = null;
+    $call([$bulk, 'ajaxGenerate'], ['pdf_id' => 101, 'force' => 1]);
+    // Mutation testing of 1.4.39: the reason is this PDF's, not "shown"
+    // whatever it was.
+    $GLOBALS['meta'][908]['_thumbnail_id'] = (string) ($GLOBALS['meta'][101]['_rapls_pic_thumbnail_id'] ?? '');
+    $GLOBALS['json_message'] = null;
+    $call([$bulk, 'ajaxGenerate'], ['pdf_id' => 101, 'force' => 1]);
+    unset($GLOBALS['meta'][908]);
+    check('  ...a featured image kept is said as one', false !== strpos((string) $GLOBALS['json_message'], 'featured image, or another item'), true);
     $GLOBALS['json_message'] = null;
     $GLOBALS['json_data'] = null;
     $call([$bulk, 'ajaxGenerate'], ['pdf_id' => 101, 'force' => 1]);

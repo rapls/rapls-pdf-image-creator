@@ -55,6 +55,42 @@ final class ContentUse
     public const SKIP_STATUSES = ['auto-draft'];
 
     /**
+     * The widgets' options, read as one more piece of content
+     *
+     * A block widget's image block, a Text or Custom HTML widget's <img>,
+     * an Image widget's attachment_id and a Gallery widget's ids hold the
+     * image as a post's content does, and none of them was read: the
+     * image was deleted under the sidebar (review of 1.4.39).
+     */
+    public const WIDGET_OPTIONS = ['widget_block', 'widget_text', 'widget_custom_html', 'widget_media_image', 'widget_media_gallery'];
+
+    /**
+     * The widgets' settings as one string, for shows() and the rest
+     *
+     * JSON, so a key and its number stand as "attachment_id":71 does in a
+     * block's attributes, and a name as it does there. Reading one too
+     * many only keeps an image. A string with a byte that is not UTF-8 keeps
+     * the rest of itself (JSON_INVALID_UTF8_SUBSTITUTE, PHP 7.2): partial
+     * output alone dropped the whole string (review of 1.4.39's fixes).
+     */
+    public static function widgetContent(): string
+    {
+        if (!function_exists('get_option')) {
+            return '';
+        }
+        $widgets = [];
+        foreach (self::WIDGET_OPTIONS as $option) {
+            $value = get_option($option, []);
+            if (is_array($value)) {
+                $widgets[] = $value;
+            }
+        }
+        $json = [] === $widgets ? '' : json_encode($widgets, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE | JSON_PARTIAL_OUTPUT_ON_ERROR);
+
+        return is_string($json) ? $json : '';
+    }
+
+    /**
      * A file name without folder, extension or size suffix, lower case
      *
      * "2026/10/A-pdf-thumbnail-300x200.jpg" and "a-pdf-thumbnail.jpg" both
@@ -211,15 +247,14 @@ final class ContentUse
         // answer nothing, which read as no ID at all (review after 1.4.36).
         $blocks = [];
         for ($at = 0; false !== ($at = strpos($content, 'wp:', $at)); $at = $end) {
-            $end = strpos($content, '-->', $at);
-            if (false === $end) {
-                break;
-            }
             // The comment's opening before "wp:", in any spacing, and the
             // block's name after it, "image" or "core/image": a fixed
             // "<!-- wp:image" missed "<!--  wp:image", a line break, and
             // the full name (review after 1.4.36).
             // Within a few characters before it: white space is all there is.
+            // Asked before the "-->" is looked for: looked for first, at
+            // every "wp:" of a post that holds many and no image block, it
+            // read the rest of the post each time (review of 1.4.39).
             $from = max(0, $at - 64);
             $open = strrpos(substr($content, $from, $at - $from), '<!--');
             $open = false === $open ? false : $from + $open;
@@ -227,6 +262,10 @@ final class ContentUse
                 || 1 !== preg_match('/\Awp:(?:core\/)?image\s/', substr($content, $at, 20))) {
                 $end = $at + 3;
                 continue;
+            }
+            $end = strpos($content, '-->', $at);
+            if (false === $end) {
+                break;
             }
             $comment = substr($content, $open, $end - $open);
             $found = preg_match('/\A<!--\s+wp:(?:core\/)?image\s+(\{.*\})\s*\/?\z/s', $comment, $one);
@@ -286,8 +325,9 @@ final class ContentUse
      * entity-quoted value (ids=&quot;12&quot;, &#34;12&#34;), and
      * "wp-image-"; then up to 64 spaces, quotes and backslashes (an
      * attribute quoted inside a string, image=\"555\"; indented JSON) --
-     * bounded, as an unbounded run gave MySQL 8's ICU a run to try from
-     * every such character of a long post, under regexp_time_limit. Or a
+     * bounded, as it was when the SQL asked it too (an unbounded run gave
+     * MySQL 8's ICU a run to try from every such character of a long post,
+     * under regexp_time_limit). Or a
      * digit and white space: the second and later IDs of a list that spaces
      * divide, as WordPress's own wp_parse_id_list() reads [gallery ids="1
      * 555"] -- a list that only ",", "=" or "[" could start missed them, and
@@ -299,35 +339,50 @@ final class ContentUse
      * written \u0022 -- json_encode()'s JSON_HEX_QUOT -- is a quote (review
      * of 1.4.38's fixes). Not counted, and accepted: a run of more than 64
      * spaces or quotes before an ID, which no editor or builder writes, and
-     * "\U0022", which JSON does not define (its escape is a lower-case u).
+     * "\U0022", which JSON does not define (its escape is a lower-case u);
+     * an ID written with a sign, in hex or with an exponent ("+555",
+     * "0x22b", "5.55e2"), as no editor or builder writes an attachment's ID
+     * (review of 1.4.39); and an ID whose digits are themselves written as
+     * \u escapes ("\u0035\u0035\u0035"), which PHP reads and the SQL does not
+     * ask for, for the same reason (review of 1.4.39's fixes).
      *
-     * The SQL asks a superset. The first branch in a REGEXP every MySQL and
-     * MariaDB read alike (ID_CONTEXT_SQL: no backslash inside a bracket,
-     * which they do not); the second as LIKEs on the white space before the
-     * ID (idLikesSql()), not in the REGEXP: "[0-9]" there had MySQL 8's ICU
-     * try every digit of every candidate post for a two- or three-digit ID,
-     * under regexp_time_limit, and a query that runs past it fails -- the
-     * image is then kept, but kept every time (review of 1.4.38's fixes).
+     * The SQL asks a superset, with LIKE only (idLikesSql()): whatever
+     * stands right before the ID's first digit here -- one of the context
+     * characters, "-" of "wp-image-", white space, a quote, a backslash or a
+     * leading zero -- is asked as that character and the ID, side by side.
+     * It was a REGEXP: MySQL 8 runs one through ICU under regexp_time_limit,
+     * and MariaDB through PCRE, which past its own limits only warns and
+     * counts the row as not matching -- the post was not read, and the image
+     * it showed was deleted; MySQL 8's failure kept it, but kept it every
+     * time (review of 1.4.39).
      */
     private const ID_CONTEXT = '(?:(?:[=:,|;\[]|wp-image-)[\s"\'\\\\]{0,64}|(?<=\d)[ \t\r\n]{1,8})0*';
-    private const ID_CONTEXT_SQL = '([=:,|;]|\\[|wp-image-)[^0-9a-zA-Z]{0,64}0*';
 
     /**
-     * The LIKE patterns, for the SQL, that find an ID after a digit and white space
+     * Every character that can stand right before an ID's first digit
      *
-     * The white space right before it, each kind ID_CONTEXT's second branch
-     * takes, with or without leading zeros between; and any \u00XX escape
-     * before it, which the PHP writes out before it reads (a quote as
-     * \u0022). A superset, as the PHP then decides.
+     * ID_CONTEXT's context characters, "-" of "wp-image-", PCRE's \s,
+     * the quotes and backslash of a run, and a leading zero; idsIn()'s forms
+     * all end in one of them too.
+     */
+    private const ID_BEFORE = ['=', ':', ',', '|', ';', '[', '-', ' ', "\t", "\n", "\r", "\x0B", "\f", '"', "'", '\\', '0'];
+
+    /**
+     * The LIKE patterns, for the SQL, one of which any post naming this ID holds
      *
+     * Each of ID_BEFORE beside the ID, and any \u00XX escape before it,
+     * which the PHP writes out before it reads (a quote as \u0022). A
+     * superset, as the PHP then decides. $escape is the database's
+     * esc_like(): a backslash is LIKE's own escape.
+     *
+     * @param callable(string): string $escape
      * @return string[]
      */
-    public static function idLikesSql(int $id): array
+    public static function idLikesSql(int $id, callable $escape): array
     {
         $likes = [];
-        foreach ([' ', "\t", "\n", "\r"] as $space) {
-            $likes[] = '%' . $space . $id . '%';
-            $likes[] = '%' . $space . '0%' . $id . '%';
+        foreach (self::ID_BEFORE as $before) {
+            $likes[] = '%' . $escape($before . $id) . '%';
         }
         $likes[] = '%u00%' . $id . '%';
 
@@ -358,16 +413,6 @@ final class ContentUse
         unset($ids[0]);
 
         return $ids;
-    }
-
-    /**
-     * The regular expression, for MySQL's REGEXP, a post that could name this ID matches
-     *
-     * The ID after one of ID_CONTEXT's characters, and no digit after it.
-     */
-    public static function idRegexSql(int $id): string
-    {
-        return self::ID_CONTEXT_SQL . $id . '([^0-9]|$)';
     }
 
     /**
@@ -444,10 +489,23 @@ final class ContentUse
                 $fragments[] = $encoded;
             }
             if (1 === preg_match('/[^\x20-\x7e]/', $stem) && preg_match_all('/[\x21-\x7e]{4,}/', $stem, $runs)) {
-                usort($runs[0], static function (string $a, string $b): int {
-                    return strlen($b) - strlen($a);
+                $fragments[] = self::longest($runs[0]);
+            }
+        }
+        // A stem holding "--" gives its longest piece between them too: a
+        // block writes "--" in its JSON attributes as "\u002d\u002d" (an
+        // HTML comment may not hold it), so "report--pdf-thumbnail" -- from
+        // "report-.pdf" -- was not in the post as it is; the PHP reads the
+        // escapes and found it, but the SQL never handed it the post, and
+        // the image was deleted (review of 1.4.39).
+        foreach ($fragments as $fragment) {
+            if (false !== strpos($fragment, '--')) {
+                $pieces = array_filter(explode('--', $fragment), static function (string $piece): bool {
+                    return strlen($piece) >= 4;
                 });
-                $fragments[] = $runs[0][0];
+                if ([] !== $pieces) {
+                    $fragments[] = self::longest(array_values($pieces));
+                }
             }
         }
 
@@ -455,36 +513,44 @@ final class ContentUse
     }
 
     /**
-     * The LIKE patterns, by name, the SQL that narrows the posts read is made of
+     * The longest of some strings, the first of equals
      *
-     * One per stem fragment, '%fragment%'. The ID is asked apart, with
-     * idRegexSql(): one REGEXP per column instead of a LIKE per form of it,
-     * each of which had LOWER() work out the whole column again (review
-     * after 1.4.38).
-     *
-     * @param string[] $stems
-     * @return string[]
+     * @param string[] $strings
      */
-    public static function patterns(array $stems): array
+    private static function longest(array $strings): string
     {
-        return self::fragments($stems);
+        $longest = '';
+        foreach ($strings as $string) {
+            if (strlen($string) > strlen($longest)) {
+                $longest = $string;
+            }
+        }
+
+        return $longest;
     }
 
     /**
      * Whether a post could show the image, as the SQL that narrows the posts read asks it
      *
-     * A stem fragment, ignoring case, or the ID where an ID could stand.
+     * The same test the SQL makes, in PHP, for the tests to hold the PHP to:
+     * one of idLikesSql()'s patterns, or one of fragments() ignoring case.
      * idsIn(), idsInContext() and stemsIn() then decide.
      *
      * @param string[] $stems
      */
     public static function candidate(string $content, int $imageId, array $stems): bool
     {
-        if (1 === preg_match('/' . self::ID_CONTEXT . $imageId . '(?![0-9])/', self::unescapeJson($content))) {
+        foreach (self::ID_BEFORE as $before) {
+            if (false !== strpos($content, $before . $imageId)) {
+                return true;
+            }
+        }
+        $escape = strpos($content, 'u00');
+        if (false !== $escape && false !== strpos($content, (string) $imageId, $escape + 3)) {
             return true;
         }
         $content = strtr($content, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz');
-        foreach (self::patterns($stems) as $fragment) {
+        foreach (self::fragments($stems) as $fragment) {
             if (false !== strpos($content, $fragment)) {
                 return true;
             }

@@ -100,7 +100,8 @@ check('the digits must follow a form: "wp-image-71", "\"id\"…71", not 71 anywh
     ContentUse::candidate('71 <!-- wp:image {"id":5} -->', 71, []),
     ContentUse::candidate('<!-- wp:image {"lightbox":{"enabled":true},"id":71} -->', 71, []),
 ], [false, true, false, true]);
-check('the patterns are the name fragments; the ID is asked by REGEXP', [ContentUse::patterns(['d']), ContentUse::idRegexSql(71)], [['d'], '([=:,|;]|\\[|wp-image-)[^0-9a-zA-Z]{0,64}0*71([^0-9]|$)']);
+$likes71 = ContentUse::idLikesSql(71, static function (string $s): string { return addcslashes($s, '_%\\'); });
+check('the ID is asked by LIKE only: beside each character that can stand before it, and after a \\u00 escape', [count($likes71), $likes71[0], in_array('%\\\\71%', $likes71, true), end($likes71)], [18, '%=71%', true, '%u00%71%']);
 check('a density suffix with a fraction, "@1.5x"', [ContentUse::stem('d-300x200@1.5x.jpg'), array_keys(ContentUse::stemsIn('<img src="/u/d-300x200@1.5x.jpg">'))], ['d', ['d']]);
 check('a name partly percent-encoded, or with a character as an entity', [
     array_keys(ContentUse::stemsIn('<img src="/u/報告' . rawurlencode('書') . '-pdf-thumbnail.jpg">')),
@@ -134,18 +135,28 @@ check('  ...not a number in running text, nor a longer or a shorter one', [
     ContentUse::shows('[vc_single_image image="5550"]', 555, []),
     ContentUse::shows('[vc_single_image image="1555"]', 555, []),
     ContentUse::candidate('<p>555 apples</p>', 555, []),
-    ContentUse::candidate('[vc_single_image image="5550"]', 555, []),
-], [false, false, false, false, false]);
-// The SQL's regular expression asks what the PHP one asks, on the same samples.
-$sqlRegex = '/' . str_replace('/', '\\/', ContentUse::idRegexSql(555)) . '/';
-// The SQL's REGEXP, or one of its LIKEs on the white space before the ID.
-$sqlFinds = static function (string $content) use ($sqlRegex): bool {
-    if (1 === preg_match($sqlRegex, $content)) {
-        return true;
+], [false, false, false, false]);
+// The SQL's LIKEs, read as MySQL reads LIKE: "%" any run, "_" one
+// character, "\\" the next taken as it is.
+$likeRegex = static function (string $like): string {
+    $regex = '';
+    for ($i = 0, $n = strlen($like); $i < $n; $i++) {
+        $c = $like[$i];
+        if ('\\' === $c && $i + 1 < $n) {
+            $regex .= preg_quote($like[++$i], '/');
+        } elseif ('%' === $c) {
+            $regex .= '.*';
+        } elseif ('_' === $c) {
+            $regex .= '.';
+        } else {
+            $regex .= preg_quote($c, '/');
+        }
     }
-    foreach (ContentUse::idLikesSql(555) as $like) {
-        $regex = '/\A' . implode('.*', array_map(static function (string $part): string { return preg_quote($part, '/'); }, explode('%', $like))) . '\z/s';
-        if (1 === preg_match($regex, $content)) {
+    return '/\A' . $regex . '\z/s';
+};
+$sqlFinds = static function (string $content, int $id = 555) use ($likeRegex): bool {
+    foreach (ContentUse::idLikesSql($id, static function (string $s): string { return addcslashes($s, '_%\\'); }) as $like) {
+        if (1 === preg_match($likeRegex($like), $content)) {
             return true;
         }
     }
@@ -157,8 +168,8 @@ foreach (['[vc_single_image image="555"]', 'gallery_ids="12,555"', 'image_id="55
 }
 // The SQL only narrows: it may read a post the PHP then turns down, never
 // leave out one the PHP would keep.
-check('  ...the SQL\'s REGEXP finds every sample candidate() finds', array_map(static function (array $pair): bool { return !$pair[1] || $pair[0]; }, $asked), array_fill(0, 11, true));
-check('  ...and turns down the running text and the longer numbers', [$asked[7][0], $asked[8][0], $asked[10][0]], [false, false, false]);
+check('  ...the SQL\'s LIKEs find every sample candidate() finds, and candidate() every one they find', array_map(static function (array $pair): bool { return $pair[1] === $pair[0]; }, $asked), array_fill(0, 11, true));
+check('  ...turning down running text and a number with a digit before it; a longer one is read, and the PHP turns it down', [$asked[7][0], $asked[8][0], $asked[10][0], ContentUse::shows('image="5550"', 555, [])], [false, true, false, false]);
 
 echo "\n--- Review of 1.4.38's fixes ---\n";
 // A list that spaces divide, as wp_parse_id_list() reads it; an attribute
@@ -179,11 +190,11 @@ foreach ([
 ] as $what => $content) {
     check("$what: a candidate, shown, and found by the SQL", [ContentUse::candidate($content, 555, []), ContentUse::shows($content, 555, []), $sqlFinds($content)], [true, true, true]);
 }
-// The run of spaces and quotes is bounded at 64 in the REGEXP, and in the
-// PHP alike, so the PHP never counts what the SQL could not read (review of
-// 1.4.38's fixes).
+// The run of spaces and quotes is bounded at 64 in the PHP; the SQL reads
+// the post all the same (the quote right before the ID), and the PHP turns
+// it down -- reading one too many, never leaving one out (review of 1.4.39).
 $farOff = '{"id":' . str_repeat('"', 70) . '555}';
-check('  ...past 64 quotes: counted by neither the PHP nor the SQL', [ContentUse::shows($farOff, 555, []), $sqlFinds($farOff)], [false, false]);
+check('  ...past 64 quotes: not counted by the PHP, read by the SQL', [ContentUse::shows($farOff, 555, []), $sqlFinds($farOff)], [false, true]);
 check('  ...a number after a number with nothing between is not taken', [ContentUse::shows('[gallery ids="1555"]', 555, []), ContentUse::candidate('[gallery ids="1555"]', 555, [])], [false, false]);
 check('a name in JSON written with \\u escapes', [
     array_keys(ContentUse::stemsIn('<!-- wp:acme/card {"img":"https:\\/\\/x\\/u\\/\\u5831\\u544a\\u66f8-pdf-thumbnail.jpg"} /-->')),
@@ -202,6 +213,32 @@ $unread = str_repeat('=" " "', 2000) . '5';
 check('numbers the pattern cannot be run over: not "none", kept', [ContentUse::idsInContext($unread), ContentUse::shows($unread, 9, [])], [null, true]);
 ini_set('pcre.backtrack_limit', (string) $limitWas);
 ini_set('pcre.jit', (string) $jitWas);
+echo "\n--- Review of 1.4.39 ---\n";
+// A block writes "--" in its JSON attributes as \u002d\u002d: the PHP read
+// it, the SQL never handed it the post (from "report-.pdf").
+$dashed = '<!-- wp:acme/pdf-card {"thumb":"https:\\/\\/x\\/u\\/report\\u002d\\u002dpdf-thumbnail.jpg"} /-->';
+check('a name holding "--" written \\u002d\\u002d: shown, and a candidate by its longest piece', [ContentUse::shows($dashed, 9, ['report--pdf-thumbnail']), ContentUse::candidate($dashed, 9, ['report--pdf-thumbnail']), ContentUse::fragments(['report--pdf-thumbnail'])], [true, true, ['report--pdf-thumbnail', 'pdf-thumbnail']]);
+check('  ...a stem not all ASCII, its ASCII run holding "--"', ContentUse::fragments(['資料--pdf-thumbnail']), ['資料--pdf-thumbnail', strtolower(rawurlencode('資料--pdf-thumbnail')), '--pdf-thumbnail', 'pdf-thumbnail', '%e8%b3%87%e6%96%99']);
+check('an ID first in a list that is not a gallery\'s: {"image_ids":[555]}', [ContentUse::shows('<!-- wp:acme/slider {"image_ids":[555,12]} /-->', 555, []), $sqlFinds('{"image_ids":[555,12]}')], [true, true]);
+// A character outside the Basic Multilingual Plane is a pair of escapes,
+// decoded together or not at all.
+check('a name with a character JSON writes as a surrogate pair', ContentUse::shows('{"img":"\\/u\\/\\ud83d\\ude00-pdf-thumbnail.jpg"}', 9, [ContentUse::stem("\u{1F600}-pdf-thumbnail.jpg")]), true);
+$limitWas = ini_get('pcre.backtrack_limit');
+$jitWas = ini_get('pcre.jit');
+ini_set('pcre.backtrack_limit', '1000');
+ini_set('pcre.jit', '0');
+$longEscaped = '<img src="/u/\\u0072eport-pdf-thumbnail.jpg">' . str_repeat('a.', 20000);
+check('  ...past the backtrack limit, the plainer test reads \\u escapes too', [ContentUse::stemsIn($longEscaped), ContentUse::stemsShown($longEscaped, ['report-pdf-thumbnail'])], [null, ['report-pdf-thumbnail']]);
+ini_set('pcre.backtrack_limit', (string) $limitWas);
+ini_set('pcre.jit', (string) $jitWas);
+// Many "wp:" and no "-->" near them -- text that mentions "wp:", one comment
+// at the end: each was followed by a search for "-->" over the rest of the
+// post.
+$many = str_repeat('see wp: here ', 200000) . '<!-- wp:image {"id":77} -->';
+$t = microtime(true);
+$found77 = isset(ContentUse::idsIn($many)[77]);
+check('  ...a post with many "wp:" and one comment is read in one pass', [$found77, microtime(true) - $t < 1.0], [true, true]);
+
 check('a stem\'s ASCII run is the longest, of four characters or more', [ContentUse::fragments(['報告-ab-書-pdf-thumbnail']), ContentUse::fragments(['報告abc書'])], [['報告-ab-書-pdf-thumbnail', strtolower(rawurlencode('報告-ab-書-pdf-thumbnail')), '-pdf-thumbnail'], ['報告abc書', strtolower(rawurlencode('報告abc書'))]]);
 
 echo "\n$pass passed, $fail failed\n";

@@ -4,7 +4,7 @@
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: Rapls PDF Image Creator 1.4.39\n"
+"Project-Id-Version: Rapls PDF Image Creator 1.4.40\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-14 12:00+0900\n"
 "PO-Revision-Date: 2026-10-14 12:00+0900\n"
@@ -482,7 +482,7 @@ msgid "The previous thumbnail is also another PDF's thumbnail (a translated copy
 msgstr "前のサムネイルは別の PDF (翻訳されたコピー) のサムネイルでもあるため、その PDF 用に残しました。"
 
 msgid "Whether a post still shows the previous thumbnail could not be checked, so it was kept in the Media Library as an ordinary image."
-msgstr "前のサムネイルを投稿がまだ表示しているかを確認できなかったため、通常の画像としてメディアライブラリに残しました。"
+msgstr "投稿がまだ前のサムネイルを表示しているかを確認できなかったため、通常の画像としてメディアライブラリに残しました。"
 
 msgid "Failed to generate thumbnail."
 msgstr "サムネイルの生成に失敗しました。"
@@ -719,6 +719,12 @@ msgstr ""
 msgid "The page was too large to draw."
 msgstr "ページが大きすぎて描画できませんでした。"
 
+#. translators: 1: the lowest resolution, in dpi; 2: ImageMagick's own message
+#: includes/Engine/ImagickEngine.php
+#, php-format
+msgid "This page could not be measured at %1$s dpi, the lowest resolution used, and this PDF holds a page too large to measure it more finely. The page may not be in this PDF, or it may be too thin to draw. (%2$s)"
+msgstr "このページは、使う中で最も低い解像度の %1$s dpi で大きさを測れませんでした。この PDF には、それより細かく測れないほど大きなページがあります。このページがこの PDF に無いか、細すぎて描画できない可能性があります。(%2$s)"
+
 msgid "This page is too large to draw, even at the lowest resolution."
 msgstr "このページは大きすぎるため、最も低い解像度でも描画できません。"
 
@@ -890,6 +896,10 @@ msgstr "失敗しました"
 
 msgid "Request failed"
 msgstr "リクエストに失敗しました"
+
+#. translators: 1: PDF file name, 2: what happened to it
+msgid "%1$s: %2$s"
+msgstr "%1$s：%2$s"
 
 msgid "Error"
 msgstr "エラー"

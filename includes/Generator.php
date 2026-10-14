@@ -836,15 +836,19 @@ final class Generator
      * (review after 1.4.38).
      *
      * Such an image is still a thumbnail, that PDF's, and keeps its two
-     * markers. One only a post's featured image names is not anybody's
+     * markers, its source now naming that PDF: left naming this one, the
+     * other PDF's own regeneration or deletion did not take it for its own,
+     * and it stayed marked and hidden with nothing naming it (review of
+     * 1.4.39). One only a post's featured image names is not anybody's
      * thumbnail once this PDF lets go of it, and becomes an ordinary image,
      * as the settings screen says; it stayed marked, hidden in the Media
      * Library by "Hide Generated Images" while a post showed it (review of
      * 1.4.36).
      *
-     * @return bool|null Null when the database did not answer.
+     * @return int|null The other PDF's ID, 0 when there is none, null when
+     *                  the database did not answer.
      */
-    private function namedByAttachment(int $thumbnailId, int $pdfId): ?bool
+    private function namedByAttachment(int $thumbnailId, int $pdfId): ?int
     {
         global $wpdb;
 
@@ -866,7 +870,7 @@ final class Generator
             return null;
         }
 
-        return null !== $found;
+        return (int) $found;
     }
 
     /**
@@ -883,15 +887,21 @@ final class Generator
      * class, an image block, a gallery block or a [gallery] shortcode -- or
      * the ID wherever an ID could stand, as page builders keep an image by
      * ID alone (review after 1.4.38). SQL only narrows the posts read, with
-     * LIKE on the name's fragments and REGEXP for the ID; PHP decides. "%name%" in SQL alone kept
+     * LIKE alone; PHP decides. "%name%" in SQL alone kept
      * "report-pdf-thumbnail" because a post showed
      * "annual-report-pdf-thumbnail", and nothing found a gallery naming the
      * image by ID (review of 1.4.36).
      *
      * Revisions, auto-drafts and attachments are not read; a trashed post
      * is, as it can come back (review after 1.4.37). The content and the
-     * excerpt are: not widgets, options or a page builder's meta kept
-     * outside them.
+     * excerpt are, and the widgets (ContentUse::WIDGET_OPTIONS): not other
+     * options or a page builder's meta kept outside them.
+     *
+     * Each image let go of reads the posts table once, LIKE with a leading
+     * "%" using no index; Bulk Generate with "Include PDFs that already have
+     * thumbnails" does so once per PDF. Not cached across PDFs: a post
+     * saved between two of them would be missed, and the image it shows
+     * deleted (review of 1.4.39).
      * It runs only when an image of this plugin's own is about to be
      * deleted: a forced regeneration, or deleting a PDF.
      *
@@ -923,40 +933,36 @@ final class Generator
             $file = rawurldecode($file);
         }
         $stems = ContentUse::stemsOf($file, get_post_meta($thumbnailId, '_wp_attachment_backup_sizes', true));
-        // ContentUse::candidate(), as SQL. The ID where an ID could stand,
-        // one REGEXP per column: digits and punctuation, the same in any
-        // collation. Each name fragment, LOWER() of each column on its own
-        // (a case-sensitive collation, utf8mb4_bin or
-        // utf8mb4_ja_0900_as_cs, missed "Report-pdf-thumbnail.jpg" and the
-        // image was deleted -- review after 1.4.37; CONCAT_WS() of the two
-        // failed with "Illegal mix of collations" where they differ --
-        // review of 1.4.37's fixes). The ID's five spellings were five
-        // LIKEs on LOWER() of both columns, the whole of each worked out
-        // again for every one (review after 1.4.38); a REGEXP that cannot
-        // be read on some server fails the query, and a failed query keeps
-        // the image.
-        // The ID: a [gallery] holding it, as up to 1.4.38's lookup asked; the
-        // ID after white space (a list that spaces divide), as LIKEs; or the
-        // digits anywhere and, only then, the REGEXP for the rest of
-        // ContentUse::ID_CONTEXT. MySQL 8 runs REGEXP through ICU under
-        // regexp_time_limit, counted over the whole value: a post of some
-        // megabytes could run past it and fail the query -- the image is
-        // then kept, but kept every time. The LIKE in front leaves the
-        // REGEXP to the posts that hold the digits at all, and the REGEXP
-        // has no "[0-9]" left to try at every digit of them (review of
-        // 1.4.38's fixes).
+        // The widgets first: one read of a few options (review of 1.4.39).
+        if (ContentUse::shows(ContentUse::widgetContent(), $thumbnailId, $stems)) {
+            return true;
+        }
+        // ContentUse::candidate(), as SQL, LIKE only. The ID beside each
+        // character that can stand right before it (ContentUse::idLikesSql():
+        // digits and punctuation, the same in any collation). Each name
+        // fragment, LOWER() of each column on its own (a case-sensitive
+        // collation, utf8mb4_bin or utf8mb4_ja_0900_as_cs, missed
+        // "Report-pdf-thumbnail.jpg" and the image was deleted -- review
+        // after 1.4.37; CONCAT_WS() of the two failed with "Illegal mix of
+        // collations" where they differ -- review of 1.4.37's fixes).
+        // No REGEXP: MySQL 8 runs one through ICU under regexp_time_limit,
+        // and a post of some megabytes failed the query -- the image kept,
+        // but kept every time; MariaDB runs it through PCRE, which past its
+        // own limits only warns and counts the row as not matching -- the
+        // post not read, and the image it showed deleted (review of 1.4.39).
         $likes = [];
         $patterns = [];
-        $idRegex = ContentUse::idRegexSql($thumbnailId);
-        $gallery = '%' . $wpdb->esc_like('[gallery') . '%' . $thumbnailId . '%';
-        $digits = '%' . $thumbnailId . '%';
-        $afterSpace = ContentUse::idLikesSql($thumbnailId);
+        $idLikes = ContentUse::idLikesSql($thumbnailId, [$wpdb, 'esc_like']);
+        // Every one of those holds the ID's digits, so a column without them
+        // is passed over in one scan first; a necessary condition added, the
+        // answer unchanged (review of 1.4.39's fixes).
+        $idDigits = '%' . $wpdb->esc_like((string) $thumbnailId) . '%';
         foreach (['post_content', 'post_excerpt'] as $column) {
-            $likes[] = implode(' OR ', array_fill(0, 1 + count($afterSpace), "{$column} LIKE %s")) . " OR ({$column} LIKE %s AND {$column} REGEXP %s)";
-            array_push($patterns, $gallery, ...$afterSpace);
-            array_push($patterns, $digits, $idRegex);
+            $likes[] = "({$column} LIKE %s AND (" . implode(' OR ', array_fill(0, count($idLikes), "{$column} LIKE %s")) . '))';
+            $patterns[] = $idDigits;
+            array_push($patterns, ...$idLikes);
         }
-        foreach (ContentUse::patterns($stems) as $fragment) {
+        foreach (ContentUse::fragments($stems) as $fragment) {
             $pattern = '%' . $wpdb->esc_like($fragment) . '%';
             $likes[] = 'LOWER(post_content) LIKE %s';
             $likes[] = 'LOWER(post_excerpt) LIKE %s';
@@ -1055,8 +1061,15 @@ final class Generator
                 // ordinary image, said -- kept and visible is recoverable,
                 // marked with nothing pointing at it is lost in the library.
                 $byAttachment = $this->namedByAttachment($thumbnailId, $pdfId);
-                $this->keptReasons[$pdfId] = true === $byAttachment ? self::KEPT_SHARED : (false === $byAttachment ? self::KEPT_FEATURED : self::KEPT_UNKNOWN);
-                if (true !== $byAttachment) {
+                $this->keptReasons[$pdfId] = $byAttachment > 0 ? self::KEPT_SHARED : (0 === $byAttachment ? self::KEPT_FEATURED : self::KEPT_UNKNOWN);
+                if ($byAttachment > 0) {
+                    update_post_meta($thumbnailId, '_rapls_pic_source_pdf', $byAttachment);
+                    if ($pdfGoing) {
+                        // Attached to the PDF that names it now, not left on
+                        // one that is gone (review of 1.4.39's fixes).
+                        $this->attachTo($thumbnailId, $pdfId, $byAttachment);
+                    }
+                } else {
                     $this->makeOrdinary($thumbnailId, $pdfId, $pdfGoing);
                 }
                 if (null === $byAttachment) {
@@ -1093,6 +1106,14 @@ final class Generator
                     $this->makeOrdinary($thumbnailId, $pdfId, true);
                     // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
                     error_log(sprintf('Rapls PDF Image Creator: image #%d of PDF #%d could not be deleted with the PDF; it was kept as an ordinary image.', $thumbnailId, $pdfId));
+                    $result = self::RELEASE_FAILED;
+                } elseif ((int) get_post_meta($pdfId, self::THUMBNAIL_META_KEY, true) !== $thumbnailId) {
+                    // Refused while a regeneration replaces it: the PDF
+                    // already names its new thumbnail, so there is no next
+                    // attempt either, and the old one stayed marked and
+                    // hidden with nothing naming it. Kept as an ordinary
+                    // image; generate() says so (review of 1.4.39).
+                    $this->makeOrdinary($thumbnailId, $pdfId);
                     $result = self::RELEASE_FAILED;
                 } else {
                     // Not deleted: the PDF keeps its link, so the image is
@@ -1141,6 +1162,28 @@ final class Generator
         $pdf = get_post($pdfId);
         if (is_object($image) && (int) ($image->post_parent ?? 0) === $pdfId) {
             $wpdb->update($wpdb->posts, ['post_parent' => is_object($pdf) ? (int) ($pdf->post_parent ?? 0) : 0], ['ID' => $imageId], ['%d'], ['%d']);
+            if (function_exists('clean_post_cache')) {
+                clean_post_cache($imageId);
+            }
+        }
+    }
+
+    /**
+     * Move an image attached to one PDF onto another
+     *
+     * Only while it is still attached to the PDF that lets go of it, and
+     * by the row alone, as makeOrdinary() does.
+     */
+    private function attachTo(int $imageId, int $fromPdfId, int $toPdfId): void
+    {
+        global $wpdb;
+
+        if (!is_object($wpdb) || !isset($wpdb->posts) || !method_exists($wpdb, 'update')) {
+            return;
+        }
+        $image = get_post($imageId);
+        if (is_object($image) && (int) ($image->post_parent ?? 0) === $fromPdfId) {
+            $wpdb->update($wpdb->posts, ['post_parent' => $toPdfId], ['ID' => $imageId], ['%d'], ['%d']);
             if (function_exists('clean_post_cache')) {
                 clean_post_cache($imageId);
             }
@@ -1268,6 +1311,23 @@ final class Generator
         // another, and wp_insert_attachment() still returns the ID (R58-02).
         $named = (string) get_attached_file($attachmentId, true);
         $namesFile = '' !== $named && (realpath($named) ?: $named) === (realpath($filePath) ?: $filePath);
+
+        // Unless core put a copy in front of it: past big_image_size_threshold
+        // (2560 by default), on an output-format conversion, or for an EXIF
+        // rotation, wp_create_image_subsizes() saves "-scaled" (or converted,
+        // or "-rotated") beside the file drawn, names that one, and keeps the
+        // drawn file's name as the metadata's original_image -- as for any
+        // image uploaded. Taken for "names another file", every thumbnail past
+        // 2560 pixels a side was thrown away and its -scaled copy left on disk
+        // (review of 1.4.39). Worked out here, not by
+        // wp_get_original_image_path(), which WordPress 5.0 to 5.2 lack.
+        // original_image is a bare name, as core's wp_basename() left it.
+        if (!$namesFile && '' !== $named && is_array($stored) && isset($stored['original_image'])
+            && is_string($stored['original_image']) && '' !== $stored['original_image']
+            && false === strpbrk($stored['original_image'], '/\\')) {
+            $original = dirname($named) . '/' . $stored['original_image'];
+            $namesFile = (realpath($original) ?: $original) === (realpath($filePath) ?: $filePath);
+        }
 
         if (!$namesFile || !$this->isOwnThumbnail($attachmentId, $pdfId) || !is_array($stored) || [] === $stored) {
             // Deleting an attachment deletes the file it names. Naming another

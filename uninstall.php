@@ -69,11 +69,16 @@ function rapls_pic_uninstall_site(): void
         // them, and when it fails nothing is deleted: an image kept can still be
         // removed by hand, one deleted cannot be brought back.
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Uninstall cleanup requires direct query
+        // By its marker, its source read where there is one: a marked image
+        // whose source was lost -- an import, a cleanup plugin -- was never
+        // counted as used, and a post's featured image was deleted under it
+        // (review of 1.4.39).
         $rapls_pic_used = $wpdb->get_col(
             "SELECT DISTINCT used.meta_value FROM {$wpdb->postmeta} used
-             INNER JOIN {$wpdb->postmeta} source ON source.post_id = CAST(used.meta_value AS UNSIGNED) AND source.meta_key = '_rapls_pic_source_pdf'
+             INNER JOIN {$wpdb->postmeta} marker ON marker.post_id = CAST(used.meta_value AS UNSIGNED) AND marker.meta_key = '_rapls_pic_is_thumbnail'
+             LEFT JOIN {$wpdb->postmeta} source ON source.post_id = marker.post_id AND source.meta_key = '_rapls_pic_source_pdf'
              WHERE used.meta_key IN ('_thumbnail_id', '_rapls_pic_thumbnail_id')
-               AND used.post_id <> CAST(source.meta_value AS UNSIGNED)"
+               AND (source.meta_value IS NULL OR used.post_id <> CAST(source.meta_value AS UNSIGNED))"
         );
         $rapls_pic_failed = $rapls_pic_failed || !$rapls_pic_moved || !is_array($rapls_pic_used) || '' !== (string) $wpdb->last_error;
         // Keyed by ID: looked up once per thumbnail below, and in_array() over
@@ -229,6 +234,35 @@ function rapls_pic_uninstall_shown_in_content(array $thumbnails): ?array
     $rapls_pic_skip_types = "'" . implode("', '", \Rapls\PDFImageCreator\ContentUse::SKIP_TYPES) . "'";
     $rapls_pic_skip_statuses = "'" . implode("', '", \Rapls\PDFImageCreator\ContentUse::SKIP_STATUSES) . "'";
     $rapls_pic_shown = []; // Keyed by ID.
+    // One piece of content: the images it shows go into $rapls_pic_shown.
+    // False when its numbers cannot be read, and every image is kept.
+    $rapls_pic_read = static function (string $rapls_pic_content) use (&$rapls_pic_shown, $rapls_pic_by_stem, $rapls_pic_by_id): bool {
+        // stemsShown(): a post the pattern cannot be run over still
+        // keeps every image whose name it holds (review after 1.4.37).
+        foreach (\Rapls\PDFImageCreator\ContentUse::stemsShown($rapls_pic_content, array_keys($rapls_pic_by_stem)) as $rapls_pic_stem) {
+            $rapls_pic_shown += array_fill_keys($rapls_pic_by_stem[$rapls_pic_stem], true);
+        }
+        // Any number where an ID could stand counts, as for
+        // regenerating: page builders keep an image by ID alone (review
+        // after 1.4.38). Not read: every image is kept.
+        $rapls_pic_context = \Rapls\PDFImageCreator\ContentUse::idsInContext($rapls_pic_content);
+        if (null === $rapls_pic_context) {
+            return false;
+        }
+        $rapls_pic_named = \Rapls\PDFImageCreator\ContentUse::idsIn($rapls_pic_content) + $rapls_pic_context + \Rapls\PDFImageCreator\ContentUse::shortcodePdfIdsIn($rapls_pic_content);
+        foreach (array_intersect_key($rapls_pic_by_id, $rapls_pic_named) as $rapls_pic_ids) {
+            $rapls_pic_shown += array_fill_keys($rapls_pic_ids, true);
+        }
+
+        return true;
+    };
+    $rapls_pic_all = array_values(array_unique(array_map('intval', array_column($thumbnails, 'id'))));
+
+    // The widgets first, as regenerating reads them (review of 1.4.39).
+    if (!$rapls_pic_read(\Rapls\PDFImageCreator\ContentUse::widgetContent())) {
+        return $rapls_pic_all;
+    }
+
     $rapls_pic_after = 0;
     do {
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Uninstall cleanup requires direct query; constants only
@@ -245,23 +279,8 @@ function rapls_pic_uninstall_shown_in_content(array $thumbnails): ?array
 
         foreach ($rapls_pic_posts as $rapls_pic_post) {
             $rapls_pic_after = (int) $rapls_pic_post['ID'];
-            $rapls_pic_content = (string) $rapls_pic_post['post_content'] . "\n" . (string) ($rapls_pic_post['post_excerpt'] ?? '');
-
-            // stemsShown(): a post the pattern cannot be run over still
-            // keeps every image whose name it holds (review after 1.4.37).
-            foreach (\Rapls\PDFImageCreator\ContentUse::stemsShown($rapls_pic_content, array_keys($rapls_pic_by_stem)) as $rapls_pic_stem) {
-                $rapls_pic_shown += array_fill_keys($rapls_pic_by_stem[$rapls_pic_stem], true);
-            }
-            // Any number where an ID could stand counts, as for
-            // regenerating: page builders keep an image by ID alone (review
-            // after 1.4.38). Not read: every image is kept.
-            $rapls_pic_context = \Rapls\PDFImageCreator\ContentUse::idsInContext($rapls_pic_content);
-            if (null === $rapls_pic_context) {
-                return array_values(array_unique(array_map('intval', array_column($thumbnails, 'id'))));
-            }
-            $rapls_pic_named = \Rapls\PDFImageCreator\ContentUse::idsIn($rapls_pic_content) + $rapls_pic_context + \Rapls\PDFImageCreator\ContentUse::shortcodePdfIdsIn($rapls_pic_content);
-            foreach (array_intersect_key($rapls_pic_by_id, $rapls_pic_named) as $rapls_pic_ids) {
-                $rapls_pic_shown += array_fill_keys($rapls_pic_ids, true);
+            if (!$rapls_pic_read((string) $rapls_pic_post['post_content'] . "\n" . (string) ($rapls_pic_post['post_excerpt'] ?? ''))) {
+                return $rapls_pic_all;
             }
         }
 

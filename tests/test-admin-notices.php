@@ -25,8 +25,10 @@ function update_user_meta($u, $k, $v) { $GLOBALS['user_meta'][$k] = $v; return t
 function get_current_screen() { return $GLOBALS['screen'] ?? null; }
 function delete_option($k) { $GLOBALS['option_deletes'][] = $k; unset($GLOBALS['options'][$k]); return true; }
 function add_option($k, $v, $d = '', $a = null) { if (!isset($GLOBALS['options'][$k])) { $GLOBALS['options'][$k] = $v; } return true; }
-function esc_html__($s, $d = null) { return $s; }
-function esc_url($s) { return (string) $s; }
+// Translated and escaped, as core's are: a notice that left either out was
+// not caught (mutation testing of 1.4.39).
+function esc_html__($s, $d = null) { return esc_html(__($s, $d)); }
+function esc_url($s) { return str_replace('&', '&#038;', (string) $s); }
 function admin_url($p = '') { return 'https://example.test/wp-admin/' . $p; }
 function add_query_arg($k, $v = null, $u = null) { return (string) $u . '&' . $k . '=' . $v; }
 function remove_query_arg($k, $u = null) { return 'https://example.test/wp-admin/upload.php?x=1'; }
@@ -205,6 +207,14 @@ check('shown to an administrator after the update, until dismissed', [
     $colour(true, '1', '1'),
     $colour(true, false, ''),
 ], [true, false, false, false]);
+// Mutation testing of 1.4.39: its links and words escaped, translated or not.
+$GLOBALS['can'] = ['manage_options' => true];
+$GLOBALS['options'][Plugin::COLOR_NOTICE_OPTION] = '1';
+$GLOBALS['user_meta']['rapls_pic_color_notice_dismissed'] = '';
+$GLOBALS['translations']['Regenerate thumbnails'] = 'Re<b>generate</b>';
+$colourOut = $private('showColorUpdateNotice');
+unset($GLOBALS['translations']['Regenerate thumbnails']);
+check('  ...its links and its words escaped', [substr_count($colourOut, '&#038;'), false !== strpos($colourOut, 'Re&lt;b&gt;generate&lt;/b&gt;'), false !== strpos($colourOut, '<b>')], [2 * substr_count($colourOut, 'href='), true, false]);
 
 echo "\n=== Asked on every request, so read with the rest ===\n";
 $upgrade = new ReflectionMethod(Plugin::class, 'maybeUpgrade');

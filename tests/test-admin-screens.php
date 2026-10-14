@@ -136,6 +136,16 @@ check('with nothing usable saved, each getter answers DEFAULTS', [
     (int) $defaults['max_width'], (int) $defaults['max_height'], (int) $defaults['resolution'], (int) $defaults['quality'], (string) $defaults['format'], (int) $defaults['page'], (string) $defaults['insert_size'], (string) $defaults['insert_link'],
 ]);
 unset($GLOBALS['options'][\Rapls\PDFImageCreator\Settings::OPTION_NAME]);
+// Mutation testing of 1.4.39: the getters kept for code outside the plugin
+// answer for each format, not only the default.
+$byFormat = [];
+foreach (['png', 'webp', 'jpeg'] as $format) {
+    $GLOBALS['options'][\Rapls\PDFImageCreator\Settings::OPTION_NAME] = ['format' => $format];
+    $formatted = new \Rapls\PDFImageCreator\Settings();
+    $byFormat[] = [$formatted->getFileExtension(), $formatted->getMimeType()];
+}
+unset($GLOBALS['options'][\Rapls\PDFImageCreator\Settings::OPTION_NAME]);
+check('getFileExtension() and getMimeType() for each format', $byFormat, [['png', 'image/png'], ['webp', 'image/webp'], ['jpg', 'image/jpeg']]);
 // The Media Library column's marks use the stylesheet's class names, and say
 // themselves to a screen reader.
 $libSource = (string) file_get_contents(RAPLS_PIC_PLUGIN_DIR . 'includes/MediaLibrary.php');
@@ -250,6 +260,12 @@ check('  ...someone who cannot manage options gets the reason without the Status
 $GLOBALS['translations']['ImageMagick could not render the page.'] = 'Le <b>rendu</b> a échoué.';
 $translatedNotice = $regenNotice('render_error');
 unset($GLOBALS['translations']);
+// Review of 1.4.39: its sentences, and the link, joined by the language's
+// own pattern, not by a space.
+$GLOBALS['translations']['%1$s %2$s'] = '%1$s%2$s';
+$joinedNotice = $regenNotice('render_error');
+unset($GLOBALS['translations']);
+check('  ...each sentence joined by the translatable pattern', [false !== strpos($joinedNotice, 'Failed to generate PDF thumbnail.ImageMagick could not render the page.<a href='), false !== strpos($translatedNotice, 'a échoué. <a href=')], [true, true]);
 check('  ...and the reason is escaped, translated or not', [false !== strpos($translatedNotice, 'Le &lt;b&gt;rendu&lt;/b&gt; a échoué.'), false !== strpos($translatedNotice, '<b>')], [true, false]);
 
 // Review after 1.4.37: the old thumbnail kept because a post shows it, said.
@@ -278,6 +294,22 @@ check('  ...each reason in its own words, and nothing for a value it does not kn
 $GLOBALS['translations']["The previous thumbnail is a post's featured image, or another item's cover image, so it was kept in the Media Library as an ordinary image."] = 'Gardée <i>ici</i>.';
 $escapedKept = $keptNotice('kept-featured');
 unset($GLOBALS['translations']);
+// Mutation testing of 1.4.39: an array in the address is no reason, and no
+// warning.
+set_error_handler(static function (int $no, string $message): bool { throw new \ErrorException($message, 0, $no); });
+$_GET = ['rapls_pic_generated' => ['kept']];
+ob_start();
+try {
+    $notices = new ReflectionMethod(Admin::class, 'showRegenerateNotices');
+    if (PHP_VERSION_ID < 80100) { $notices->setAccessible(true); }
+    $notices->invoke($admin);
+} catch (\Throwable $e) {
+    echo 'THREW ' . get_class($e);
+}
+$arrayKept = (string) ob_get_clean();
+restore_error_handler();
+$_GET = [];
+check('  ...an array for it: generated, and nothing more', [false !== strpos($arrayKept, 'PDF thumbnail generated successfully.</p>'), false !== strpos($arrayKept, 'THREW')], [true, false]);
 check('  ...and the note is escaped', [false !== strpos($escapedKept, 'Gardée &lt;i&gt;ici&lt;/i&gt;.'), false !== strpos($escapedKept, '<i>')], [true, false]);
 
 echo "\n=== Review of 1.4.32: markup a screen reader and the stylesheet rely on ===\n";

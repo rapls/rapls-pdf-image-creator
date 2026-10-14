@@ -143,11 +143,19 @@ $GLOBALS['wpdb'] = new class {
             // A thumbnail some post other than its PDF names, when the SQL
             // asks for that; without the clause, the PDF's own record counts.
             $otherThanPdf = false !== strpos($sql, 'used.post_id <> CAST(source.meta_value AS UNSIGNED)');
+            // Joined on the marker, the source LEFT JOINed: an image with no
+            // source still counts (review of 1.4.39). Joined on the source,
+            // it did not.
+            $byMarker = false !== strpos($sql, "INNER JOIN wp_postmeta marker ON marker.post_id = CAST(used.meta_value AS UNSIGNED) AND marker.meta_key = '_rapls_pic_is_thumbnail'")
+                && false !== strpos($sql, "LEFT JOIN wp_postmeta source ON source.post_id = marker.post_id AND source.meta_key = '_rapls_pic_source_pdf'")
+                && false !== strpos($sql, '(source.meta_value IS NULL OR used.post_id <> CAST(source.meta_value AS UNSIGNED))');
             $used = [];
             foreach (site()['meta'] as $row) {
                 if (in_array($row[1], ['_thumbnail_id', '_rapls_pic_thumbnail_id'], true)) {
                     $source = meta_value((int) $row[2], '_rapls_pic_source_pdf');
-                    if (null !== $source && (!$otherThanPdf || $row[0] !== (int) $source)) {
+                    $marked = null !== meta_value((int) $row[2], '_rapls_pic_is_thumbnail');
+                    $joined = $byMarker ? $marked : null !== $source;
+                    if ($joined && (null === $source || !$otherThanPdf || $row[0] !== (int) $source)) {
                         $used[] = $row[2];
                     }
                 }
@@ -480,6 +488,23 @@ seed_site();
 $GLOBALS['sites'][1]['posts'][207] = '<p>71 apples</p> [vc_single_image image="710"]';
 rapls_pic_uninstall_site();
 check('  ...not for 71 in running text, nor for 710', $GLOBALS['sites'][1]['deleted'], [71]);
+// Review of 1.4.39: a widget shows it -- a block widget by name, an Image
+// widget by ID.
+seed_site();
+$GLOBALS['sites'][1]['options']['widget_block'] = [2 => ['content' => '<!-- wp:image --><figure><img src="https://example.test/wp-content/uploads/2026/10/d-pdf-thumbnail-150x150.jpg"/></figure><!-- /wp:image -->']];
+rapls_pic_uninstall_site();
+check('an image a block widget shows is kept', $GLOBALS['sites'][1]['deleted'], []);
+seed_site();
+$GLOBALS['sites'][1]['options']['widget_media_image'] = [3 => ['attachment_id' => 71, 'size' => 'medium']];
+rapls_pic_uninstall_site();
+check('  ...and one an Image widget names by ID', $GLOBALS['sites'][1]['deleted'], []);
+// Review of 1.4.39: a marked image whose source was lost, a post's
+// featured image.
+seed_site();
+$GLOBALS['sites'][1]['meta'] = array_values(array_filter($GLOBALS['sites'][1]['meta'], static function (array $row): bool { return !(71 === $row[0] && '_rapls_pic_source_pdf' === $row[1]); }));
+$GLOBALS['sites'][1]['meta'][] = [95, '_thumbnail_id', '71'];
+rapls_pic_uninstall_site();
+check('a featured image with no source recorded is kept', $GLOBALS['sites'][1]['deleted'], []);
 // Review of 1.4.38's fixes: a [gallery] list that a space divides.
 seed_site();
 $GLOBALS['sites'][1]['posts'][209] = '[gallery ids="5 71"]';

@@ -138,7 +138,7 @@ final class FailureCode
         // page Ghostscript wrote as a PNG, and its PNG reader turns down one
         // wider or taller than the width or height limit with it (measured
         // on 7.1.1, review after 1.4.33).
-        if (preg_match('/cache\s*resources\s*exhausted|OpenPixelCache|width or height exceeds limit|invalid\s*IHDR/i', $message)) {
+        if (preg_match('/cache\s*resources\s*exhausted|OpenPixelCache|width\s*or\s*height\s*exceeds\s*limit|invalid\s*IHDR/i', $message)) {
             return self::RESOURCE_LIMIT;
         }
 
