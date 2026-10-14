@@ -5,7 +5,42 @@
  */
 
 define('RAPLS_PIC_PLUGIN_DIR', dirname(__DIR__) . '/');
-define('RAPLS_PIC_TEST_TMP', sys_get_temp_dir() . '/rapls-pic-tests');
+// A folder of this run's own, removed when it ends: one shared by every run
+// made two suites run side by side fail each other, and left the files they
+// wrote behind (review after 1.4.36).
+if (!function_exists('rapls_pic_test_tmp')) {
+    function rapls_pic_test_tmp(): string
+    {
+        // A child a suite starts works in its parent's folder, which the
+        // parent removes.
+        $inherited = getenv('RAPLS_PIC_TEST_TMP');
+
+        if (is_string($inherited) && '' !== $inherited && is_dir($inherited)) {
+            return $inherited;
+        }
+
+        $dir = sys_get_temp_dir() . '/rapls-pic-tests-' . getmypid() . '-' . bin2hex(random_bytes(4));
+        @mkdir($dir, 0700, true);
+        putenv('RAPLS_PIC_TEST_TMP=' . $dir);
+        register_shutdown_function(static function () use ($dir): void {
+            $remove = static function (string $path) use (&$remove): void {
+                if (is_dir($path) && !is_link($path)) {
+                    foreach ((array) scandir($path) as $name) {
+                        if ('.' !== $name && '..' !== $name) {
+                            $remove($path . '/' . $name);
+                        }
+                    }
+                    @rmdir($path);
+                } else {
+                    @unlink($path);
+                }
+            };
+            $remove($dir);
+        });
+        return $dir;
+    }
+}
+define('RAPLS_PIC_TEST_TMP', rapls_pic_test_tmp());
 define('DAY_IN_SECONDS', 86400);
 define('HOUR_IN_SECONDS', 3600);
 define('WEEK_IN_SECONDS', 604800);
@@ -899,7 +934,10 @@ check('  ...a key spelt with #xx escapes: no answer; a name with one that is not
 // Object streams, inflated: the page dictionaries of a modern PDF are in them.
 $inside = gzcompress('1 0 3 50 << /Type /Page /MediaBox [0 0 100000 100000] >> << /Type /Pages >>');
 check('  ...a box inside a compressed object stream', ImagickEngine::largestPageBox($boxFile($a4 . "\n" . $stream('/Type /ObjStm /N 2 /First 9 /Filter /FlateDecode', $inside))), [1.0E10, 100000.0]);
-check('  ...whatever its /Type says: Ghostscript reads one by its /First', ImagickEngine::largestPageBox($boxFile($a4 . "\n" . $stream('/Type /XObject /N 2 /First 9 /Filter [/FlateDecode]', $inside))), [1.0E10, 100000.0]);
+// Ghostscript 10.04 does not read a stream with a /First and no /Type
+// /ObjStm as an object stream (review after 1.4.36); this reading opens one
+// anyway, which can only make the answer larger.
+check('  ...whatever its /Type says: opened by its /First, as the safe side', ImagickEngine::largestPageBox($boxFile($a4 . "\n" . $stream('/Type /XObject /N 2 /First 9 /Filter [/FlateDecode]', $inside))), [1.0E10, 100000.0]);
 check('  ...an outline\'s /First is not a stream, nor is the next object\'s', ImagickEngine::largestPageBox($boxFile($a4 . "\n3 0 obj << /Type /Outlines /First 4 0 R >> endobj\n" . $stream('/Filter /LZWDecode', 'q Q'))), [612.0 * 842.0, 842.0]);
 check('  ...a box upside down is as large', ImagickEngine::largestPageBox($boxFile('<< /MediaBox [0 50000 100 0] >>')), [5000000.0, 50000.0]);
 check('  ...an object stream cut short: no answer', ImagickEngine::largestPageBox($boxFile($a4 . "\n" . $stream('/Type /ObjStm /N 2 /First 9 /Filter /FlateDecode', substr($inside, 0, -6)))), null);
@@ -977,6 +1015,18 @@ check('  ...a file the token reading cannot follow: no answer', [
     ImagickEngine::largestPageBox($boxFile($a4 . "\nendobj\nstream\nq Q\nendstream")),
     ImagickEngine::largestPageBox($boxFile($a4 . "\n<< /Length 3 >>\nstream\nq Q")),
 ], [null, null, null, null, null, null, null]);
+// Review after 1.4.36: a name of 31 MB was copied whole into the match, its capture and its decoding, and a
+// 128 MB limit ended in a fatal error. A name or word past TOKEN_BYTES_MAX ends the reading; a long hex string
+// or comment is stepped over in place and still answered.
+check('  ...a name or a word longer than the reading takes is no answer; a long hex string or comment is read past', [
+    ImagickEngine::largestPageBox($boxFile($a4 . "\n<< /" . str_repeat('A', 32769) . " 1 >>")),
+    ImagickEngine::largestPageBox($boxFile($a4 . "\n<< /K " . str_repeat('7', 32769) . " >>")),
+    ImagickEngine::largestPageBox($boxFile($a4 . "\n<< /" . str_repeat('A', 32768) . " 1 >>")),
+    ImagickEngine::largestPageBox($boxFile($a4 . "\n<< /K " . str_repeat('7', 32768) . " >>")),
+    ImagickEngine::largestPageBox($boxFile($a4 . "\n<< /K <" . str_repeat('ab', 40000) . "> >>")),
+    ImagickEngine::largestPageBox($boxFile($a4 . "\n%" . str_repeat('c', 80000) . "\n<< /K 1 >>")),
+    ImagickEngine::largestPageBox($boxFile($a4 . "\n<< /K <ab" . str_repeat(' ', 9) . "zz> >>")),
+], [null, null, [612.0 * 842.0, 842.0], [612.0 * 842.0, 842.0], [612.0 * 842.0, 842.0], [612.0 * 842.0, 842.0], null]);
 check('  ...a stream inside an object stream, or an unfiltered one\'s /Filter given by reference: no answer', [
     ImagickEngine::largestPageBox($boxFile($a4 . "\n" . $stream('/Type /ObjStm /N 1 /First 4', "1 0 << /Length 3 >>\nstream\nq Q\nendstream"))),
     ImagickEngine::largestPageBox($boxFile($a4 . "\n" . $stream('/Type /ObjStm /N 1 /First 4 /Filter 9 0 R', '3 0 << /MediaBox [0 0 3000 3000] >>'))),
@@ -1011,6 +1061,94 @@ file_put_contents($many, "%PDF-1.4\n<< /MediaBox [0 0 595 842] >>\n" . str_repea
 $enough = ImagickEngine::largestPageBox($many);
 @unlink($many);
 check('  ...past two million tokens: no answer; under, read', [$tooMany, $enough], [null, [612.0 * 842.0, 842.0]]);
+
+echo "\n=== Review after 1.4.36: what the token reading holds, and how far it goes ===\n";
+// Nesting: 200 KB of "[" crashed PHP when the values were kept whole and
+// freed recursively. Now 64 levels deep at most, and nothing kept inside.
+$nested = static function (int $depth) use ($boxFile, $a4): ?array {
+    return ImagickEngine::largestPageBox($boxFile($a4 . "\n" . str_repeat('[', $depth) . str_repeat(']', $depth)));
+};
+check('  ...arrays 64 deep are read; 65 deep, or 100,000, no answer -- and no crash', [$nested(64), $nested(65), $nested(100000)], [[612.0 * 842.0, 842.0], null, null]);
+check('  ...dictionaries too', [
+    ImagickEngine::largestPageBox($boxFile($a4 . "\n" . str_repeat('<< /A ', 64) . '1' . str_repeat(' >>', 64))),
+    ImagickEngine::largestPageBox($boxFile($a4 . "\n" . str_repeat('<< /A ', 65) . '1' . str_repeat(' >>', 65))),
+], [[612.0 * 842.0, 842.0], null]);
+// Two million values in one array held 278 MB, and "/#41" names collected all
+// at once 346 MB from a 24 KB file. Read in a child under 96 MB: the answer,
+// with no fatal error.
+$wideFile = RAPLS_PIC_TEST_TMP . '/box-wide.pdf';
+file_put_contents($wideFile, "%PDF-1.4\n<< /MediaBox [0 0 595 842] /Junk [" . str_repeat('12345678 ', 990000) . "] >>\n%%EOF\n");
+$namesFile = RAPLS_PIC_TEST_TMP . '/box-names.pdf';
+file_put_contents($namesFile, "%PDF-1.4\n<< /MediaBox [0 0 595 842] >>\n" . $stream('/Type /ObjStm /N 1 /First 2 /Filter /FlateDecode', gzcompress('1 0 << /Pad [' . str_repeat('/#41 ', 3300000) . '] >>')));
+$heldChild = RAPLS_PIC_TEST_TMP . '/box-held.php';
+file_put_contents($heldChild, '<?php function apply_filters($t, $v) { return $v; } function __($s) { return $s; }'
+    . ' require ' . var_export(RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/EngineInterface.php', true) . ';'
+    . ' require ' . var_export(RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/ConversionResult.php', true) . ';'
+    . ' require ' . var_export(RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/ImagickEngine.php', true) . ';'
+    . ' echo json_encode(Rapls\\PDFImageCreator\\Engine\\ImagickEngine::largestPageBox($argv[1])), " ", memory_get_peak_usage() < 64 * 1048576 ? "small" : "large";');
+$held = [];
+foreach ([$wideFile, $namesFile] as $file) {
+    $out = [];
+    exec(escapeshellarg(PHP_BINARY) . ' -d memory_limit=96M ' . escapeshellarg($heldChild) . ' ' . escapeshellarg($file) . ' 2>&1', $out, $code);
+    $held[] = [implode("\n", $out), $code];
+}
+check('  ...two million numbers in an array: read within 64 MB; 3.3 million #xx names: no answer, within 64 MB', $held, [['[515304,842] small', 0], ['null small', 0]]);
+// One #xx name at a time, and so many at most.
+check('  ...100,000 names with #xx escapes are looked at; one more, no answer', [
+    ImagickEngine::largestPageBox($boxFile($a4 . "\n" . $stream('', str_repeat('/#41 ', 100000)))),
+    ImagickEngine::largestPageBox($boxFile($a4 . "\n" . $stream('', str_repeat('/#41 ', 100001)))),
+], [[612.0 * 842.0, 842.0], null]);
+check('  .../Media#42ox inside a compressed object stream: no answer', ImagickEngine::largestPageBox($boxFile($a4 . "\n" . $stream('/Type /ObjStm /N 1 /First 4 /Filter /FlateDecode', gzcompress('3 0 << /Media#42ox [0 0 300000 300000] >>')))), null);
+// The bytes inflated are counted across object streams, not one at a time.
+$nine = gzcompress('3 0 << /MediaBox [0 0 3000 3000] >>' . str_repeat(' ', 9 * 1048576));
+check('  ...two object streams that inflate to 18 MB together: no answer; one of them, read', [
+    ImagickEngine::largestPageBox($boxFile($a4 . "\n" . $stream('/Type /ObjStm /N 1 /First 4 /Filter /FlateDecode', $nine) . $stream('/Type /ObjStm /N 1 /First 4 /Filter /FlateDecode', $nine))),
+    ImagickEngine::largestPageBox($boxFile($a4 . "\n" . $stream('/Type /ObjStm /N 1 /First 4 /Filter /FlateDecode', $nine))),
+], [null, [9000000.0, 3000.0]]);
+unset($nine);
+// "stream" ends its line with CRLF in many writers.
+check('  ...an object stream whose data starts after CRLF', ImagickEngine::largestPageBox($boxFile($decoy . "7 0 obj << /Type /ObjStm /N 1 /First 4 /Filter /FlateDecode /Length " . strlen($hidden) . " >>\nstream\r\n" . $hidden . "\r\nendstream\nendobj\n")), $stream14400);
+// Fonts carry /FirstChar: it is not /First.
+check('  .../FirstChar is not /First', ImagickEngine::largestPageBox($boxFile($a4 . "\n<< /Type /Font /FirstChar 32 /LastChar 126 >>")), [612.0 * 842.0, 842.0]);
+check('  ...a comment between the keys of an object stream\'s dictionary is stepped over', ImagickEngine::largestPageBox($boxFile($decoy . $objStm("/Type /ObjStm % a note\n /N 1 /First 4 /Filter /FlateDecode"))), $stream14400);
+check('  ...a dictionary closed by "]", a stray endstream, a name and then "0 R": no answer', [
+    ImagickEngine::largestPageBox($boxFile($a4 . "\n<< /A 1 ]")),
+    ImagickEngine::largestPageBox($boxFile($a4 . "\nendstream")),
+    ImagickEngine::largestPageBox($boxFile($a4 . "\n<< /A /x 0 R >>")),
+], [null, null, null]);
+// A /Length given as a reference is no length: the data runs to the first
+// "endstream", which here is inside it, and what follows cannot be read.
+check('  ...a /Length given as a reference is not taken for its number', ImagickEngine::largestPageBox($boxFile($a4 . "\n<< /Length 17 0 R >>\nstream\nAAendstreamBBBBBB\nendstream\n")), null);
+// A /Length that is not a whole number is no length either.
+check('  ...nor one that is not a whole number', ImagickEngine::largestPageBox($boxFile($a4 . "\n<< /Length 10.0 >>\nstream\nendstream\nendstream\n")), null);
+// The first "endstream" ends a stream with no length, not the last.
+check('  ...a stream with no length ends at the first endstream, not the file\'s last', ImagickEngine::largestPageBox($boxFile($decoy . "<< >>\nstream\nq Q\nendstream\n" . "7 0 obj << /Type /ObjStm /N 1 /First 4 /Filter /FlateDecode >>\nstream\n" . $hidden . "\nendstream\nendobj\n")), $stream14400);
+// The limits' edges: as many boxes as BOX_MAX_COUNT, object streams as
+// PAGE_TREE_MAX_NODES, and a file as large as PAGE_TREE_MAX_BYTES are read.
+check('  ...100,000 boxes are read; 100,001, no answer', [
+    ImagickEngine::largestPageBox($boxFile(str_repeat("<< /MediaBox [0 0 1 1] >>\n", 100000))),
+    ImagickEngine::largestPageBox($boxFile(str_repeat("<< /MediaBox [0 0 1 1] >>\n", 100001))),
+], [[612.0 * 842.0, 842.0], null]);
+$oneSpace = gzcompress(' ');
+$streams = static function (int $n) use ($stream, $oneSpace, $boxFile, $a4): ?array {
+    return ImagickEngine::largestPageBox($boxFile($a4 . "\n" . str_repeat($stream('/Type /ObjStm /N 0 /First 0 /Filter /FlateDecode', $oneSpace), $n)));
+};
+check('  ...10,000 object streams are read; 10,001, no answer', [$streams(10000), $streams(10001)], [[612.0 * 842.0, 842.0], null]);
+$limitWas = ini_get('memory_limit');
+ini_set('memory_limit', '-1');
+$atSize = RAPLS_PIC_TEST_TMP . '/box-at-size.pdf';
+$handle = fopen($atSize, 'wb');
+fwrite($handle, "%PDF-1.4\n<< /MediaBox [0 0 595 842] >>\n");
+ftruncate($handle, 33554432);
+fclose($handle);
+$atSizeBox = ImagickEngine::largestPageBox($atSize);
+@unlink($atSize);
+ini_set('memory_limit', $limitWas);
+check('  ...a file of exactly 32 MB is read', $atSizeBox, [612.0 * 842.0, 842.0]);
+$inflate = new ReflectionMethod(ImagickEngine::class, 'inflateWithin');
+if (PHP_VERSION_ID < 80100) { $inflate->setAccessible(true); }
+$fiveK = gzcompress(str_repeat('a', 5000));
+check('  ...inflated to exactly the most allowed: kept; a byte more, no answer', [strlen((string) $inflate->invoke(null, $fiveK, 5000)), $inflate->invoke(null, $fiveK, 4999)], [5000, null]);
 
 echo "\n=== Review after 1.4.35: the limits' edges ===\n";
 // A filter answering 1 pixel is a limit of 1 pixel; one answering less, or

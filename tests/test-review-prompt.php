@@ -55,7 +55,8 @@ function remove_query_arg($keys, $url = '') { return 'https://example.test/wp-ad
 // As core: a nonce that does not check out stops the request there.
 function check_admin_referer($action = -1, $q = '_wpnonce') { $GLOBALS['nonce_asked'][] = $action; if (!empty($GLOBALS['nonce_fails'])) { throw new Redirected('nonce-died'); } return true; }
 function check_ajax_referer($action = -1, $q = false, $die = true) { $GLOBALS['nonce_asked'][] = $action; if (!empty($GLOBALS['nonce_fails'])) { throw new Redirected('nonce-died'); } return true; }
-function sanitize_key($k) { return preg_replace('/[^a-z0-9_\-]/', '', strtolower((string) $k)); }
+// As before WordPress 6.1: an array is a TypeError.
+function sanitize_key($k) { if (!is_scalar($k)) { throw new TypeError('sanitize_key(): array given'); } return preg_replace('/[^a-z0-9_\-]/', '', strtolower((string) $k)); }
 function wp_unslash($v) { return $v; }
 function wp_create_nonce($a = -1) { return 'nonce'; }
 function admin_url($p = '') { return 'https://example.test/wp-admin/' . $p; }
@@ -195,6 +196,19 @@ foreach (['go' => 'wordpress.org', 'did' => 'wp-admin', 'no' => 'wp-admin'] as $
     check("「{$answer}」で決着し、二度と出ない", get_option(ReviewPrompt::OPTION, ''), 'done');
     check("  ...行き先が正しい（{$expect}）", false !== strpos($went, $expect), true);
 }
+
+// 配列で渡されても止まらない（1.4.36 のレビュー）。WordPress 6.1 より前の sanitize_key() は TypeError になった。
+ready();
+$_GET = ['rapls_pic_review' => ['go']];
+$went = '';
+try {
+    (new ReviewPrompt())->handleDismiss();
+} catch (Redirected $e) {
+    $went = $e->to;
+} catch (\Throwable $e) {
+    $went = get_class($e);
+}
+check('配列で渡されても止まらず、wordpress.org へは行かない', [false !== strpos($went, 'wp-admin'), get_option(ReviewPrompt::OPTION, '')], [true, 'done']);
 
 echo "\n--- 閉じるボタンも決着させる ---\n";
 

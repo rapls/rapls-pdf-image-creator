@@ -565,7 +565,12 @@ final class Admin
             return;
         }
 
-        $code = sanitize_key(wp_unslash($_GET['rapls_pic_dismiss_engine_notice']));
+        // A string only: sanitize_key() took an array to a TypeError before
+        // WordPress 6.1 (review of 1.4.36).
+        $code = is_string($_GET['rapls_pic_dismiss_engine_notice']) ? sanitize_key(wp_unslash($_GET['rapls_pic_dismiss_engine_notice'])) : '';
+        if ('' === $code) {
+            return;
+        }
 
         update_user_meta(get_current_user_id(), self::ENGINE_NOTICE_META, $code);
         delete_transient(RAPLS_PIC_ACTIVATION_NOTICE);

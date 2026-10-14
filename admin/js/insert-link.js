@@ -18,7 +18,9 @@
  * list leaves out -- cannot be shown there: core would turn it into the
  * size it shows selected. Then the window is left as core starts it, and
  * while nobody changes it the insert follows the setting, as 1.4.20 did
- * (review of 1.4.35).
+ * (review of 1.4.35). The window then shows core's start, "Medium" say,
+ * while the insert is the setting's size; once the Size is changed there at
+ * all, what it says is what is inserted (review of 1.4.36).
  *
  * Loaded wherever the media window is (wp_enqueue_media).
  *
@@ -64,6 +66,18 @@
     // where they still hold what core started them at. A size the window does
     // not list is not put there; where core started it is noted instead, so
     // that the insert can tell it was not changed.
+    // Changed in the window, even back to where core started it, the size
+    // is a choice: the note that it was left alone (picSizeStart) goes.
+    const watchSize = function(model) {
+        if (model && 'function' === typeof model.get && 'function' === typeof model.once
+            && 'string' === typeof model.get('picSizeStart') && !model.picSizeWatched) {
+            model.picSizeWatched = true;
+            model.once('change:size', function() {
+                if ('function' === typeof model.unset) { model.unset('picSizeStart'); } else { model.set('picSizeStart', null); }
+            });
+        }
+    };
+
     const apply = function(target, from, attachment) {
         const get = function(key) { return 'function' === typeof target.get ? target.get(key) : target[key]; };
         const put = function(key, value) {
@@ -105,20 +119,41 @@
             && 'function' === typeof attachment.once && 'function' === typeof this.display) {
             // Known limits, left as they are (review of 1.4.35): a value
             // picked in the window that is the one it started at cannot be
-            // told from no choice, so the setting is applied over it; and a
-            // file that gets no thumbnail keeps this listener until the
-            // window goes, which then never runs.
+            // told from no choice, so the setting is applied over it; a file
+            // that gets no thumbnail keeps this listener until the window
+            // goes, which then never runs; and another plugin that wraps
+            // send.attachment and sends later sends without the size
+            // (below), so the setting decides.
             const library = this;
             const started = { link: settings.link, size: settings.size };
             attachment.once('change:picThumbnailId', function() {
                 if (isPdf(attachment)) {
-                    apply(library.display(attachment), started, attachment);
+                    const model = library.display(attachment);
+                    apply(model, started, attachment);
+                    // The note is made only now, after core's display()
+                    // has run: watched here, or a size changed and changed
+                    // back was taken for no choice (review after 1.4.36).
+                    watchSize(model);
                 }
             });
         }
 
         return settings;
     };
+
+    // Changed in the window, even back to where core started it, the size
+    // is a choice: the note that it was left alone goes. Without this, a
+    // Size picked as "Medium" was taken for no choice and the setting's
+    // medium_large inserted (review of 1.4.36). Only a value core never saw
+    // change still cannot be told from no choice.
+    if ('function' === typeof proto.display) {
+        const display = proto.display;
+        proto.display = function() {
+            const model = display.apply(this, arguments);
+            watchSize(model);
+            return model;
+        };
+    }
 
     // The window's Size, sent with the insert. Core sends it for images only,
     // so the size picked there for a PDF was shown and ignored, and the

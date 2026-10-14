@@ -274,7 +274,7 @@ check(
 
 // Review after 1.4.34: only switches that set a value, and none that
 // loosens Ghostscript's sandbox or sends its output elsewhere.
-foreach (['-Ifonts', '-dNOSAFER', '-DNOSAFER', '-dNOTRANSPARENCY -dDELAYSAFER', '-dSAFER=false', '-dDOPS', '-dPermitFileReading=/', '-sOutputFile=/tmp/x', '-sDEVICE=txtwrite', '-sstdout=/tmp/x', '-sSTDERR=/tmp/x', '-c quit', '-f/tmp/x.ps', '-r300', '-g9000x9000', '-dDEVICEWIDTH=90000', '-dDEVICEHEIGHTPOINTS=90000', '-dDEVICEXRESOLUTION=9000', '-dFIXEDMEDIA', '-dFIXEDRESOLUTION', '-sPAPERSIZE=a0', '-dUseArtBox', '-dUSECROPBOX', '-q -dNOSAFER', '-sFONTPATH=/srv/fonts', '-sGenericResourceDir=/tmp/', '-sICCProfilesDir=/tmp/', '-sDefaultRGBProfile=/tmp/x.icc', '-SOutputICCProfile=/tmp/x.icc', '-sFoo_File=/tmp/x', '-dFooPath', '-sFONTMAP=/tmp/Fontmap', '-sCIDFMAP=/tmp/cidfmap', '-dFONTMAP=/tmp/Fontmap', '-dCIDFMAP=x', '-dWRITESYSTEMDICT', '-dDELAYBIND', '-dNOOUTERSAVE', '-sPageList=2', '-dFirstPage=2', '-dLastPage=9', '-I/tmp', '@/tmp/args'] as $flags) {
+foreach (['-Ifonts', '-dNOSAFER', '-DNOSAFER', '-dSAFER -dDELAYSAFER', '-dSAFER=false', '-dDOPS', '-dPermitFileReading=/', '-sOutputFile=/tmp/x', '-sDEVICE=txtwrite', '-sstdout=/tmp/x', '-sSTDERR=/tmp/x', '-c quit', '-f/tmp/x.ps', '-r300', '-g9000x9000', '-dDEVICEWIDTH=90000', '-dDEVICEHEIGHTPOINTS=90000', '-dDEVICEXRESOLUTION=9000', '-dFIXEDMEDIA', '-dFIXEDRESOLUTION', '-sPAPERSIZE=a0', '-dUseArtBox', '-dUSECROPBOX', '-q -dNOSAFER', '-sFONTPATH=/srv/fonts', '-sGenericResourceDir=/tmp/', '-sICCProfilesDir=/tmp/', '-sDefaultRGBProfile=/tmp/x.icc', '-SOutputICCProfile=/tmp/x.icc', '-sFoo_File=/tmp/x', '-dFooPath', '-sFONTMAP=/tmp/Fontmap', '-sCIDFMAP=/tmp/cidfmap', '-dFONTMAP=/tmp/Fontmap', '-dCIDFMAP=x', '-dWRITESYSTEMDICT', '-dDELAYBIND', '-dNOOUTERSAVE', '-sPageList=2', '-dFirstPage=2', '-dLastPage=9', '-I/tmp', '@/tmp/args', '-sDEFAULTPAPERSIZE=a0', '-dPDFFitPage', '-dEPSFitPage', '-sCIDFSubstFont=/srv/x.ttf', '-sCIDFSubstFont=Arial', '-sSourceObjectICC=/tmp/x', '-sSourceObjectICC=x', '-dDownScaleFactor=8', '-dHWResolution=9000', '-sHWSIZE=9000x9000', '-sNonsense=/etc/passwd', '-dMEDIAPOSITION=1', '-dBufferSpace=2000000000', '-dMaxBitmap=500000000', '-dMaxBitmap', '-dBandHeight=9000', '-dNumRenderingThreads=64', '-dDOINTERPOLATE', '-dInterpolateControl=4'] as $flags) {
     reset_state();
     add_filter('rapls_pdf_image_creator_ghostscript_options', function () use ($flags) { return $flags; });
     check('refused: ' . $flags, [priv($engine, $ref, 'readWithGhostscriptOptions', '/tmp/none.pdf', 0, 150), Imagick::$log], [null, []]);
@@ -282,16 +282,38 @@ foreach (['-Ifonts', '-dNOSAFER', '-DNOSAFER', '-dNOTRANSPARENCY -dDELAYSAFER', 
 reset_state();
 Imagick::$blankWithoutGsOptions = true;
 Imagick::$gsOptionsSeen = [];
-add_filter('rapls_pdf_image_creator_ghostscript_options', function () { return ' -dNOTRANSPARENCY  -dNOINTERPOLATE -dMaxBitmap=500000000 '; });
+add_filter('rapls_pdf_image_creator_ghostscript_options', function () { return ' -dNOTRANSPARENCY  -dNOINTERPOLATE -dTextAlphaBits=4 '; });
 $rescued = priv($engine, $ref, 'readWithGhostscriptOptions', '/tmp/none.pdf', 0, 150);
-check('  ...switches that set a value are used, spaced as they come', [null !== $rescued, Imagick::$gsOptionsSeen], [true, ['-dNOTRANSPARENCY  -dNOINTERPOLATE -dMaxBitmap=500000000']]);
+check('  ...switches that set a value are used, spaced as they come', [null !== $rescued, Imagick::$gsOptionsSeen], [true, ['-dNOTRANSPARENCY  -dNOINTERPOLATE -dTextAlphaBits=4']]);
 // Review after 1.4.34: -dSAFER and -q are harmless, and a site that handed
 // them lost the retry altogether.
-foreach (['-dSAFER -dNOTRANSPARENCY', '-q -dNOTRANSPARENCY', '-DSAFER -q -dNOTRANSPARENCY', '-dNOTRANSPARENCY -dMaxBitmap=500000000', '-dNOTRANSPARENCY -dMaxBitmap'] as $flags) {
+foreach (['-dSAFER -dNOTRANSPARENCY', '-q -dNOTRANSPARENCY', '-DSAFER -q -dNOTRANSPARENCY', '-dNOTRANSPARENCY -dNOPAUSE -dBATCH -dTextAlphaBits=4 -dGraphicsAlphaBits=4 -dNOINTERPOLATE', '-sColorConversionStrategy=RGB -dNOTRANSPARENCY'] as $flags) {
     Imagick::$gsOptionsSeen = [];
     add_filter('rapls_pdf_image_creator_ghostscript_options', function () use ($flags) { return $flags; });
     $rescued = priv($engine, $ref, 'readWithGhostscriptOptions', '/tmp/none.pdf', 0, 150);
     check('  ...taken: ' . $flags, [null !== $rescued, Imagick::$gsOptionsSeen], [true, [$flags]]);
+}
+// Review after 1.4.36: one unsafe switch is dropped and the rest kept. Refusing the whole value turned the
+// retry off for a site returning "-dNOTRANSPARENCY -dMaxBitmap=500000000", which 1.4.20 took, and its blank
+// pages stayed blank without a word. Said in the error log, once per value.
+$dropLog = tempnam(sys_get_temp_dir(), 'gsdrop');
+$dropLogWas = ini_set('error_log', $dropLog);
+foreach ([['-dNOTRANSPARENCY -dMaxBitmap=500000000', '-dNOTRANSPARENCY'], ['-dNOTRANSPARENCY -dDELAYSAFER -q', '-dNOTRANSPARENCY -q'], ['-dNOTRANSPARENCY -sOutputFile=/srv/secret/x', '-dNOTRANSPARENCY'], ['-dNOTRANSPARENCY -I /home/u/fonts -c quit', '-dNOTRANSPARENCY']] as [$flags, $used]) {
+    Imagick::$gsOptionsSeen = [];
+    add_filter('rapls_pdf_image_creator_ghostscript_options', function () use ($flags) { return $flags; });
+    $rescued = priv($engine, $ref, 'readWithGhostscriptOptions', '/tmp/none.pdf', 0, 150);
+    priv($engine, $ref, 'readWithGhostscriptOptions', '/tmp/none.pdf', 0, 150);
+    check('  ...an unsafe switch dropped, the rest used: ' . $flags, [null !== $rescued, Imagick::$gsOptionsSeen[0] ?? null], [true, $used]);
+}
+$dropLogged = (string) file_get_contents($dropLog);
+ini_set('error_log', (string) $dropLogWas);
+@unlink($dropLog);
+check('  ...said in the error log, once per value, by name and never by value (a path)', [substr_count($dropLogged, 'left out of the blank-page retry'), false !== strpos($dropLogged, '-dMaxBitmap'), false !== strpos($dropLogged, '500000000'), false !== strpos($dropLogged, '-dDELAYSAFER'), false !== strpos($dropLogged, '-sOutputFile'), false !== strpos($dropLogged, '/srv/secret'), false !== strpos($dropLogged, '/home/u/fonts'), false !== strpos($dropLogged, 'quit'), false !== strpos($dropLogged, '(other)')], [4, true, false, true, true, false, false, false, true]);
+// Nothing left but -q or -dSAFER: no retry.
+foreach (['-q -dNOSAFER', '-dSAFER -dMaxBitmap=1'] as $flags) {
+    Imagick::$gsOptionsSeen = [];
+    add_filter('rapls_pdf_image_creator_ghostscript_options', function () use ($flags) { return $flags; });
+    check('  ...nothing left to retry with: ' . $flags, [priv($engine, $ref, 'readWithGhostscriptOptions', '/tmp/none.pdf', 0, 150), Imagick::$gsOptionsSeen], [null, []]);
 }
 Imagick::$blankWithoutGsOptions = false;
 

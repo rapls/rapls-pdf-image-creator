@@ -96,7 +96,12 @@ if (!defined('ABSPATH')) {
                         <input type="range" id="rapls_pic_quality" name="rapls_pic_settings[quality]"
                             value="<?php echo esc_attr((string) $config['quality']); ?>"
                             min="10" max="100" class="rapls-pic-range">
-                        <output><?php echo esc_html((string) $config['quality']); ?></output>
+                        <?php /* The number follows the slider only through admin.js: without it, it stayed at the saved value while the slider moved (review of 1.4.36). */ ?>
+                        <output class="rapls-pic-needs-js"><?php echo esc_html((string) $config['quality']); ?></output>
+                        <noscript><span><?php
+                            /* translators: %d: the quality setting as saved, 10-100. */
+                            echo esc_html(sprintf(__('Saved: %d', 'rapls-pdf-image-creator'), (int) $config['quality']));
+                        ?></span></noscript>
                         <p class="description">
                             <?php esc_html_e('Image quality for JPEG/WebP output. (10-100)', 'rapls-pdf-image-creator'); ?>
                         </p>
@@ -237,7 +242,7 @@ if (!defined('ABSPATH')) {
                             <?php esc_html_e('Hide generated thumbnail images in the Media Library', 'rapls-pdf-image-creator'); ?>
                         </label>
                         <p class="description">
-                            <?php esc_html_e('This also decides what happens to the image when its PDF is deleted. Checked: the image is deleted with the PDF, unless another PDF or a post uses it as its featured image, or a post\'s content shows it; then it is kept as an ordinary image. Unchecked: the image is kept as an ordinary image.', 'rapls-pdf-image-creator'); ?>
+                            <?php esc_html_e('This also decides what happens to the image when its PDF is deleted. Checked: the image is deleted with the PDF, unless something else uses it. Another PDF that shares it keeps it as its thumbnail; one a post uses as its featured image, or a post\'s content shows, is kept as an ordinary image. Only featured images and post content are checked, not widgets or other settings. Unchecked: the image is kept as an ordinary image.', 'rapls-pdf-image-creator'); ?>
                         </p>
                     </td>
                 </tr>
@@ -390,7 +395,8 @@ if (!defined('ABSPATH')) {
             <?php esc_html_e('Generate thumbnails for existing PDF files in your Media Library.', 'rapls-pdf-image-creator'); ?>
         </p>
 
-        <table class="form-table">
+        <?php /* Read only by admin.js, so hidden with the buttons when it does not run (review of 1.4.36). */ ?>
+        <table class="form-table rapls-pic-needs-js">
             <tr>
                 <th scope="row"><?php esc_html_e('Options', 'rapls-pdf-image-creator'); ?></th>
                 <td>

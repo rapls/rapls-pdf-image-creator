@@ -503,12 +503,17 @@ namespace {
     $notAResponse = new \stdClass();
     $pdfMeta = ['sizes' => ['full' => ['file' => 'x.jpg', 'width' => 10, 'height' => 20]]];
     $GLOBALS['mimes'][978] = 'application/pdf';
+    // As core's get_post_mime_type(0) answers on a PDF's own screen: the
+    // global post's type. ID 0 is no attachment of anyone's (mutation testing
+    // of 1.4.36).
+    $GLOBALS['mimes'][0] = 'application/pdf';
     $rest = [];
     set_error_handler(static function (int $no, string $message): bool { throw new \ErrorException($message, 0, $no); });
     foreach ([
         'metadata, one argument' => [static function () use ($library, $pdfMeta) { return $library->ensurePdfMetadataHasImageKeys($pdfMeta); }, $pdfMeta],
         "metadata, '' for the ID" => [static function () use ($library, $pdfMeta) { return $library->ensurePdfMetadataHasImageKeys($pdfMeta, ''); }, $pdfMeta],
         'REST, a WP_Error from an earlier listener' => [static function () use ($library, $notAResponse) { return $library->filterRestAttachment($notAResponse, new WP_Post(978, 0, 'application/pdf'), new WP_REST_Request()); }, $notAResponse],
+        'REST, a WP_Error for a PDF that has a thumbnail' => [static function () use ($library, $notAResponse) { return $library->filterRestAttachment($notAResponse, new WP_Post(300, 0, 'application/pdf'), new WP_REST_Request()); }, $notAResponse],
         'REST, no post' => [static function () use ($library) { return $library->filterRestAttachment(new WP_REST_Response(['id' => 1]), null, null)->get_data(); }, ['id' => 1]],
         'row actions, null' => [static function () use ($library) { return $library->addRowActions(null, new WP_Post(978, 0, 'application/pdf')); }, null],
         'row actions, no post' => [static function () use ($library) { return $library->addRowActions(['edit' => 'Edit'], null); }, ['edit' => 'Edit']],
@@ -525,6 +530,7 @@ namespace {
     }
     restore_error_handler();
     check('  ...metadata, REST, list and upload hooks given nothing or the wrong thing: no fatal error', $rest, array_fill_keys(array_keys($rest), true));
+    unset($GLOBALS['mimes'][0]);
     unset($GLOBALS['options'][\Rapls\PDFImageCreator\Settings::OPTION_NAME]);
 
 

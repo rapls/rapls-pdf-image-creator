@@ -279,25 +279,45 @@ final class MediaLibrary
         // Check if it's a PDF
         $mimeType = get_post_mime_type($attachmentId);
         if ($mimeType !== 'application/pdf') {
+            $this->forgetDeletedThumbnail($attachmentId);
             return;
         }
 
         // Only delete thumbnail if hide_generated_images is enabled
         // When unchecked, thumbnails are visible and should be kept as independent images
         if ($this->settings->shouldHideGeneratedImages()) {
-            $this->generator->deleteThumbnail($attachmentId);
+            $this->generator->deleteThumbnail($attachmentId, true);
         } else {
             // Just remove the meta link, but keep the image file
             $thumbnailId = $this->generator->getThumbnailId($attachmentId);
             // Only this PDF's own: an image made from another PDF (a
             // translation's copied meta) is still that PDF's thumbnail.
             if ($thumbnailId && $this->generator->isOwnThumbnail($thumbnailId, $attachmentId)) {
-                // Remove the "is thumbnail" marker so it becomes a regular image
-                delete_post_meta($thumbnailId, '_rapls_pic_is_thumbnail');
-                delete_post_meta($thumbnailId, '_rapls_pic_source_pdf');
+                // A regular image now, attached where the PDF was.
+                $this->generator->makeOrdinary($thumbnailId, $attachmentId, true);
             }
             delete_post_meta($attachmentId, Generator::THUMBNAIL_META_KEY);
             delete_post_meta($attachmentId, '_thumbnail_id');
+        }
+    }
+
+    /**
+     * A thumbnail deleted on its own: its PDF stops naming it
+     *
+     * Deleting a generated image from the Media Library left the PDF's
+     * `_rapls_pic_thumbnail_id` naming an attachment that was gone, and since
+     * getThumbnailId() no longer tidies that up from a page view, it stayed
+     * until the next generation (review of 1.4.36). Core removes the
+     * `_thumbnail_id` keys itself.
+     */
+    private function forgetDeletedThumbnail(int $imageId): void
+    {
+        if ('' === (string) get_post_meta($imageId, '_rapls_pic_is_thumbnail', true)) {
+            return;
+        }
+        $pdfId = (int) get_post_meta($imageId, '_rapls_pic_source_pdf', true);
+        if ($pdfId > 0 && (int) get_post_meta($pdfId, Generator::THUMBNAIL_META_KEY, true) === $imageId) {
+            delete_post_meta($pdfId, Generator::THUMBNAIL_META_KEY);
         }
     }
 

@@ -390,6 +390,14 @@ check('the buttons only JavaScript answers are each in a block hidden without it
     (bool) preg_match('~^\.rapls-pic-needs-js \{[^}]*display: none~m', $cssNow),
 ], [2, ['rapls-pic-bulk-scan', 'rapls-pic-bulk-start', 'rapls-pic-bulk-stop', 'rapls-pic-refresh-stats'], [], 2, true, false]);
 
+// Review of 1.4.36: the Bulk tab's "Include existing" checkbox, read only by
+// admin.js, and the number beside the quality slider, which only admin.js
+// moves, are hidden without it too; the saved quality is said instead.
+check('the Bulk options and the quality number are hidden without JavaScript', [
+    (bool) preg_match('~<table class="form-table rapls-pic-needs-js">\s*<tr>\s*<th scope="row"><\?php esc_html_e\(\'Options\'.*?id="rapls-pic-include-existing"~s', $viewNow),
+    (bool) preg_match('~<output class="rapls-pic-needs-js">.*?</output>\s*<noscript><span>.*?__\(\'Saved: %d\'~s', $viewNow),
+], [true, true]);
+
 // Mutation testing of 1.4.35: text straight after a closing tag that starts
 // with "=" -- an "=" typed after the tag's ">" -- prints a stray "=" on the
 // screen.

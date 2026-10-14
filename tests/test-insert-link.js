@@ -150,6 +150,23 @@ for (const [setting, want] of [['none', 'none'], ['attachment', 'post']]) {
     check('  ...left alone there: no size sent, so the setting decides', up.posted[0][1], { attachment: { id: 7 } });
     up.wp.media.editor.send.attachment(Object.assign({}, shown.attrs, { size: 'large' }), pdfJson);
     check('  ...changed there: the window\'s size is sent', up.posted[1][1], { attachment: { id: 7, 'image-size': 'large' } });
+    // Review of 1.4.36: changed and changed back to what core started at is
+    // a choice too; the note goes with the first change.
+    shown.set('size', 'large');
+    shown.set('size', 'medium');
+    up.wp.media.editor.send.attachment(Object.assign({}, shown.attrs), pdfJson);
+    check('  ...changed and set back to Medium there: Medium is sent', [shown.get('picSizeStart'), up.posted[2][1]], [null, { attachment: { id: 7, 'image-size': 'medium' } }]);
+    const twice = attachment(up.Model, Object.assign({ sizes: { full: {} } }, pdf));
+    lib.display(twice);
+    check('  ...the watch is set once per window model', lib.display(twice).handlers['change:size'].length, 1);
+
+    // No sizes on the attachment at all (an upload not yet described): the
+    // listed name is taken, nothing thrown (mutation testing of 1.4.36).
+    const listedNull = setup({ link: 'none', size: 'large', sizes: names });
+    let nullThrew = null;
+    let nullSize = null;
+    try { nullSize = new listedNull.Library().display(attachment(listedNull.Model, Object.assign({ sizes: null }, pdf))).get('size'); } catch (e) { nullThrew = e.constructor.name; }
+    check('  ...a PDF with sizes null: the setting\'s size, nothing thrown', [nullThrew, nullSize], [null, 'large']);
 
     const listed = setup({ link: 'none', size: 'large', sizes: names });
     const noFile = new listed.Library().display(attachment(listed.Model, Object.assign({ sizes: { full: {}, medium: {} } }, pdf)));
@@ -163,9 +180,15 @@ for (const [setting, want] of [['none', 'none'], ['attachment', 'post']]) {
     const up2 = setup({ link: 'none', size: 'medium_large', sizes: names });
     const lib2 = new up2.Library();
     const file = attachment(up2.Model, { uploading: true, filename: 'Report.pdf', type: undefined });
-    lib2.display(file);
+    const shownUp = lib2.display(file);
     file.set({ uploading: false, type: 'application', mime: 'application/pdf', picThumbnailId: 71, sizes: { full: {} } });
-    check('  ...and for a PDF uploaded in the window', [lib2.display(file).get('size'), lib2.display(file).get('picSizeStart')], ['medium', 'medium']);
+    check('  ...and for a PDF uploaded in the window', [shownUp.get('size'), shownUp.get('picSizeStart')], ['medium', 'medium']);
+    // Review after 1.4.36: on this road the note is made after core's display() has run. Changed in the view that
+    // display() gave before -- with no second display() to watch it -- the size is still a choice.
+    shownUp.set('size', 'large');
+    shownUp.set('size', 'medium');
+    const upChoice = shownUp.get('picSizeStart') || null;
+    check('  ...uploaded, changed and set back: a choice, the note gone', [shownUp === lib2.display(file), upChoice], [true, null]);
     const up3 = setup({ link: 'none', size: 'large', sizes: names });
     const lib3 = new up3.Library();
     const noLarge = attachment(up3.Model, { uploading: true, filename: 'Small.pdf', type: undefined });

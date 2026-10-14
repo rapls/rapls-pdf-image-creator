@@ -23,6 +23,12 @@ namespace {
     function delete_post_meta($id, $key) { unset($GLOBALS['meta'][$id][$key]); return true; }
     function get_post($id) { return $GLOBALS['posts'][$id] ?? null; }
     function get_option($key, $default = false) { return $GLOBALS['options'][$key] ?? $default; }
+    // Review after 1.4.36: the parent is written to the row, not through wp_update_post() and its hooks.
+    function wp_update_post($args) {
+        $GLOBALS['update_post_calls'] = ($GLOBALS['update_post_calls'] ?? 0) + 1;
+        return $args['ID'];
+    }
+    function clean_post_cache($id) { $GLOBALS['cleaned'][] = $id; }
     function wp_delete_attachment($id, $force = false) {
         $GLOBALS['deleted'][] = $id;
         $post = $GLOBALS['posts'][$id] ?? null;
@@ -53,28 +59,76 @@ namespace {
         public $posts = 'wp_posts';
         public $contentFails = false;
         public function esc_like($text) { return addcslashes($text, '_%\\'); }
-        public function get_var($q) {
-            // The content lookup (review of 1.4.35): a post whose content
-            // holds any of the LIKE patterns, as MySQL would, ignoring case.
-            if (false !== strpos($q[0], 'post_content')) {
-                $this->last_error = $this->contentFails ? 'simulated failure' : '';
-                if ($this->contentFails) { return null; }
-                foreach ($GLOBALS['content'] ?? [] as $id => $html) {
-                    foreach ($q[1] as $like) {
-                        $needle = stripslashes(substr($like, 1, -1));
-                        if (false !== stripos($html, $needle)) { return (string) $id; }
+        public function update($table, $data, $where, $format = null, $whereFormat = null) {
+            if ('wp_posts' === $table && isset($GLOBALS['posts'][$where['ID']])) {
+                foreach ($data as $field => $value) { $GLOBALS['posts'][$where['ID']]->$field = $value; }
+                return 1;
+            }
+            return false;
+        }
+        /** Each content query, so a test can count them. */
+        public $contentQueries = 0;
+        public function get_results($q, $output = null) {
+            // The content lookup (review of 1.4.35, 1.4.36): the posts after
+            // the first argument whose content holds any of the LIKE
+            // patterns, as MySQL would, ignoring case. Revisions and the
+            // states the SQL leaves out are left out here too.
+            if (false === strpos($q[0], 'post_content')) {
+                throw new \RuntimeException('unexpected get_results: ' . $q[0]);
+            }
+            $this->contentQueries++;
+            $this->last_error = $this->contentFails ? 'simulated failure' : '';
+            if ($this->contentFails) { return []; }
+            $after = (int) $q[1][0];
+            $skip = [];
+            foreach ($GLOBALS['content_kind'] ?? [] as $id => $kind) {
+                if (false !== strpos($q[0], "'" . $kind . "'")) { $skip[] = $id; }
+            }
+            // As the SQL reads: the stem patterns, OR'd; then, grouped, the
+            // ID's digits AND one of the forms (review after 1.4.36).
+            $likes = array_slice($q[1], 1);
+            $forms = [];
+            $digits = null;
+            if (preg_match('/\(post_content LIKE %s AND \(((?:post_content LIKE %s(?: OR )?)+)\)\)/', $q[0], $group)) {
+                $forms = array_splice($likes, -substr_count($group[1], 'LIKE'));
+                $digits = array_pop($likes);
+            }
+            $holds = static function (string $html, string $like): bool {
+                return false !== stripos($html, stripslashes(substr($like, 1, -1)));
+            };
+            $rows = [];
+            foreach ($GLOBALS['content'] ?? [] as $id => $html) {
+                if ($id <= $after || in_array($id, $skip, true)) { continue; }
+                $hit = false;
+                foreach ($likes as $like) {
+                    $hit = $hit || $holds($html, $like);
+                }
+                if (!$hit && null !== $digits && $holds($html, $digits)) {
+                    foreach ($forms as $form) {
+                        $hit = $hit || $holds($html, $form);
                     }
                 }
-                return null;
+                if ($hit) { $rows[] = ['ID' => (string) $id, 'post_content' => $html]; }
             }
-            $this->last_error = $this->fail ? 'simulated failure' : '';
-            if ($this->fail) { return null; }
+            $GLOBALS['content_read'] = array_merge($GLOBALS['content_read'] ?? [], array_column($rows, 'ID'));
+            ksort($rows);
+            return preg_match('/LIMIT (\d+)/', $q[0], $limit) ? array_slice($rows, 0, (int) $limit[1]) : $rows;
+        }
+        /** Fails only the "named by another attachment" lookup. */
+        public $attachmentLookupFails = false;
+        public function get_var($q) {
+            $failing = $this->fail || ($this->attachmentLookupFails && false !== strpos($q[0], "post_type = 'attachment'"));
+            $this->last_error = $failing ? 'simulated failure' : '';
+            if ($failing) { return null; }
             // As MySQL would: the PDF itself is left out only by the clause
             // that says so (mutation testing after 1.4.34).
             [$metaA, $metaB, $value] = $q[1];
             $except = preg_match('/\bAND post_id <> %d\b/', $q[0]) ? ($q[1][3] ?? null) : null;
+            // Only attachments name it, when the SQL says so (another PDF).
+            $attachmentsOnly = false !== strpos($q[0], "post_type = 'attachment'");
             foreach ($GLOBALS['meta'] as $post => $keys) {
                 if (null !== $except && (int) $post === (int) $except) { continue; }
+                if ($attachmentsOnly && 'attachment' !== ($GLOBALS['posts'][$post]->post_type ?? '')) { continue; }
                 foreach ([$metaA, $metaB] as $key) {
                     if (isset($keys[$key]) && (string) $keys[$key] === $value) { return (string) $post; }
                 }
@@ -195,6 +249,15 @@ namespace {
     $GLOBALS['content'] = [702 => '<img class="wp-image-1220" src="https://cdn.example.test/y.jpg"><img class="wp-image-12">'];
     check('  ...another image\'s class that starts the same: deleted', [$generator->deleteThumbnail(120), $GLOBALS['deleted']], [true, [122]]);
 
+    // Review after 1.4.36: "[gallery" alone made every gallery a candidate, read in full for every image. Only one that
+    // holds the ID's digits is read now; a block's "id" with a space after the colon is still found.
+    $GLOBALS['deleted'] = [];
+    $GLOBALS['content_read'] = [];
+    $shown(162, 160, '2026/10/g-pdf-thumbnail.jpg');
+    $GLOBALS['content'] = [705 => '[gallery ids="5,6"]', 706 => '<!-- wp:gallery {"ids":[7,8]} -->', 707 => '<!-- wp:image {"id": 162} -->'];
+    check('a gallery that cannot name it is not read; an image block spaced "id": 162 keeps it',
+        [$generator->deleteThumbnail(160), $GLOBALS['deleted'], $GLOBALS['content_read']], [false, [], ['707']]);
+
     $GLOBALS['deleted'] = [];
     $shown(132, 130, '2026/10/資料-pdf-thumbnail.png');
     $GLOBALS['content'] = [703 => '<img src="/wp-content/uploads/2026/10/' . rawurlencode('資料-pdf-thumbnail') . '-1024x724.png">'];
@@ -214,15 +277,19 @@ namespace {
     $shown(162, 160, '2026/10/f-pdf-thumbnail.jpg');
     $GLOBALS['content'] = [];
     $GLOBALS['wpdb']->contentFails = true;
-    check('the content lookup fails: kept, tagged, and still linked',
+    // Review of 1.4.36: left marked and linked "for the next attempt", it
+    // had none -- the PDF was being deleted, or already named its new
+    // thumbnail -- and stayed hidden with nothing pointing at it.
+    check('the content lookup fails: kept as an ordinary image, let go of',
         [$generator->deleteThumbnail(160), $GLOBALS['deleted'], $GLOBALS['meta'][162]['_rapls_pic_is_thumbnail'] ?? '', $GLOBALS['meta'][160]['_rapls_pic_thumbnail_id'] ?? ''],
-        [false, [], '1', 162]);
+        [false, [], '', '']);
     $GLOBALS['wpdb']->contentFails = false;
 
     // The meta lookup still comes first: a translation sharing it keeps the
     // tags, whatever the content says.
     $GLOBALS['deleted'] = [];
     $shown(172, 170, '2026/10/g-pdf-thumbnail.jpg');
+    $GLOBALS['posts'][171] = (object) ['ID' => 171, 'post_type' => 'attachment'];
     $GLOBALS['meta'][171]['_rapls_pic_thumbnail_id'] = 172;
     $GLOBALS['content'] = [706 => '<img src="/g-pdf-thumbnail.jpg">'];
     check('named by a translation and shown: kept with its tags', [$generator->deleteThumbnail(170), $GLOBALS['deleted'], $GLOBALS['meta'][172]['_rapls_pic_is_thumbnail'] ?? ''], [false, [], '1']);
@@ -233,8 +300,136 @@ namespace {
     $GLOBALS['content'] = [];
     $postsTable = $GLOBALS['wpdb']->posts;
     $GLOBALS['wpdb']->posts = null;
-    check('no posts table: kept and still linked', [$generator->deleteThumbnail(180), $GLOBALS['deleted'], $GLOBALS['meta'][180]['_rapls_pic_thumbnail_id'] ?? ''], [false, [], 182]);
+    check('no posts table: kept as an ordinary image', [$generator->deleteThumbnail(180), $GLOBALS['deleted'], $GLOBALS['meta'][182]['_rapls_pic_is_thumbnail'] ?? ''], [false, [], '']);
     $GLOBALS['wpdb']->posts = $postsTable;
+    $GLOBALS['content'] = [];
+
+    echo "\n--- Review of 1.4.36: by ID, compared whole, read once ---\n";
+
+    $GLOBALS['deleted'] = [];
+    $shown(202, 200, '2026/10/i-pdf-thumbnail.jpg');
+    $GLOBALS['content'] = [710 => '[gallery ids="5,202"]'];
+    check('a [gallery] that names it by ID only: kept', [$generator->deleteThumbnail(200), $GLOBALS['deleted'], $GLOBALS['meta'][202]['_rapls_pic_is_thumbnail'] ?? ''], [false, [], '']);
+
+    $GLOBALS['deleted'] = [];
+    $shown(212, 210, '2026/10/j-pdf-thumbnail.jpg');
+    $GLOBALS['content'] = [711 => '<!-- wp:gallery {"ids":[1,212]} --><figure></figure><!-- /wp:gallery -->'];
+    check('a gallery block\'s "ids": kept', [$generator->deleteThumbnail(210), $GLOBALS['deleted']], [false, []]);
+
+    $GLOBALS['deleted'] = [];
+    $shown(222, 220, '2026/10/k-pdf-thumbnail.jpg');
+    $GLOBALS['content'] = [712 => '<!-- wp:image {"id":222,"sizeSlug":"large"} --><figure><img src="https://cdn.example.test/z"/></figure><!-- /wp:image -->'];
+    check('an image block\'s "id", its address rewritten by a CDN: kept', [$generator->deleteThumbnail(220), $GLOBALS['deleted']], [false, []]);
+
+    $GLOBALS['deleted'] = [];
+    $shown(232, 230, '2026/10/l-pdf-thumbnail-e1696000000000.jpg');
+    $GLOBALS['meta'][232]['_wp_attachment_backup_sizes'] = ['full-orig' => ['file' => 'l-pdf-thumbnail.jpg'], 'medium-orig' => ['file' => 'l-pdf-thumbnail-300x212.jpg']];
+    $GLOBALS['content'] = [713 => '<img src="/wp-content/uploads/2026/10/l-pdf-thumbnail-300x212.jpg">'];
+    check('edited since: the post shows the name it had, kept', [$generator->deleteThumbnail(230), $GLOBALS['deleted']], [false, []]);
+
+    $GLOBALS['deleted'] = [];
+    $shown(242, 240, '2026/10/report-pdf-thumbnail.jpg');
+    $GLOBALS['content'] = [714 => '<img src="/wp-content/uploads/2026/10/annual-report-pdf-thumbnail-300x212.jpg">'];
+    check('a post showing "annual-report-…" is another image: deleted', [$generator->deleteThumbnail(240), $GLOBALS['deleted']], [true, [242]]);
+
+    $GLOBALS['deleted'] = [];
+    $shown(252, 250, '2026/10/m-pdf-thumbnail.jpg');
+    $GLOBALS['content'] = [715 => '<img class="wp-image-252">', 716 => '[gallery ids="252"]'];
+    $GLOBALS['content_kind'] = [715 => 'revision', 716 => 'trash'];
+    check('only a revision and a trashed post show it: deleted', [$generator->deleteThumbnail(250), $GLOBALS['deleted']], [true, [252]]);
+    $GLOBALS['content_kind'] = [];
+
+    // A post's featured image only, and no other PDF: an ordinary image, as
+    // the settings screen says; it stayed marked and hidden.
+    $GLOBALS['deleted'] = [];
+    $shown(262, 260, '2026/10/n-pdf-thumbnail.jpg');
+    $GLOBALS['content'] = [];
+    $GLOBALS['posts'][800] = (object) ['ID' => 800, 'post_type' => 'post'];
+    $GLOBALS['meta'][800]['_thumbnail_id'] = '262';
+    check('a post\'s featured image, no other PDF: kept and made ordinary', [$generator->deleteThumbnail(260), $GLOBALS['deleted'], $GLOBALS['meta'][262]['_rapls_pic_is_thumbnail'] ?? ''], [false, [], '']);
+    unset($GLOBALS['meta'][800]);
+
+    // Named elsewhere, and whether by another PDF cannot be told: an
+    // ordinary image -- visible, recoverable -- and said.
+    $GLOBALS['deleted'] = [];
+    $shown(266, 265, '2026/10/nn-pdf-thumbnail.jpg');
+    $GLOBALS['meta'][801]['_thumbnail_id'] = '266';
+    $GLOBALS['wpdb']->attachmentLookupFails = true;
+    $namedLog = sys_get_temp_dir() . '/rapls-pic-own-log-' . bin2hex(random_bytes(4));
+    $namedLogWas = ini_set('error_log', $namedLog);
+    $namedKept = [$generator->deleteThumbnail(265), $GLOBALS['deleted'], $GLOBALS['meta'][266]['_rapls_pic_is_thumbnail'] ?? ''];
+    ini_set('error_log', (string) $namedLogWas);
+    $GLOBALS['wpdb']->attachmentLookupFails = false;
+    $namedLogged = is_file($namedLog) ? (string) file_get_contents($namedLog) : '';
+    @unlink($namedLog);
+    check('named elsewhere, whether by another PDF unknown: ordinary, and said', [$namedKept, false !== strpos($namedLogged, 'could not tell whether another PDF uses image #266')], [[false, [], ''], true]);
+    unset($GLOBALS['meta'][801]);
+
+    // The content is read once, by 100s, until one shows it.
+    $GLOBALS['deleted'] = [];
+    $shown(272, 270, '2026/10/o-pdf-thumbnail.jpg');
+    $GLOBALS['content'] = [];
+    for ($id = 1000; $id < 1150; $id++) { $GLOBALS['content'][$id] = '<img src="/o-pdf-thumbnail-x.jpg">'; }
+    $GLOBALS['content'][1149] = '<img src="/o-pdf-thumbnail.jpg">';
+    $GLOBALS['wpdb']->contentQueries = 0;
+    check('read on past the first 100 candidates: kept', [$generator->deleteThumbnail(270), $GLOBALS['deleted'], $GLOBALS['wpdb']->contentQueries], [false, [], 2]);
+    $GLOBALS['content'] = [];
+
+    echo "\n--- Review of 1.4.36: deleting a thumbnail, or its PDF ---\n";
+
+    // A thumbnail deleted on its own from the Media Library: the PDF stops
+    // naming it, rather than naming an attachment that is gone.
+    $own(282, 280);
+    $GLOBALS['meta'][280]['_rapls_pic_thumbnail_id'] = 282;
+    $GLOBALS['mimes'][282] = 'image/jpeg';
+    $library->onAttachmentDeleted(282);
+    check('a thumbnail deleted on its own: its PDF lets go of it', $GLOBALS['meta'][280]['_rapls_pic_thumbnail_id'] ?? '', '');
+    $GLOBALS['meta'][290]['_rapls_pic_thumbnail_id'] = 999;
+    $own(292, 290);
+    $GLOBALS['mimes'][292] = 'image/jpeg';
+    $library->onAttachmentDeleted(292);
+    check('  ...a PDF naming another image keeps it', $GLOBALS['meta'][290]['_rapls_pic_thumbnail_id'] ?? '', 999);
+    $GLOBALS['mimes'][299] = 'image/jpeg';
+    $GLOBALS['meta'][299]['_rapls_pic_source_pdf'] = 280;
+    $GLOBALS['meta'][280]['_rapls_pic_thumbnail_id'] = 299;
+    $library->onAttachmentDeleted(299);
+    check('  ...an image without the marker is not a thumbnail', $GLOBALS['meta'][280]['_rapls_pic_thumbnail_id'] ?? '', 299);
+
+    // Deleting a PDF with "Hide Generated Images" off: its image is kept,
+    // and attached where the PDF was, not to an item that is gone.
+    $own(312, 310);
+    $GLOBALS['posts'][310] = (object) ['ID' => 310, 'post_type' => 'attachment', 'post_parent' => 7];
+    $GLOBALS['posts'][312]->post_parent = 310;
+    $GLOBALS['meta'][310]['_rapls_pic_thumbnail_id'] = 312;
+    $GLOBALS['mimes'][310] = 'application/pdf';
+    $library->onAttachmentDeleted(310);
+    check('PDF deleted, images kept: the image is attached to the PDF\'s parent', [$GLOBALS['posts'][312]->post_parent, $GLOBALS['meta'][312]['_rapls_pic_is_thumbnail'] ?? ''], [7, '']);
+    check('  ...written to the row, its cache cleared, no wp_update_post() and its hooks (review after 1.4.36)', [$GLOBALS['update_post_calls'] ?? 0, in_array(312, $GLOBALS['cleaned'] ?? [], true)], [0, true]);
+    $own(317, 315);
+    $GLOBALS['posts'][315] = (object) ['ID' => 315, 'post_type' => 'attachment', 'post_parent' => 7];
+    $GLOBALS['posts'][317]->post_parent = 555;
+    $GLOBALS['meta'][315]['_rapls_pic_thumbnail_id'] = 317;
+    $GLOBALS['mimes'][315] = 'application/pdf';
+    $library->onAttachmentDeleted(315);
+    check('  ...one attached to something else stays there', $GLOBALS['posts'][317]->post_parent, 555);
+
+    // With it on, and a post showing the image: the same.
+    $prop->setValue($settings, ['hide_generated_images' => true]);
+    $shown(322, 320, '2026/10/p-pdf-thumbnail.jpg');
+    $GLOBALS['posts'][320] = (object) ['ID' => 320, 'post_type' => 'attachment', 'post_parent' => 0];
+    $GLOBALS['posts'][322]->post_parent = 320;
+    $GLOBALS['mimes'][320] = 'application/pdf';
+    $GLOBALS['content'] = [720 => '<img src="/p-pdf-thumbnail.jpg">'];
+    $library->onAttachmentDeleted(320);
+    check('  ...and with "Hide Generated Images" on, for one a post shows', [isset($GLOBALS['posts'][322]), $GLOBALS['posts'][322]->post_parent], [true, 0]);
+    $GLOBALS['content'] = [];
+
+    // Regenerating keeps the parent: the PDF is still there.
+    $shown(332, 330, '2026/10/q-pdf-thumbnail.jpg');
+    $GLOBALS['posts'][332]->post_parent = 330;
+    $GLOBALS['content'] = [721 => '<img src="/q-pdf-thumbnail.jpg">'];
+    $generator->deleteThumbnail(330);
+    check('  ...not when only the thumbnail is let go of', $GLOBALS['posts'][332]->post_parent, 330);
     $GLOBALS['content'] = [];
 
     // Uninstalling keeps what something else uses too, as deleteThumbnail()

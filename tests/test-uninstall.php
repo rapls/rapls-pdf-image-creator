@@ -106,6 +106,7 @@ function delete_option($key) { unset(site()['options'][$key]); return true; }
 function delete_transient($key) { unset(site()['transients'][$key]); return true; }
 function wp_cache_delete($key, $group = '') { return true; }
 function wp_basename($path, $suffix = '') { return basename($path, $suffix); }
+function maybe_unserialize($value) { return is_string($value) && preg_match('/^a:\d+:\{/', $value) ? unserialize($value, ['allowed_classes' => false]) : $value; }
 function delete_metadata($type, $id, $key, $value = '', $all = false) { $GLOBALS['user_meta_deleted'][] = $key; return true; }
 function wp_delete_attachment($id, $force = false) { site()['deleted'][] = (int) $id; return true; }
 function update_post_meta($id, $key, $value, $previous = '') {
@@ -163,7 +164,7 @@ $GLOBALS['wpdb'] = new class {
             $rows = [];
             foreach (site()['meta'] as $row) {
                 if ('_rapls_pic_is_thumbnail' === $row[1] && '1' === $row[2]) {
-                    $rows[] = ['id' => (string) $row[0], 'file' => meta_value($row[0], '_wp_attached_file'), 'pdf' => meta_value($row[0], '_rapls_pic_source_pdf')];
+                    $rows[] = ['id' => (string) $row[0], 'file' => meta_value($row[0], '_wp_attached_file'), 'pdf' => meta_value($row[0], '_rapls_pic_source_pdf'), 'backup' => false !== strpos($sql, "backup.meta_key = '_wp_attachment_backup_sizes'") ? meta_value($row[0], '_wp_attachment_backup_sizes') : null];
                 }
             }
             return $rows;
@@ -188,8 +189,18 @@ $GLOBALS['wpdb'] = new class {
         }
         if (preg_match('/WHERE ID > (\d+) .* LIMIT (\d+)/', $sql, $m)) {
             $GLOBALS['post_reads'] = ($GLOBALS['post_reads'] ?? 0) + 1;
-            // Attachments' own descriptions left out, when the SQL says so.
-            $skip = false !== strpos($sql, "post_type <> 'attachment'") ? (site()['attachment_posts'] ?? []) : [];
+            // Attachments' own descriptions, revisions, auto-drafts and
+            // trashed posts left out, when the SQL says so.
+            $skip = [];
+            if (preg_match("/post_type NOT IN \\(([^)]*)\\)/", $sql, $types)) {
+                if (false !== strpos($types[1], "'attachment'")) { $skip = array_merge($skip, site()['attachment_posts'] ?? []); }
+                if (false !== strpos($types[1], "'revision'")) { $skip = array_merge($skip, site()['revisions'] ?? []); }
+            }
+            if (preg_match("/post_status NOT IN \\(([^)]*)\\)/", $sql, $statuses)) {
+                foreach (site()['statuses'] ?? [] as $status => $ids) {
+                    if (false !== strpos($statuses[1], "'$status'")) { $skip = array_merge($skip, $ids); }
+                }
+            }
             $rows = [];
             foreach (site()['posts'] as $id => $content) {
                 if ($id > (int) $m[1] && count($rows) < (int) $m[2] && !in_array($id, $skip, true)) {
@@ -349,7 +360,58 @@ $GLOBALS['post_reads'] = 0;
 rapls_pic_uninstall_site();
 check('  ...while one never found means every post is read', $GLOBALS['post_reads'], 2);
 
-check('a stem drops size, "-scaled" and extension', [rapls_pic_uninstall_stem('2026/10/B-pdf-thumbnail-300x200.JPG'), rapls_pic_uninstall_stem('x/b-pdf-thumbnail-scaled.webp'), rapls_pic_uninstall_stem('b-pdf-thumbnail-1.jpg')], ['b-pdf-thumbnail', 'b-pdf-thumbnail', 'b-pdf-thumbnail-1']);
+$rapls_stem = [\Rapls\PDFImageCreator\ContentUse::class, 'stem'];
+check('a stem drops size, "-scaled" and extension', [$rapls_stem('2026/10/B-pdf-thumbnail-300x200.JPG'), $rapls_stem('x/b-pdf-thumbnail-scaled.webp'), $rapls_stem('b-pdf-thumbnail-1.jpg')], ['b-pdf-thumbnail', 'b-pdf-thumbnail', 'b-pdf-thumbnail-1']);
+
+echo "\n--- Review of 1.4.36: galleries by ID, edited images, names compared whole ---\n";
+
+// A classic [gallery] names its images by ID only.
+seed_site();
+$GLOBALS['sites'][1]['posts'][200] = '[gallery ids="5,71,9"]';
+rapls_pic_uninstall_site();
+check('an image a [gallery] names by ID is kept', $GLOBALS['sites'][1]['deleted'], []);
+
+// A gallery block, by its "ids".
+seed_site();
+$GLOBALS['sites'][1]['posts'][200] = '<!-- wp:gallery {"ids":[71]} --><figure class="wp-block-gallery"></figure><!-- /wp:gallery -->';
+rapls_pic_uninstall_site();
+check('  ...and one a gallery block names by "ids"', $GLOBALS['sites'][1]['deleted'], []);
+
+// A [gallery] with the PDF in include= showed its thumbnail.
+seed_site();
+$GLOBALS['sites'][1]['posts'][200] = "[gallery include='70']";
+rapls_pic_uninstall_site();
+check('  ...and one whose PDF a gallery includes', $GLOBALS['sites'][1]['deleted'], []);
+
+// Edited after it was inserted: the attached file is the edited name, the
+// post still shows the original, which the backup sizes record.
+seed_site();
+foreach ($GLOBALS['sites'][1]['meta'] as &$rapls_row) {
+    if (71 === $rapls_row[0] && '_wp_attached_file' === $rapls_row[1]) {
+        $rapls_row[2] = '2026/10/d-pdf-thumbnail-e1696000000000.jpg';
+    }
+}
+unset($rapls_row);
+$GLOBALS['sites'][1]['meta'][] = [71, '_wp_attachment_backup_sizes', serialize(['full-orig' => ['file' => 'd-pdf-thumbnail.jpg', 'width' => 1024, 'height' => 724]])];
+$GLOBALS['sites'][1]['posts'][200] = '<img src="/wp-content/uploads/2026/10/d-pdf-thumbnail-300x212.jpg">';
+rapls_pic_uninstall_site();
+check('an edited image a post shows under its old name is kept', $GLOBALS['sites'][1]['deleted'], []);
+
+// A name that only ends the same is another image.
+seed_site();
+$GLOBALS['sites'][1]['posts'][200] = '<img src="/wp-content/uploads/2026/10/annual-d-pdf-thumbnail.jpg">';
+rapls_pic_uninstall_site();
+check('a post showing "annual-d-pdf-thumbnail" does not keep "d-pdf-thumbnail"', $GLOBALS['sites'][1]['deleted'], [71]);
+
+// A revision, an auto-draft and a trashed post do not count.
+seed_site();
+$GLOBALS['sites'][1]['posts'][200] = '<img src="/wp-content/uploads/2026/10/d-pdf-thumbnail.jpg">';
+$GLOBALS['sites'][1]['posts'][201] = '<img class="wp-image-71">';
+$GLOBALS['sites'][1]['posts'][202] = '[gallery ids="71"]';
+$GLOBALS['sites'][1]['revisions'] = [200];
+$GLOBALS['sites'][1]['statuses'] = ['auto-draft' => [201], 'trash' => [202]];
+rapls_pic_uninstall_site();
+check('a revision, an auto-draft and a trashed post keep nothing', $GLOBALS['sites'][1]['deleted'], [71]);
 
 echo "\n$pass passed, $fail failed\n";
 exit($fail ? 1 : 0);

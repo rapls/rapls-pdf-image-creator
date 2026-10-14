@@ -16,6 +16,10 @@ if (!defined('WP_UNINSTALL_PLUGIN')) {
 // WordPress caches the file list from wp-content/languages/plugins/ for up to 1 hour.
 wp_cache_delete(md5(WP_LANG_DIR . '/plugins/'), 'translation_files');
 
+// The test for "a post shows this image" that regenerating makes too, as a
+// file of plain functions: WordPress runs this without loading the plugin.
+require_once __DIR__ . '/includes/ContentUse.php';
+
 /**
  * Everything this plugin keeps in one site's tables
  *
@@ -46,10 +50,11 @@ function rapls_pic_uninstall_site(): void
         // Every thumbnail this plugin made, with its file and its PDF
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Uninstall cleanup requires direct query
         $rapls_pic_thumbnails = $wpdb->get_results(
-            "SELECT marker.post_id AS id, file.meta_value AS file, source.meta_value AS pdf
+            "SELECT marker.post_id AS id, file.meta_value AS file, source.meta_value AS pdf, backup.meta_value AS backup
              FROM {$wpdb->postmeta} marker
              LEFT JOIN {$wpdb->postmeta} file ON file.post_id = marker.post_id AND file.meta_key = '_wp_attached_file'
              LEFT JOIN {$wpdb->postmeta} source ON source.post_id = marker.post_id AND source.meta_key = '_rapls_pic_source_pdf'
+             LEFT JOIN {$wpdb->postmeta} backup ON backup.post_id = marker.post_id AND backup.meta_key = '_wp_attachment_backup_sizes'
              WHERE marker.meta_key = '_rapls_pic_is_thumbnail' AND marker.meta_value = '1'",
             ARRAY_A
         );
@@ -176,37 +181,24 @@ function rapls_pic_uninstall_move_featured(): bool
 }
 
 /**
- * The file name of an image, without size, "-scaled" or extension
- *
- * "2026/10/a-pdf-thumbnail-300x200.jpg" and ".../a-pdf-thumbnail.jpg" give
- * the same answer, so a post showing any size of a thumbnail is found.
- *
- * @param string $name A path, an address or a file name.
- * @return string
- */
-function rapls_pic_uninstall_stem(string $name): string
-{
-    $name = strtolower(wp_basename($name));
-    $name = (string) preg_replace('/\.[a-z0-9]+$/', '', $name);
-
-    return (string) preg_replace('/(?:-scaled|-rotated|-\d+x\d+)+$/', '', $name);
-}
-
-/**
  * The thumbnails some post's content shows
  *
- * By file name, in any size, and by a "wp-image-" class naming the image or
- * the PDF it was made from. Matching on the name alone keeps an image whose
- * name another file shares; that errs towards keeping, which is the side
- * this file errs on.
+ * ContentUse makes the test, the same one regenerating and deleting a PDF
+ * make: the file name in any size, before and after an edit, compared whole;
+ * or a "wp-image-" class, an image block, a gallery block or a [gallery]
+ * shortcode naming the image or the PDF it was made from -- a PDF in a
+ * gallery showed its thumbnail, and without the plugin it shows nothing, so
+ * the image is kept for the post to be pointed at again (review of 1.4.36).
  *
  * Only post_content is read: not widgets, not options, not a page builder's
- * own meta. Every post is read, 200 at a time, unless every thumbnail has
- * been found sooner. On a very large site that can outlast the request; if
- * it does, nothing has been deleted yet, and the plugin's settings and
- * markers are what is left behind.
+ * own meta. Revisions, auto-drafts and trashed posts are not read: a
+ * revision kept a picture taken out of the post long ago. Every other post
+ * is read, 200 at a time, unless every thumbnail has been found sooner. On a
+ * very large site that can outlast the request; if it does, nothing has
+ * been deleted yet, and the plugin's settings and markers are what is left
+ * behind.
  *
- * @param array<int, array<string, mixed>> $thumbnails Rows with id, file and pdf.
+ * @param array<int, array<string, mixed>> $thumbnails Rows with id, file, pdf and backup.
  * @return int[]|null Null when the posts could not be read.
  */
 function rapls_pic_uninstall_shown_in_content(array $thumbnails): ?array
@@ -217,8 +209,9 @@ function rapls_pic_uninstall_shown_in_content(array $thumbnails): ?array
     $rapls_pic_by_id = [];
     foreach ($thumbnails as $rapls_pic_thumbnail) {
         $rapls_pic_id = (int) $rapls_pic_thumbnail['id'];
-        if ('' !== (string) $rapls_pic_thumbnail['file']) {
-            $rapls_pic_by_stem[rapls_pic_uninstall_stem((string) $rapls_pic_thumbnail['file'])][] = $rapls_pic_id;
+        $rapls_pic_backup = isset($rapls_pic_thumbnail['backup']) ? maybe_unserialize($rapls_pic_thumbnail['backup']) : [];
+        foreach (\Rapls\PDFImageCreator\ContentUse::stemsOf((string) $rapls_pic_thumbnail['file'], $rapls_pic_backup) as $rapls_pic_stem) {
+            $rapls_pic_by_stem[$rapls_pic_stem][] = $rapls_pic_id;
         }
         $rapls_pic_by_id[$rapls_pic_id][] = $rapls_pic_id;
         if ((int) $rapls_pic_thumbnail['pdf'] > 0) {
@@ -229,13 +222,15 @@ function rapls_pic_uninstall_shown_in_content(array $thumbnails): ?array
         return [];
     }
 
+    $rapls_pic_skip_types = "'" . implode("', '", \Rapls\PDFImageCreator\ContentUse::SKIP_TYPES) . "'";
+    $rapls_pic_skip_statuses = "'" . implode("', '", \Rapls\PDFImageCreator\ContentUse::SKIP_STATUSES) . "'";
     $rapls_pic_shown = []; // Keyed by ID.
     $rapls_pic_after = 0;
     do {
-        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Uninstall cleanup requires direct query
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Uninstall cleanup requires direct query; constants only
         $rapls_pic_posts = $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT ID, post_content FROM {$wpdb->posts} WHERE ID > %d AND post_type <> 'attachment' AND post_content <> '' ORDER BY ID LIMIT 200",
+                "SELECT ID, post_content FROM {$wpdb->posts} WHERE ID > %d AND post_type NOT IN ({$rapls_pic_skip_types}) AND post_status NOT IN ({$rapls_pic_skip_statuses}) AND post_content <> '' ORDER BY ID LIMIT 200",
                 $rapls_pic_after
             ),
             ARRAY_A
@@ -248,24 +243,11 @@ function rapls_pic_uninstall_shown_in_content(array $thumbnails): ?array
             $rapls_pic_after = (int) $rapls_pic_post['ID'];
             $rapls_pic_content = (string) $rapls_pic_post['post_content'];
 
-            if (preg_match_all('/([^\/\s"\'<>()=]+)\.(?:jpe?g|png|gif|webp|avif)\b/i', $rapls_pic_content, $rapls_pic_files)) {
-                foreach ($rapls_pic_files[0] as $rapls_pic_file) {
-                    // Decoded: an address percent-encodes a name that is not
-                    // ASCII, and the attached file holds it as it is, so a
-                    // post showing "%E8%B3%87%E6%96%99-pdf-thumbnail.jpg" did
-                    // not keep 資料-pdf-thumbnail.jpg (review of 1.4.34).
-                    $rapls_pic_stem = rapls_pic_uninstall_stem(rawurldecode($rapls_pic_file));
-                    if (isset($rapls_pic_by_stem[$rapls_pic_stem])) {
-                        $rapls_pic_shown += array_fill_keys($rapls_pic_by_stem[$rapls_pic_stem], true);
-                    }
-                }
+            foreach (array_intersect_key($rapls_pic_by_stem, \Rapls\PDFImageCreator\ContentUse::stemsIn($rapls_pic_content)) as $rapls_pic_ids) {
+                $rapls_pic_shown += array_fill_keys($rapls_pic_ids, true);
             }
-            if (preg_match_all('/wp-image-(\d+)/', $rapls_pic_content, $rapls_pic_classes)) {
-                foreach ($rapls_pic_classes[1] as $rapls_pic_class) {
-                    if (isset($rapls_pic_by_id[(int) $rapls_pic_class])) {
-                        $rapls_pic_shown += array_fill_keys($rapls_pic_by_id[(int) $rapls_pic_class], true);
-                    }
-                }
+            foreach (array_intersect_key($rapls_pic_by_id, \Rapls\PDFImageCreator\ContentUse::idsIn($rapls_pic_content)) as $rapls_pic_ids) {
+                $rapls_pic_shown += array_fill_keys($rapls_pic_ids, true);
             }
         }
 

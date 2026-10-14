@@ -4,7 +4,7 @@
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: Rapls PDF Image Creator 1.4.36\n"
+"Project-Id-Version: Rapls PDF Image Creator 1.4.37\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-09-11 08:48+0900\n"
 "PO-Revision-Date: 2026-10-13 15:00+0900\n"
@@ -184,11 +184,15 @@ msgstr ""
 "「タイトル」は PDF へのテキストリンクのみを挿入します。「カスタム HTML」では、ド"
 "キュメントビューアーのプラグインを使えます。"
 
+#. translators: %d: the quality setting as saved, 10-100.
+msgid "Saved: %d"
+msgstr "保存済みの値: %d"
+
 msgid "Default Insert Size"
 msgstr "デフォルト挿入サイズ"
 
 msgid "In the Add Media window, Size starts at this choice for a PDF with a thumbnail, and a size chosen there is used instead. A size the window does not list is used while the window's Size is left as it is."
-msgstr "「メディアを追加」画面では、サムネイルのある PDF のサイズが最初にこの値になります。画面でサイズを選んだときは、そちらを使います。画面の一覧にないサイズは、画面のサイズを変えなければ、この値を使います。"
+msgstr "「メディアを追加」画面でサムネイルのある PDF を選ぶと、画面の「サイズ」が最初にこの値になります。画面でサイズを選んだときは、そちらを使います。画面の一覧にないサイズは、画面の「サイズ」を変えなければ、この値を使います。"
 
 msgid "Link To"
 msgstr "リンク先"
@@ -197,8 +201,8 @@ msgid ""
 "In the Add Media window, Link To starts at this choice for a PDF with a "
 "thumbnail. A link chosen there is used instead."
 msgstr ""
-"サムネイルのある PDF では、「メディアを追加」画面のリンク先がここで選んだもの"
-"になります。その画面で別のリンク先を選ぶと、そちらを使います。"
+"サムネイルのある PDF では、「メディアを追加」画面のリンク先が最初にここで選ん"
+"だものになります。その画面で別のリンク先を選ぶと、そちらを使います。"
 
 msgid "PDF File"
 msgstr "PDF ファイル"
@@ -907,8 +911,8 @@ msgstr "このサーバーでは WebP を使えません。5.8より前の WordP
 msgid "Where WordPress shows a file-type icon for a PDF, the generated thumbnail is shown instead. The Media Library's grid and list show a PDF's thumbnail whether or not this is on."
 msgstr "WordPress が PDF にファイル形式のアイコンを表示する場所で、代わりに生成したサムネイルを表示します。メディアライブラリのグリッドとリストでは、この設定に関係なく PDF のサムネイルを表示します。"
 
-msgid "This also decides what happens to the image when its PDF is deleted. Checked: the image is deleted with the PDF, unless another PDF or a post uses it as its featured image, or a post's content shows it; then it is kept as an ordinary image. Unchecked: the image is kept as an ordinary image."
-msgstr "PDF を削除したときに画像をどうするかも、この設定で決まります。オンにすると、画像も PDF と一緒に削除します。ただし、ほかの PDF や投稿がアイキャッチ画像として使っている画像や、投稿の本文に表示されている画像は、普通の画像として残します。オフにすると、画像は普通の画像として残ります。"
+msgid "This also decides what happens to the image when its PDF is deleted. Checked: the image is deleted with the PDF, unless something else uses it. Another PDF that shares it keeps it as its thumbnail; one a post uses as its featured image, or a post's content shows, is kept as an ordinary image. Only featured images and post content are checked, not widgets or other settings. Unchecked: the image is kept as an ordinary image."
+msgstr "PDF を削除したときに画像をどうするかも、この設定で決まります。オンにすると、画像も PDF と一緒に削除します。ただし、ほかのものが使っている画像は残します。同じ画像を使っているほかの PDF があれば、その PDF のサムネイルとして残します。投稿がアイキャッチ画像として使っている画像や、投稿の本文に表示されている画像は、普通の画像として残します。確かめるのはアイキャッチ画像と投稿の本文だけで、ウィジェットやほかの設定は確かめません。オフにすると、画像は普通の画像として残ります。"
 
 msgid "These settings are used by \"Insert into post\" in the classic editor's Add Media window, where Size and Link To start at them for a PDF with a thumbnail; what is chosen there is used instead. The block editor does not use them."
 msgstr "これらの設定は、クラシックエディターの「メディアを追加」画面の「投稿に挿入」で使われます。サムネイルのある PDF では、画面のサイズとリンク先が最初にこの設定になり、画面で選んだものがあればそちらを使います。ブロックエディターでは使われません。"

@@ -101,7 +101,9 @@ final class ReviewPrompt
 
         check_admin_referer(self::ARG);
 
-        $answer = sanitize_key(wp_unslash($_GET[self::ARG]));
+        // A string only: sanitize_key() took an array to a TypeError before
+        // WordPress 6.1 (review of 1.4.36).
+        $answer = is_string($_GET[self::ARG]) ? sanitize_key(wp_unslash($_GET[self::ARG])) : '';
 
         update_option(self::OPTION, 'done', false);
 

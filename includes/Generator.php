@@ -592,8 +592,11 @@ final class Generator
         // make -- a featured image chosen by hand, which getThumbnailId()
         // falls back to -- is neither deleted nor unlinked: the new thumbnail
         // is found first, and the choice was not this plugin's (R55-02).
+        // Asked once: the content lookup reads posts, and asking again whether
+        // the image was "used elsewhere" ran it a second time (review of
+        // 1.4.36).
         if (null !== $previousId && $previousId !== $thumbnailId && $this->isOwnThumbnail($previousId, $pdfId)
-            && !$this->releaseThumbnail($pdfId, $previousId) && null !== get_post($previousId) && !$this->usedElsewhere($previousId, $pdfId)) {
+            && self::RELEASE_FAILED === $this->releaseThumbnail($pdfId, $previousId)) {
             // The new one is in place, so this is not a failure; but the old
             // image is now linked from nothing and stays. Said, so it can be
             // found (R58-03).
@@ -758,17 +761,6 @@ final class Generator
     }
 
     /**
-     * Whether anything but this PDF still needs this image
-     *
-     * Named by something else (namedElsewhere()), or shown in some post's
-     * content (shownInContent()).
-     */
-    private function usedElsewhere(int $thumbnailId, int $pdfId): bool
-    {
-        return $this->namedElsewhere($thumbnailId, $pdfId) || false !== $this->shownInContent($thumbnailId);
-    }
-
-    /**
      * Whether anything but this PDF names this image as its thumbnail
      *
      * This plugin's own meta on another attachment, or `_thumbnail_id` on any
@@ -798,50 +790,34 @@ final class Generator
     }
 
     /**
-     * Whether some post's content shows this image
+     * Whether another attachment -- a translation's copy of the PDF -- names
+     * this image as its thumbnail
      *
-     * An image or gallery block given the PDF, and the classic editor's
-     * "Insert into post", put the thumbnail's own address into the post. A
-     * forced regeneration or deleting the PDF deleted the file, and the
-     * picture in the post became a broken link; uninstalling has looked for
-     * this since 1.4.34, regenerating did not (review of 1.4.35).
+     * Such an image is still a thumbnail, that PDF's, and keeps its two
+     * markers. One only a post's featured image names is not anybody's
+     * thumbnail once this PDF lets go of it, and becomes an ordinary image,
+     * as the settings screen says; it stayed marked, hidden in the Media
+     * Library by "Hide Generated Images" while a post showed it (review of
+     * 1.4.36).
      *
-     * The same test uninstall.php makes, as one query: the file name in any
-     * size ("a-pdf-thumbnail" finds "a-pdf-thumbnail-300x212.jpg"), as it is
-     * and percent-encoded, or a "wp-image-" class naming the image. A name
-     * another file shares keeps this one too; that errs towards keeping.
-     * Only post_content is read -- not widgets, options or a page builder's
-     * meta. It runs only when an image of this plugin's own is about to be
-     * deleted: a forced regeneration, or deleting a PDF.
-     *
-     * @return bool|null Null when the database did not answer, which keeps
-     *                   the image as surely as a yes.
+     * @return bool|null Null when the database did not answer.
      */
-    private function shownInContent(int $thumbnailId): ?bool
+    private function namedByAttachment(int $thumbnailId, int $pdfId): ?bool
     {
         global $wpdb;
 
-        if (!is_object($wpdb) || !isset($wpdb->posts) || !method_exists($wpdb, 'get_var') || !method_exists($wpdb, 'esc_like')) {
+        if (!is_object($wpdb) || !isset($wpdb->postmeta, $wpdb->posts) || !method_exists($wpdb, 'get_var')) {
             return null;
         }
 
-        $patterns = [
-            '%' . $wpdb->esc_like('wp-image-' . $thumbnailId . '"') . '%',
-            '%' . $wpdb->esc_like('wp-image-' . $thumbnailId . ' ') . '%',
-        ];
-        $stem = self::fileStem((string) get_post_meta($thumbnailId, '_wp_attached_file', true));
-        if ('' !== $stem) {
-            $patterns[] = '%' . $wpdb->esc_like($stem) . '%';
-            if (rawurlencode($stem) !== $stem) {
-                $patterns[] = '%' . $wpdb->esc_like(rawurlencode($stem)) . '%';
-            }
-        }
-
-        $likes = implode(' OR ', array_fill(0, count($patterns), 'post_content LIKE %s'));
-        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- placeholders only
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.SlowDBQuery.slow_db_query_meta_key, WordPress.DB.SlowDBQuery.slow_db_query_meta_value
         $found = $wpdb->get_var($wpdb->prepare(
-            "SELECT ID FROM {$wpdb->posts} WHERE post_type <> 'attachment' AND post_content <> '' AND ({$likes}) LIMIT 1",
-            ...$patterns
+            "SELECT meta.post_id FROM {$wpdb->postmeta} meta INNER JOIN {$wpdb->posts} named ON named.ID = meta.post_id AND named.post_type = 'attachment'
+             WHERE meta.meta_key IN (%s, %s) AND meta.meta_value = %s AND meta.post_id <> %d LIMIT 1",
+            self::THUMBNAIL_META_KEY,
+            '_thumbnail_id',
+            (string) $thumbnailId,
+            $pdfId
         ));
 
         if ('' !== (string) $wpdb->last_error) {
@@ -852,19 +828,86 @@ final class Generator
     }
 
     /**
-     * A file's name without folder, extension or size suffix
+     * Whether some post's content shows this image
      *
-     * "2026/10/a-pdf-thumbnail-300x200.jpg" and "a-pdf-thumbnail.jpg" both
-     * give "a-pdf-thumbnail", as rapls_pic_uninstall_stem() does.
+     * An image or gallery block given the PDF, and the classic editor's
+     * "Insert into post", put the thumbnail's own address into the post. A
+     * forced regeneration or deleting the PDF deleted the file, and the
+     * picture in the post became a broken link (review of 1.4.35).
+     *
+     * ContentUse makes the test, the same one uninstall.php makes: the file
+     * name in any size, before and after an edit, as it is and
+     * percent-encoded, compared whole; or the image's ID in a "wp-image-"
+     * class, an image block, a gallery block or a [gallery] shortcode. SQL
+     * only narrows the posts read, with LIKE on fragments every one of those
+     * leaves behind; PHP decides. "%name%" in SQL alone kept
+     * "report-pdf-thumbnail" because a post showed
+     * "annual-report-pdf-thumbnail", and nothing found a gallery naming the
+     * image by ID (review of 1.4.36).
+     *
+     * Revisions, auto-drafts, trashed posts and attachments are not read.
+     * Only post_content is: not widgets, options or a page builder's meta.
+     * It runs only when an image of this plugin's own is about to be
+     * deleted: a forced regeneration, or deleting a PDF.
+     *
+     * @return bool|null Null when the database did not answer.
      */
-    private static function fileStem(string $file): string
+    private function shownInContent(int $thumbnailId): ?bool
     {
-        // Not lowercased: MySQL's LIKE already ignores case, and strtolower()
-        // on PHP 7 follows the locale and can alter a UTF-8 name's bytes.
-        $name = basename(str_replace('\\', '/', $file));
-        $name = (string) preg_replace('/\.[a-z0-9]+$/i', '', $name);
+        global $wpdb;
 
-        return (string) preg_replace('/(?:-scaled|-rotated|-\d+x\d+)+$/', '', $name);
+        if (!is_object($wpdb) || !isset($wpdb->posts) || !method_exists($wpdb, 'get_results') || !method_exists($wpdb, 'esc_like')) {
+            return null;
+        }
+
+        class_exists(ContentUse::class) || require_once __DIR__ . '/ContentUse.php';
+
+        $stems = ContentUse::stemsOf(
+            (string) get_post_meta($thumbnailId, '_wp_attached_file', true),
+            get_post_meta($thumbnailId, '_wp_attachment_backup_sizes', true)
+        );
+        // ContentUse::candidate(), as SQL: a stem fragment, or the ID's
+        // digits with a form that names an image by ID.
+        $patterns = [];
+        foreach (ContentUse::fragments($stems) as $fragment) {
+            $patterns[] = '%' . $wpdb->esc_like($fragment) . '%';
+        }
+        $forms = [];
+        foreach (ContentUse::ID_FORMS as $form) {
+            $forms[] = '%' . $wpdb->esc_like($form) . '%';
+        }
+        $likes = implode(' OR ', array_merge(
+            array_fill(0, count($patterns), 'post_content LIKE %s'),
+            ['(post_content LIKE %s AND (' . implode(' OR ', array_fill(0, count($forms), 'post_content LIKE %s')) . '))']
+        ));
+        $patterns = array_merge($patterns, ['%' . $wpdb->esc_like((string) $thumbnailId) . '%'], $forms);
+        $skipTypes = "'" . implode("', '", ContentUse::SKIP_TYPES) . "'";
+        $skipStatuses = "'" . implode("', '", ContentUse::SKIP_STATUSES) . "'";
+
+        $after = 0;
+        do {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- constants and placeholders only
+            $rows = $wpdb->get_results($wpdb->prepare(
+                "SELECT ID, post_content FROM {$wpdb->posts}
+                 WHERE ID > %d AND post_type NOT IN ({$skipTypes}) AND post_status NOT IN ({$skipStatuses}) AND ({$likes})
+                 ORDER BY ID LIMIT 100",
+                $after,
+                ...$patterns
+            ), defined('ARRAY_A') ? ARRAY_A : 'ARRAY_A');
+
+            if (!is_array($rows) || '' !== (string) $wpdb->last_error) {
+                return null;
+            }
+
+            foreach ($rows as $row) {
+                $after = (int) ($row['ID'] ?? 0);
+                if (ContentUse::shows((string) ($row['post_content'] ?? ''), $thumbnailId, $stems)) {
+                    return true;
+                }
+            }
+        } while (100 === count($rows));
+
+        return false;
     }
 
     /**
@@ -878,10 +921,11 @@ final class Generator
      * deleted for good, file and all, by a forced regeneration or by
      * deleting the PDF. They are now only unlinked from this PDF.
      *
-     * @param int $pdfId PDF attachment ID
+     * @param int  $pdfId    PDF attachment ID
+     * @param bool $pdfGoing The PDF itself is being deleted.
      * @return bool Whether an image was deleted
      */
-    public function deleteThumbnail(int $pdfId): bool
+    public function deleteThumbnail(int $pdfId, bool $pdfGoing = false): bool
     {
         $thumbnailId = $this->getThumbnailId($pdfId);
 
@@ -889,8 +933,15 @@ final class Generator
             return false;
         }
 
-        return $this->releaseThumbnail($pdfId, $thumbnailId);
+        return self::RELEASE_DELETED === $this->releaseThumbnail($pdfId, $thumbnailId, $pdfGoing);
     }
+
+    /** releaseThumbnail(): deleted, file and all. */
+    private const RELEASE_DELETED = 'deleted';
+    /** releaseThumbnail(): kept, and only let go of. */
+    private const RELEASE_KEPT = 'kept';
+    /** releaseThumbnail(): meant to be deleted, and still there. */
+    private const RELEASE_FAILED = 'failed';
 
     /**
      * Let this PDF go of one image, and delete it if nothing else needs it
@@ -900,41 +951,55 @@ final class Generator
      * chosen by hand, with "Set as featured image" off -- and was removed
      * whatever it named (R55-02).
      *
-     * @return bool Whether the image was deleted
+     * @param bool $pdfGoing The PDF itself is being deleted.
+     * @return string One of the RELEASE_* constants.
      */
-    private function releaseThumbnail(int $pdfId, int $thumbnailId): bool
+    private function releaseThumbnail(int $pdfId, int $thumbnailId, bool $pdfGoing = false): string
     {
-        $deleted = false;
+        $result = self::RELEASE_KEPT;
 
         // Made from this PDF is not enough when something else shows it too:
         // a translation's copy of this PDF that shares its thumbnail, or a
         // post that took it as its featured image. Deleting it left them
         // pointing at an image that was gone; only this PDF lets go of it.
-        if ($this->isOwnThumbnail($thumbnailId, $pdfId) && !$this->namedElsewhere($thumbnailId, $pdfId)) {
-            // Shown in a post's content and named by nothing else: kept, and
-            // made an ordinary image -- visible in the Media Library with
-            // "Hide Generated Images" on, and no longer this PDF's to delete
-            // later -- as uninstalling and deleting the PDF with that setting
-            // off already leave one.
-            $shown = $this->shownInContent($thumbnailId);
-            if (null === $shown) {
-                // Not known: kept, and still linked, as when the delete
-                // fails -- the next attempt asks again.
-                return false;
-            }
-            if ($shown) {
-                delete_post_meta($thumbnailId, '_rapls_pic_is_thumbnail');
-                delete_post_meta($thumbnailId, '_rapls_pic_source_pdf');
+        if ($this->isOwnThumbnail($thumbnailId, $pdfId)) {
+            if ($this->namedElsewhere($thumbnailId, $pdfId)) {
+                // Another PDF's thumbnail too: marked, as that PDF's. Only a
+                // post's featured image: an ordinary image. Not known: an
+                // ordinary image, said -- kept and visible is recoverable,
+                // marked with nothing pointing at it is lost in the library.
+                $byAttachment = $this->namedByAttachment($thumbnailId, $pdfId);
+                if (true !== $byAttachment) {
+                    $this->makeOrdinary($thumbnailId, $pdfId, $pdfGoing);
+                }
+                if (null === $byAttachment) {
+                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+                    error_log(sprintf('Rapls PDF Image Creator: could not tell whether another PDF uses image #%d; PDF #%d let go of it and it was kept as an ordinary image.', $thumbnailId, $pdfId));
+                }
             } else {
-                // Delete the attachment (this also deletes the file)
-                $deleted = $this->deleteAttachment($thumbnailId);
-
-                // Not deleted: the PDF keeps its link, so the image is not
-                // left behind with nothing naming it, and the next attempt
-                // finds it again (R56-03). Kept on purpose -- used elsewhere
-                // -- it is only let go of, below.
-                if (!$deleted) {
-                    return false;
+                $shown = $this->shownInContent($thumbnailId);
+                if (null === $shown) {
+                    // Not known: kept as an ordinary image, and said. Left
+                    // marked and linked "for the next attempt", it was
+                    // neither: the PDF already names its new thumbnail, or
+                    // is being deleted, and the image stayed hidden with
+                    // nothing pointing at it (review of 1.4.36).
+                    $this->makeOrdinary($thumbnailId, $pdfId, $pdfGoing);
+                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+                    error_log(sprintf('Rapls PDF Image Creator: could not tell whether a post shows image #%d; PDF #%d let go of it and it was kept as an ordinary image.', $thumbnailId, $pdfId));
+                } elseif ($shown) {
+                    // Shown in a post's content: kept, and made an ordinary
+                    // image -- visible in the Media Library with "Hide
+                    // Generated Images" on, and no longer this PDF's to
+                    // delete later.
+                    $this->makeOrdinary($thumbnailId, $pdfId, $pdfGoing);
+                } elseif ($this->deleteAttachment($thumbnailId)) {
+                    $result = self::RELEASE_DELETED;
+                } else {
+                    // Not deleted: the PDF keeps its link, so the image is
+                    // not left behind with nothing naming it, and the next
+                    // attempt finds it again (R56-03).
+                    return self::RELEASE_FAILED;
                 }
             }
         }
@@ -946,7 +1011,41 @@ final class Generator
             }
         }
 
-        return $deleted;
+        return $result;
+    }
+
+    /**
+     * Turn a thumbnail of this PDF's into an ordinary image
+     *
+     * Its two markers go. When the PDF is being deleted, an image attached
+     * to it is attached to the PDF's own parent instead, as WordPress does
+     * for a deleted post's attachments: "Uploaded to" named an item that no
+     * longer existed (review of 1.4.36).
+     *
+     * The parent is written to the row alone, as core's own
+     * wp_delete_post() does for a deleted post's attachments:
+     * wp_update_post() ran save_post and edit_attachment for other
+     * plugins, inside a deletion, and touched the image's modified date
+     * (review after 1.4.36).
+     */
+    public function makeOrdinary(int $imageId, int $pdfId, bool $pdfGoing = false): void
+    {
+        global $wpdb;
+
+        delete_post_meta($imageId, '_rapls_pic_is_thumbnail');
+        delete_post_meta($imageId, '_rapls_pic_source_pdf');
+
+        if (!$pdfGoing || !is_object($wpdb) || !isset($wpdb->posts) || !method_exists($wpdb, 'update')) {
+            return;
+        }
+        $image = get_post($imageId);
+        $pdf = get_post($pdfId);
+        if (is_object($image) && (int) ($image->post_parent ?? 0) === $pdfId) {
+            $wpdb->update($wpdb->posts, ['post_parent' => is_object($pdf) ? (int) ($pdf->post_parent ?? 0) : 0], ['ID' => $imageId], ['%d'], ['%d']);
+            if (function_exists('clean_post_cache')) {
+                clean_post_cache($imageId);
+            }
+        }
     }
 
     /**

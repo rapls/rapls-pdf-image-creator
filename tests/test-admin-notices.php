@@ -31,7 +31,8 @@ function admin_url($p = '') { return 'https://example.test/wp-admin/' . $p; }
 function add_query_arg($k, $v = null, $u = null) { return (string) $u . '&' . $k . '=' . $v; }
 function remove_query_arg($k, $u = null) { return 'https://example.test/wp-admin/upload.php?x=1'; }
 function wp_nonce_url($u, $a) { return $u . '&_wpnonce=n'; }
-function sanitize_key($v) { return strtolower(preg_replace('/[^a-z0-9_\-]/i', '', (string) $v)); }
+// As before WordPress 6.1: an array is a TypeError.
+function sanitize_key($v) { if (!is_scalar($v)) { throw new TypeError('sanitize_key(): array given'); } return strtolower(preg_replace('/[^a-z0-9_\-]/i', '', (string) $v)); }
 function sanitize_text_field($v) { return trim((string) $v); }
 function wp_unslash($v) { return $v; }
 function wp_verify_nonce($n, $a) { return 'ok:' . $a === $n; }
@@ -166,6 +167,17 @@ $_GET = ['rapls_pic_dismiss_engine_notice' => 'PDF_Blocked<script>', '_wpnonce' 
 $admin->maybeDismissEngineNotice();
 $_GET = [];
 check('the reason is stored as a key, and the activation notice goes with it', [$GLOBALS['user_meta']['rapls_pic_engine_notice_dismissed'], isset($GLOBALS['transients'][RAPLS_PIC_ACTIVATION_NOTICE])], ['pdf_blockedscript', false]);
+// An array in the address (review of 1.4.36): no TypeError, nothing stored.
+$GLOBALS['user_meta']['rapls_pic_engine_notice_dismissed'] = 'before';
+$_GET = ['rapls_pic_dismiss_engine_notice' => ['x'], '_wpnonce' => 'ok:rapls_pic_dismiss_engine_notice'];
+try {
+    $admin->maybeDismissEngineNotice();
+    $arrayAnswer = $GLOBALS['user_meta']['rapls_pic_engine_notice_dismissed'];
+} catch (\Throwable $e) {
+    $arrayAnswer = get_class($e);
+}
+$_GET = [];
+check('  ...an array given for it: no fatal error, and nothing changed', $arrayAnswer, 'before');
 
 echo "\n=== The colour notice ===\n";
 $colour = static function (bool $admin, $option, string $dismissed) use ($private): bool {

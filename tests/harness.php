@@ -5,7 +5,42 @@
  */
 
 define('RAPLS_PIC_PLUGIN_DIR', dirname(__DIR__) . '/');
-define('RAPLS_PIC_TEST_TMP', sys_get_temp_dir() . '/rapls-pic-tests');
+// A folder of this run's own, removed when it ends: one shared by every run
+// made two suites run side by side fail each other, and left the files they
+// wrote behind (review after 1.4.36).
+if (!function_exists('rapls_pic_test_tmp')) {
+    function rapls_pic_test_tmp(): string
+    {
+        // A child a suite starts works in its parent's folder, which the
+        // parent removes.
+        $inherited = getenv('RAPLS_PIC_TEST_TMP');
+
+        if (is_string($inherited) && '' !== $inherited && is_dir($inherited)) {
+            return $inherited;
+        }
+
+        $dir = sys_get_temp_dir() . '/rapls-pic-tests-' . getmypid() . '-' . bin2hex(random_bytes(4));
+        @mkdir($dir, 0700, true);
+        putenv('RAPLS_PIC_TEST_TMP=' . $dir);
+        register_shutdown_function(static function () use ($dir): void {
+            $remove = static function (string $path) use (&$remove): void {
+                if (is_dir($path) && !is_link($path)) {
+                    foreach ((array) scandir($path) as $name) {
+                        if ('.' !== $name && '..' !== $name) {
+                            $remove($path . '/' . $name);
+                        }
+                    }
+                    @rmdir($path);
+                } else {
+                    @unlink($path);
+                }
+            };
+            $remove($dir);
+        });
+        return $dir;
+    }
+}
+define('RAPLS_PIC_TEST_TMP', rapls_pic_test_tmp());
 define('DAY_IN_SECONDS', 86400);
 define('HOUR_IN_SECONDS', 3600);
 define('WEEK_IN_SECONDS', 604800);

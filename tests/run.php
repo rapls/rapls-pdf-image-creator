@@ -18,6 +18,7 @@ $suites = [
     'test-no-trialware.php',
     'test-review-prompt.php',
     'test-media-library.php',
+    'test-content-use.php',
     'test-thumbnail-ownership.php',
     'test-regenerate.php',
     'test-bulk.php',
@@ -70,6 +71,7 @@ foreach ($suites as $suite) {
     $deadline = microtime(true) + $timeout;
     $open = [1 => $pipes[1], 2 => $pipes[2]];
     $stderr = '';
+    $stdout = '';
     $timedOut = false;
     foreach ($open as $pipe) {
         stream_set_blocking($pipe, false);
@@ -92,6 +94,7 @@ foreach ($suites as $suite) {
             $chunk = (string) fread($pipe, 65536);
             if (1 === $n) {
                 echo $chunk;
+                $stdout .= $chunk;
             } else {
                 $stderr .= $chunk;
             }
@@ -159,7 +162,14 @@ foreach ($suites as $suite) {
     }
 
     $closed = proc_close($process);
-    if ($timedOut || 0 !== ($exit ?? $closed)) {
+    // A notice, a warning or a deprecation PHP printed fails the suite: shown
+    // and passed, the plugin's own went unnoticed (review of 1.4.36). Only
+    // PHP's own lines, at the start of a line.
+    $noticed = (bool) preg_match('/^(?:PHP )?(?:Deprecated|Warning|Notice|Fatal error|Parse error):\s/m', $stdout . "\n" . $stderr);
+    if ($noticed) {
+        echo "\nFAILED: PHP printed a notice, warning or deprecation above\n";
+    }
+    if ($timedOut || $noticed || 0 !== ($exit ?? $closed)) {
         $failed[] = $suite;
     }
 

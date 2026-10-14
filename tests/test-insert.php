@@ -49,6 +49,7 @@ namespace {
     function add_shortcode($tag, $cb) { $GLOBALS['shortcodes'][$tag] = $cb; }
     function shortcode_atts($pairs, $atts, $tag = '') { return array_merge($pairs, array_intersect_key((array) $atts, $pairs)); }
     function wp_get_attachment_image($id, $size = 'thumbnail', $icon = false, $attr = '') {
+        if (!empty($GLOBALS['no_image_html'])) { return ''; }
         $out = '<img src="https://example.test/' . (int) $id . '.jpg"';
         foreach ((array) $attr as $name => $value) {
             $out .= ' ' . $name . '="' . esc_attr($value) . '"';
@@ -223,7 +224,13 @@ namespace {
     check('another plugin\'s odd arguments: no fatal error', $handedOn, [null, '<a href="https://example.test/doc.pdf" class="rapls-pic-pdf-link" data-pdf-id="7">Doc</a>', '<a href="https://example.test/doc.pdf" class="rapls-pic-pdf-link" data-pdf-id="7">Doc</a>']);
     $GLOBALS['title'] = '<script>x</script>';
     check('no link: the title alone, escaped', $insert(['insert_type' => 'title', 'insert_link' => 'none'], []), '&lt;script&gt;x&lt;/script&gt;');
-    unset($GLOBALS['title']);
+    // Core gives no image markup (a filter emptied it): the plugin writes its
+    // own <img>, the title as its alt (mutation testing of 1.4.36).
+    $GLOBALS['title'] = 'A "q" <b>';
+    $GLOBALS['no_image_html'] = true;
+    $ownImg = $insert(['insert_type' => 'image', 'insert_link' => 'none', 'insert_size' => 'medium'], ['id' => 7]);
+    check('core gives no markup: the plugin\'s own <img>, its alt escaped', [0 === strpos($ownImg, '<img src="'), false !== strpos($ownImg, 'alt="A &quot;q&quot; &lt;b&gt;"'), false !== strpos($ownImg, '<b>')], [true, true, false]);
+    unset($GLOBALS['title'], $GLOBALS['no_image_html']);
 
     echo "\n--- \"Insert into post\" honours the media window's Size ---\n";
     $sizeOf = static function (array $attachment) use ($insert): string {

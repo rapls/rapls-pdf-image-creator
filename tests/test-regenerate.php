@@ -167,15 +167,23 @@ namespace {
         public $last_error = '';
         public function prepare($sql, ...$args) { return [$sql, $args]; }
         public function esc_like($text) { return addcslashes($text, '_%\\'); }
-        public function get_var($q) {
-            if (false === strpos($q[0], 'post_content')) { return null; }
+        public $contentFails = false;
+        public $contentQueries = 0;
+        public function get_var($q) { $this->last_error = ''; return null; }
+        public function get_results($q, $output = null) {
+            if (false === strpos($q[0], 'post_content')) { return []; }
+            $this->contentQueries++;
+            $this->last_error = $this->contentFails ? 'simulated failure' : '';
+            if ($this->contentFails) { return []; }
+            $rows = [];
             foreach ($GLOBALS['content'] as $id => $html) {
-                foreach ($q[1] as $like) {
+                if ($id <= (int) $q[1][0]) { continue; }
+                foreach (array_slice($q[1], 1) as $like) {
                     $needle = stripslashes(substr($like, 1, -1));
-                    if (false !== stripos($html, $needle)) { return (string) $id; }
+                    if (false !== stripos($html, $needle)) { $rows[] = ['ID' => (string) $id, 'post_content' => $html]; break; }
                 }
             }
-            return null;
+            return $rows;
         }
     };
 
@@ -295,6 +303,35 @@ namespace {
         [true, $new, [], true, '']);
     check('  ...kept on purpose, so not logged as a delete that failed', false !== strpos($keptLogged, 'could not be deleted'), false);
     $GLOBALS['content'] = [];
+
+    // Review of 1.4.36: the posts are read once. Asking again whether the
+    // image was "used elsewhere" after keeping it read them a second time.
+    $pdf(47, 48);
+    $GLOBALS['meta'][48]['_wp_attached_file'] = '2026/10/doc-47-pdf-thumbnail.jpg';
+    $GLOBALS['content'] = [901 => '<img src="/wp-content/uploads/2026/10/doc-47-pdf-thumbnail.jpg">'];
+    $GLOBALS['wpdb']->contentQueries = 0;
+    $generator->generate(47, true);
+    check('  ...and the posts are read once', $GLOBALS['wpdb']->contentQueries, 1);
+    $GLOBALS['content'] = [];
+
+    // The content lookup fails while regenerating: the PDF already names its
+    // new thumbnail, so the old one cannot wait for "the next attempt". It
+    // stayed marked -- hidden -- with nothing pointing at it, and nothing
+    // was logged (review of 1.4.36). It is now an ordinary image, and said.
+    $pdf(49, 59);
+    $GLOBALS['wpdb']->contentFails = true;
+    $GLOBALS['deleted'] = [];
+    $failLog = sys_get_temp_dir() . '/rapls-pic-regen-log-' . bin2hex(random_bytes(4));
+    $failLogWas = ini_set('error_log', $failLog);
+    $new = $generator->generate(49, true);
+    ini_set('error_log', (string) $failLogWas);
+    $failLogged = is_file($failLog) ? (string) file_get_contents($failLog) : '';
+    @unlink($failLog);
+    $GLOBALS['wpdb']->contentFails = false;
+    check('the content lookup fails: the old one is kept as an ordinary image',
+        [is_int($new) && 59 !== $new, $GLOBALS['deleted'], isset($GLOBALS['posts'][59]), $GLOBALS['meta'][59]['_rapls_pic_is_thumbnail'] ?? '', $GLOBALS['meta'][59]['_rapls_pic_source_pdf'] ?? ''],
+        [true, [], true, '', '']);
+    check('  ...and that is logged', false !== strpos($failLogged, 'could not tell whether a post shows image #59'), true);
 
     echo "\n--- R55-02: a featured image this plugin did not make is left alone ---\n";
 
