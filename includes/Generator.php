@@ -713,7 +713,7 @@ final class Generator
      * attempt ended in an exception before it came to anything.
      *
      * @since 1.4.17
-     * @since 1.4.39 kept_previous.
+     * @since 1.4.42 kept_previous.
      * @return array{ok: bool, thumbnail_id: int|null, code: string, message: string, kept_previous: int|null}|null
      */
     public function outcomeFor(int $pdfId): ?array
@@ -741,7 +741,7 @@ final class Generator
      * whatever the reason, also when a featured image, another PDF or a
      * lookup that did not answer had kept it (review after 1.4.38).
      *
-     * @since 1.4.39
+     * @since 1.4.42
      */
     public function keptReasonFor(int $pdfId): ?string
     {
@@ -1250,10 +1250,17 @@ final class Generator
      * left its "Uploaded to" naming an item that was gone (review after
      * 1.4.38). WordPress moves a deleted post's attachments to its parent
      * the same way; it does not for a deleted attachment's. Images that
-     * still carry this plugin's marker are not touched: they are a PDF's
-     * thumbnail, this one's to delete or another's to keep. One another PDF
-     * shares was attached to that PDF when this one let go of it
-     * (letGoOf()).
+     * still carry this plugin's marker are another PDF's thumbnail, or
+     * this one's, and are not moved here; one another PDF shares was
+     * attached to that PDF when this one let go of it (letGoOf()).
+     *
+     * A marked image whose source is this PDF, and which this PDF no
+     * longer names -- an old thumbnail an earlier version left marked --
+     * is let go of first, as the PDF's own thumbnail is: handed to a PDF
+     * that names it, or made ordinary and attached where the PDF was.
+     * Skipped, it stayed hidden, attached to a PDF that was gone, with
+     * nothing naming it (review of 1.4.41). When that lookup fails it is
+     * left as it was: kept, never deleted.
      */
     public function reparentKeptImages(int $pdfId): void
     {
@@ -1261,6 +1268,22 @@ final class Generator
 
         if ($pdfId < 1 || !is_object($wpdb) || !isset($wpdb->posts, $wpdb->postmeta) || !method_exists($wpdb, 'get_col') || !method_exists($wpdb, 'update')) {
             return;
+        }
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+        $marked = $wpdb->get_col($wpdb->prepare(
+            "SELECT p.ID FROM {$wpdb->posts} p INNER JOIN {$wpdb->postmeta} s ON s.post_id = p.ID AND s.meta_key = '_rapls_pic_source_pdf' AND s.meta_value = %s
+             WHERE p.post_type = 'attachment'
+             AND EXISTS (SELECT 1 FROM {$wpdb->postmeta} m WHERE m.post_id = p.ID AND m.meta_key = '_rapls_pic_is_thumbnail')",
+            (string) $pdfId
+        ));
+        if (is_array($marked) && '' === (string) $wpdb->last_error) {
+            $own = (int) get_post_meta($pdfId, self::THUMBNAIL_META_KEY, true);
+            foreach ($marked as $imageId) {
+                if ((int) $imageId !== $own) {
+                    $this->letGoOf((int) $imageId, $pdfId, true);
+                }
+            }
         }
 
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching

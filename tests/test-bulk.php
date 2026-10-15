@@ -29,7 +29,7 @@ namespace {
     function __($s, $d = null) { return $s; }
     function _n($one, $many, $n, $d = null) { return 1 === (int) $n ? $one : $many; }
     function absint($v) { return abs((int) $v); }
-    function check_ajax_referer($action = -1, $q = false, $die = true) { return true; }
+    function check_ajax_referer($action = -1, $q = false, $die = true) { $GLOBALS['referer_checked'][] = $action; return true; }
     function current_user_can($cap, ...$args) { return !empty($GLOBALS['caps'][$cap]); }
     function add_filter($tag, $cb, $prio = 10, $args = 1) { $GLOBALS['filters'][$tag][] = $cb; return true; }
     function remove_filter($tag, $cb, $prio = 10) {
@@ -124,6 +124,7 @@ namespace {
     require RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/EngineInterface.php';
     require RAPLS_PIC_PLUGIN_DIR . 'includes/Generator.php';
     require RAPLS_PIC_PLUGIN_DIR . 'includes/BulkProcessor.php';
+    require RAPLS_PIC_PLUGIN_DIR . 'includes/MediaLibrary.php';
     require RAPLS_PIC_PLUGIN_DIR . 'includes/Admin.php';
     require RAPLS_PIC_PLUGIN_DIR . 'includes/Plugin.php';
 
@@ -361,6 +362,35 @@ namespace {
         ($GLOBALS['shortcodes']['rapls_pdf_download_link'])(['id' => 8]),
         ($GLOBALS['shortcodes']['rapls_pdf_thumbnail'])(['id' => 9]),
     ], ['', '', '', '', '']);
+
+    // getPDFs() and getStats(), kept as 1.4.20 had them for code that
+    // called them (review of 1.4.41): the same answers, nothing hooked.
+    $library(6, 3);
+    $GLOBALS['queries'] = [];
+    check('getStats(), as 1.4.20 answered it', $bulk->getStats(), ['total' => 6, 'with_thumbnail' => 2, 'without_thumbnail' => 4]);
+    check('getPDFs(): those without a thumbnail, as 1.4.20 listed them', array_column($bulk->getPDFs(), 'id'), [1002, 1003, 1005, 1006]);
+    check('getPDFs(true): all, each with its file name and whether it has one', array_map(static function ($p) { return [$p['id'], $p['filename'], $p['has_thumbnail']]; }, array_slice($bulk->getPDFs(true), 0, 2)), [[1001, 'doc-1001.pdf', true], [1002, 'doc-1002.pdf', false]]);
+    check('  ...asked as the plugin itself, past the library filter', array_unique(array_column($GLOBALS['queries'], 'rapls_pic_internal')), [true]);
+
+    // MediaLibrary::ajaxRegenerateThumbnail(), kept as 1.4.20 had it
+    // (review of 1.4.41), hooked to nothing here: every check it made is
+    // still made, before anything is drawn.
+    $media = (new ReflectionClass(\Rapls\PDFImageCreator\MediaLibrary::class))->newInstanceWithoutConstructor();
+    $GLOBALS['mime_of'][1001] = 'application/pdf';
+    $GLOBALS['mime_of'][1002] = 'image/jpeg';
+    $regen = static function (array $caps, array $post) use ($media, $call): array {
+        $GLOBALS['caps'] = $caps;
+        $GLOBALS['referer_checked'] = [];
+        $answer = $call([$media, 'ajaxRegenerateThumbnail'], $post);
+        return [$answer[0], $answer[1]['message'] ?? null, $GLOBALS['referer_checked']];
+    };
+    check('ajaxRegenerateThumbnail(): its nonce asked; no upload_files, refused', $regen([], ['attachment_id' => 1001]), [false, 'Permission denied.', ['rapls_pic_admin']]);
+    check('  ...uploading but not this PDF\'s editor, refused', $regen(['upload_files' => true], ['attachment_id' => 1001]), [false, 'Permission denied.', ['rapls_pic_admin']]);
+    // Review of 1.4.41's fixes: upload_files is asked of its own, as 1.4.20 did.
+    check('  ...this PDF\'s editor who may not upload, refused', $regen(['edit_post' => true], ['attachment_id' => 1001]), [false, 'Permission denied.', ['rapls_pic_admin']]);
+    check('  ...no ID, refused', $regen(['upload_files' => true, 'edit_post' => true], []), [false, 'Invalid attachment ID.', ['rapls_pic_admin']]);
+    check('  ...not a PDF, refused', $regen(['upload_files' => true, 'edit_post' => true], ['attachment_id' => 1002]), [false, 'Not a PDF file.', ['rapls_pic_admin']]);
+    $GLOBALS['caps'] = ['manage_options' => true];
 
     echo "\n$pass passed, $fail failed\n";
     exit($fail ? 1 : 0);

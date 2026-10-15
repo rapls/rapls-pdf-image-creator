@@ -27,6 +27,7 @@ $suites = [
     'test-admin-screens.php',
     'test-admin-notices.php',
     'test-site-health.php',
+    'test-public-api.php',
     // JavaScript, run with node when there is one.
     'test-admin-tabs.js',
     'test-block-editor.js',

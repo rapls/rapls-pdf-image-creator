@@ -380,6 +380,27 @@ namespace {
     unset($GLOBALS['filtered']['rapls_pdf_image_creator_shortcode_any_post'], $GLOBALS['password'][300], $GLOBALS['can_edit'][300], $GLOBALS['can_read'][300]);
     $GLOBALS['logged_in'] = false;
 
+    // addInsertSettingsToJs(), kept as 1.4.20 had it for code that called or
+    // hooked it (review of 1.4.41); this plugin hooks it to nothing.
+    if (!class_exists('WP_Post')) {
+        eval('final class WP_Post { public $ID; public function __construct($id) { $this->ID = $id; } }');
+    }
+    $GLOBALS['options'][Settings::OPTION_NAME] = ['insert_type' => 'title', 'insert_link' => 'file'];
+    $kept = new Inserter($generator, new Settings());
+    $GLOBALS['meta'][9] = [];
+    $forJs = [
+        $kept->addInsertSettingsToJs(['mime' => 'image/jpeg', 'id' => 9], new WP_Post(9), false),
+        $kept->addInsertSettingsToJs(['mime' => 'application/pdf', 'id' => 9], new WP_Post(9), false),
+        $kept->addInsertSettingsToJs(['id' => 9], new WP_Post(9), false),
+        $kept->addInsertSettingsToJs('not an array', null, false),
+    ];
+    check('addInsertSettingsToJs(): an image as it was; a PDF given the insert settings; no mime or no array handed on', $forJs, [
+        ['mime' => 'image/jpeg', 'id' => 9],
+        ['mime' => 'application/pdf', 'id' => 9, 'picInsertSettings' => ['type' => 'title', 'size' => 'medium', 'link' => 'file', 'hasThumbnail' => false]],
+        ['id' => 9],
+        'not an array',
+    ]);
+
     echo "\n$pass passed, $fail failed\n";
     exit($fail ? 1 : 0);
 }

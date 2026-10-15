@@ -760,8 +760,10 @@ namespace {
     $GLOBALS['deleted'] = [];
     // Review after 1.4.31: the AJAX regenerate endpoint is gone -- nothing on
     // any screen called it; the row action (handleRegenerateAction()) does it.
+    // The method stays, deprecated and hooked to nothing, for code that
+    // calls it: a public method is not removed (review of 1.4.41).
     $librarySource = (string) file_get_contents(RAPLS_PIC_PLUGIN_DIR . 'includes/MediaLibrary.php');
-    check('Media Library: no AJAX regenerate endpoint is left to answer', [method_exists($library, 'ajaxRegenerateThumbnail'), false !== strpos($librarySource, "wp_ajax_rapls_pic_regenerate_thumbnail")], [false, false]);
+    check('Media Library: no AJAX regenerate endpoint is left to answer; the method kept, hooked to nothing', [method_exists($library, 'ajaxRegenerateThumbnail'), false !== strpos($librarySource, "wp_ajax_rapls_pic_regenerate_thumbnail"), 1 === preg_match("/'ajaxRegenerateThumbnail'/", $librarySource)], [true, false, false]);
     check('Bulk Generate: refused without manage_options', $call([$bulk, 'ajaxGenerate'], ['pdf_id' => 80, 'force' => 1]), [false, 403]);
     check('Bulk Scan: refused without manage_options', $call([$bulk, 'ajaxScan'], []), [false, 403]);
 

@@ -33,6 +33,23 @@ final class ImagickEngine implements EngineInterface
      */
     private bool $refusedForFile = false;
 
+    /** Whether the last refusal was of a portfolio (/Collection), whose embedded files Ghostscript draws instead of its pages. */
+    private bool $refusedPortfolio = false;
+
+    /**
+     * Whether measurePage() may take more than one image for one page as a portfolio, and the page count it is then held to
+     *
+     * Only where the file's bytes could not be read (scanPageBoxes() null):
+     * where they could, they already show no /Collection, and a build that
+     * ignores "[n]" and returns every page had an ordinary multi-page PDF
+     * refused for good (review of 1.4.41's fixes). Even then, as many images
+     * as the file has pages is such a build, and image 0 is taken, as up to
+     * 1.4.41.
+     */
+    private bool $measureNet = true;
+
+    private ?int $measureNetPages = null;
+
     /**
      * Constructor
      *
@@ -46,7 +63,7 @@ final class ImagickEngine implements EngineInterface
     /**
      * Get the colour profile resolver
      *
-     * @deprecated 1.4.41 Kept for code that reached it through
+     * @deprecated 1.4.42 Kept for code that reached it through
      *             Generator::getEngines() or the
      *             rapls_pdf_image_creator_engines filter: it was public up to
      *             1.4.20, and taking a public method away is a fatal error in
@@ -838,7 +855,20 @@ final class ImagickEngine implements EngineInterface
             // the measuring read's bound (review after 1.4.38).
             if (self::drawnByGhostscript($pdfPath)) {
                 $this->refusedForFile = false;
+                $this->refusedPortfolio = false;
                 $resolution = $this->boundedResolution($pdfPath, $page, $resolution, $options);
+
+                if (null === $resolution && $this->refusedPortfolio) {
+                    $imagick->clear();
+
+                    return ConversionResult::failure(
+                        __('This PDF is a portfolio that holds other files, and its pages are not drawn: Ghostscript would draw the files inside it instead, and their size cannot be checked first.', 'rapls-pdf-image-creator'),
+                        // Permanent: the file is a portfolio again tomorrow,
+                        // and a queue retried it as a render error (review
+                        // of 1.4.41's fixes).
+                        \Rapls\PDFImageCreator\FailureCode::PDF_PORTFOLIO
+                    );
+                }
 
                 if (null === $resolution) {
                     $imagick->clear();
@@ -1316,7 +1346,13 @@ final class ImagickEngine implements EngineInterface
      * 1. The largest box in the file, read from its bytes -- object streams
      *    inflated -- with nothing run (largestPageBox()). Within the limit,
      *    the page is drawn as asked, and that is every ordinary PDF.
-     * 2. Otherwise, or when the bytes cannot answer, page n itself is drawn
+     * 2. Otherwise the file may be refused unread, as the file's and not
+     *    the page's: a portfolio (/Collection), whose embedded files
+     *    Ghostscript draws instead of its pages; every page past the
+     *    measuring read's bound at MIN_RESOLUTION (the least); or a page in
+     *    it past that bound (the largest, or with /UserUnit 'refuse'). Asked
+     *    before an Imagick that cannot limit a read lets the page through.
+     * 3. Otherwise, or when the bytes cannot answer, page n itself is drawn
      *    small enough to be cheap and measured (measurePage()), under
      *    limits that make ImageMagick refuse a page too large before its
      *    pixels are held. Ghostscript decides that size, so /Rotate,
@@ -1362,6 +1398,22 @@ final class ImagickEngine implements EngineInterface
     {
         $limit = $this->renderPixelLimit($pdfPath, $options);
         $scan = self::scanPageBoxes($pdfPath);
+        $this->measureNet = null === $scan;
+        $this->measureNetPages = null === $scan ? self::pagesFromBytes($pdfPath) : null;
+
+        // A portfolio (/Collection in the catalog) is not drawn: Ghostscript
+        // draws the PDFs embedded in it instead of its own pages, copying
+        // each out unbounded, and their boxes are in compressed streams the
+        // box reading never opens -- an outer Letter page vouched for a huge
+        // embedded one (review of 1.4.41). Refused unread wherever a
+        // /Collection is seen; a file the token reading cannot follow is the
+        // accepted class measured at MIN_RESOLUTION.
+        if (null !== $scan && $scan['portfolio']) {
+            $this->refusedPortfolio = true;
+
+            return null;
+        }
+
         $box = null === $scan ? null : $scan['largest'];
 
         // Within the limit even as the largest box in the file, either way
@@ -1411,14 +1463,6 @@ final class ImagickEngine implements EngineInterface
             return null;
         }
 
-        // An Imagick with no resource limit to set cannot hold a read down
-        // (none is known; every release has the memory and disk limits).
-        // The file's boxes are then the only measure, and without them the
-        // page is drawn as asked, as before 1.4.34.
-        if (!self::canLimitReads()) {
-            return null === $box ? $resolution : $this->fittedResolution($box[0] / $box[1], $box[1], $resolution, $limit);
-        }
-
         // A file whose largest box is past the measuring read's bound even at
         // MIN_RESOLUTION is not read at all. The page asked may be that one,
         // and Ghostscript draws it before any limit can refuse it: a small
@@ -1431,13 +1475,24 @@ final class ImagickEngine implements EngineInterface
         //
         // With /UserUnit the largest is unknown, and the largest by the
         // largest factor read stands in -- for this refusal alone, never to
-        // let a page through (scanPageBoxes()'s 'refuse').
+        // let a page through (scanPageBoxes()'s 'refuse'). Asked before the
+        // Imagick that cannot limit a read is let through below, as the least
+        // is, and said as the file's (review of 1.4.41: it came after, and
+        // there such a file was drawn as its boxes allowed).
         $whole = $box ?? (null === $scan ? null : ($scan['refuse'] ?? null));
 
         if (null !== $whole && max($whole[0] * (self::MIN_RESOLUTION / 72) ** 2, $whole[1] * self::MIN_RESOLUTION / 72) > $pixels) {
             $this->refusedForFile = true;
 
             return null;
+        }
+
+        // An Imagick with no resource limit to set cannot hold a read down
+        // (none is known; every release has the memory and disk limits).
+        // The file's boxes are then the only measure, and without them the
+        // page is drawn as asked, as before 1.4.34.
+        if (!self::canLimitReads()) {
+            return null === $box ? $resolution : $this->fittedResolution($box[0] / $box[1], $box[1], $resolution, $limit);
         }
 
         if (null !== $box) {
@@ -1462,6 +1517,10 @@ final class ImagickEngine implements EngineInterface
         try {
             $measured = $this->measurePage($pdfPath . '[' . $page . ']', $measureAt, $side, $pixels);
         } catch (\Throwable $e) {
+            if ($this->refusedPortfolio) {
+                return null;
+            }
+
             if (self::refusedAsTooLarge($e)) {
                 if ($measureAt <= self::MIN_RESOLUTION) {
                     return null;
@@ -1473,7 +1532,7 @@ final class ImagickEngine implements EngineInterface
                 try {
                     $measured = $this->measurePage($pdfPath . '[' . $page . ']', self::MIN_RESOLUTION, $side, $pixels);
                 } catch (\Throwable $again) {
-                    if (self::refusedAsTooLarge($again)) {
+                    if ($this->refusedPortfolio || self::refusedAsTooLarge($again)) {
                         return null;
                     }
 
@@ -1487,7 +1546,16 @@ final class ImagickEngine implements EngineInterface
                 // SMALL_PAGE_RESOLUTION, under the same limits; a page that
                 // fails there too fails as the read would.
                 $measureAt = min($resolution, self::SMALL_PAGE_RESOLUTION);
-                $measured = $this->measurePage($pdfPath . '[' . $page . ']', $measureAt, (int) ceil(sqrt($pixels)), $pixels);
+
+                try {
+                    $measured = $this->measurePage($pdfPath . '[' . $page . ']', $measureAt, (int) ceil(sqrt($pixels)), $pixels);
+                } catch (\Throwable $small) {
+                    if ($this->refusedPortfolio) {
+                        return null;
+                    }
+
+                    throw $small;
+                }
             } elseif ($measureAt < min($resolution, self::SMALL_PAGE_RESOLUTION)
                 && \Rapls\PDFImageCreator\FailureCode::RENDER_ERROR === \Rapls\PDFImageCreator\FailureCode::fromExceptionMessage($e->getMessage(), true)) {
                 // A page under a pixel at the measuring density, in a file
@@ -1536,7 +1604,11 @@ final class ImagickEngine implements EngineInterface
                     $finer = $this->fittedResolution($again[0], $again[1], $resolution, $limit);
                     $fitted = null !== $finer ? max($fitted, $finer) : $fitted;
                 } catch (\Throwable $e) {
-                    // The first measurement stands.
+                    // The first measurement stands -- unless the read drew
+                    // more than the page.
+                    if ($this->refusedPortfolio) {
+                        return null;
+                    }
                 }
             }
         }
@@ -1592,7 +1664,7 @@ final class ImagickEngine implements EngineInterface
          * cut down to the Settings tab's maximum size afterwards, so this
          * costs nothing a visitor sees unless the page is cropped first.
          *
-         * @since 1.4.34
+         * @since 1.4.42
          *
          * @param int                  $pixels  Pixels. Default 40,000,000.
          * @param string               $pdfPath Absolute path to the PDF.
@@ -1820,7 +1892,12 @@ final class ImagickEngine implements EngineInterface
      * small one. /UserUnit, which leaves the largest unknown, leaves this
      * known.
      *
-     * @return array{largest: array{0: float, 1: float}|null, least: float|null, refuse: array{0: float, 1: float}}|null
+     * A portfolio -- /Collection anywhere in the bytes or the inflated
+     * object streams, or a name spelt with escapes that decodes to it --
+     * answers 'portfolio' true and nothing else of use: Ghostscript draws the
+     * files embedded in it, whose boxes are not read.
+     *
+     * @return array{largest: array{0: float, 1: float}|null, least: float|null, refuse: array{0: float, 1: float}, portfolio: bool}|null
      *         Null when the bytes say nothing of the page sizes.
      */
     private static function scanPageBoxes(string $pdfPath): ?array
@@ -1833,7 +1910,26 @@ final class ImagickEngine implements EngineInterface
 
         $bytes = @file_get_contents($pdfPath);
 
-        if (!is_string($bytes) || 0 !== strncmp($bytes, '%PDF-', 5)) {
+        if (!is_string($bytes)) {
+            return null;
+        }
+
+        $end = '(?![^' . self::PDF_WHITESPACE . '/\[\]<>(){}%])';
+        $portfolio = ['largest' => null, 'least' => null, 'refuse' => [INF, INF], 'portfolio' => true];
+        $collection = '#/Collection' . $end . '#';
+
+        // Asked of the raw bytes before anything else, so that a file the
+        // token reading cannot follow is refused too where it says so plainly.
+        // A /Collection that is no catalog's -- a comment, a string -- refuses
+        // a file that would have been drawn: refusing more, accepted. Asked
+        // of any file with a PDF header in its first 1024 bytes, as readers
+        // allow, not only of one that starts with it: bytes before the header
+        // hid the portfolio (review of 1.4.41's fixes).
+        if (false !== strpos(substr($bytes, 0, 1024), '%PDF-') && 0 !== preg_match($collection, $bytes)) {
+            return $portfolio;
+        }
+
+        if (0 !== strncmp($bytes, '%PDF-', 5)) {
             return null;
         }
 
@@ -1857,6 +1953,11 @@ final class ImagickEngine implements EngineInterface
             }
 
             $inflated += strlen($text);
+
+            if (0 !== preg_match($collection, $text)) {
+                return $portfolio;
+            }
+
             $texts[] = $text;
         }
 
@@ -1874,7 +1975,6 @@ final class ImagickEngine implements EngineInterface
         // capture of a 31 MB name was a 31 MB copy (review after 1.4.36).
         $escapedName = '#/((?:' . $nameChar . '|\#[0-9A-Fa-f]{2}){0,256}\#[0-9A-Fa-f]{2}(?:' . $nameChar . '|\#[0-9A-Fa-f]{2}){0,256})#';
         $box = '#\G' . $space . '*\[' . $space . '*' . $number . $space . '+' . $number . $space . '+' . $number . $space . '+' . $number . $space . '*\]#';
-        $end = '(?![^' . self::PDF_WHITESPACE . '/\[\]<>(){}%])';
         // A number, and not the start of a reference ("5 0 R"), whose value
         // is somewhere else.
         $unit = '#\G' . $space . '+' . $number . $end . '(?!' . $space . '+\d+' . $space . '+R' . $end . ')#';
@@ -1890,6 +1990,10 @@ final class ImagickEngine implements EngineInterface
 
             while (1 === ($result = preg_match($escapedName, $text, $name, PREG_OFFSET_CAPTURE, $from))) {
                 $from = (int) $name[0][1] + strlen($name[0][0]);
+
+                if ('Collection' === self::decodeName($name[1][0])) {
+                    return $portfolio;
+                }
 
                 if (++$escaped > self::BOX_MAX_COUNT || in_array(self::decodeName($name[1][0]), self::BOX_KEYS, true)) {
                     return null;
@@ -1976,9 +2080,14 @@ final class ImagickEngine implements EngineInterface
             // gives such a page another size -- a page with no box at all,
             // which the standard does not allow.
             'largest' => $userUnit ? null : [max($area, 612.0 * 842.0), max($side, 842.0)],
-            // An area: /UserUnit scales both sides (review of 1.4.37's fixes:
-            // by the factor once, a 10,000,000-point box at 0.001 -- a
-            // 10,000-point page -- was refused unread).
+            // An area: /UserUnit scales both sides, so the factor is squared.
+            // (Review of 1.4.37's fixes: by the factor once, a
+            // 10,000,000-point box at 0.001 -- a 10,000-point page -- was
+            // refused unread. Such a file is refused unread again since
+            // 1.4.41, by 'refuse', which does not read a factor under 1 as
+            // making a page smaller: refusing more, for a file no writer
+            // makes, accepted. The square still keeps the least an honest
+            // lower bound.)
             'least' => $least * min(1.0, $units) ** 2,
             // The largest by the largest /UserUnit read as a number, for one
             // thing only: refusing the whole file unread (boundedResolution()).
@@ -1989,6 +2098,7 @@ final class ImagickEngine implements EngineInterface
             // measuring read as it was: a 14,400-point box at /UserUnit 1000
             // was drawn at 2 dpi before any limit refused it.
             'refuse' => self::scaledForRefusal($area, $side, $unitsMost),
+            'portfolio' => false,
         ];
     }
 
@@ -2515,13 +2625,46 @@ final class ImagickEngine implements EngineInterface
             $one = new \Imagick();
             $one->setResolution($density, $density);
             $one->readImage($target);
-            $one->setIteratorIndex(0);
+
+            // One page was asked. More than one came back where Ghostscript
+            // drew something other than the page -- a portfolio's embedded
+            // files, which the boxes did not show (review of 1.4.41). Not
+            // drawn again.
+            $images = $one->getNumberImages();
+
+            if ($images > 1 && $this->measureNet && $images !== $this->measureNetPages) {
+                // Said as a portfolio only of a file that is a PDF: anything
+                // else Ghostscript draws -- PostScript, EPS -- failed as a
+                // read fails (review of 1.4.41's fixes).
+                $this->refusedPortfolio = self::looksLikePdf((string) preg_replace('/\[\d+\]$/', '', $target));
+
+                throw new \ImagickException('More than one image came back for one page.');
+            }
+
+            // Every image that came back, the largest each way: the read that
+            // follows draws them all -- a build that ignores "[n]" every page,
+            // a portfolio its embedded files -- so the resolution is bounded
+            // by the largest, not by the first (review of 1.4.41's fixes:
+            // image 0 alone let the others be drawn at a density sized for
+            // it).
+            $width = 0;
+            $height = 0;
+
+            for ($i = 0, $count = max(1, (int) $images); $i < $count; $i++) {
+                $one->setIteratorIndex($i);
+                $width = max($width, (int) $one->getImageWidth());
+                $height = max($height, (int) $one->getImageHeight());
+            }
+
+            if ($count > 1) {
+                $one->setIteratorIndex(0);
+            }
 
             // A pixel more each way: Ghostscript rounds the page to whole
             // pixels, and this must not come out smaller than the page.
             return [
-                ($one->getImageWidth() + 1) * 72 / $density,
-                ($one->getImageHeight() + 1) * 72 / $density,
+                ($width + 1) * 72 / $density,
+                ($height + 1) * 72 / $density,
             ];
         } finally {
             if (null !== $one) {

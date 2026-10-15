@@ -348,4 +348,40 @@ final class Inserter
         // Sanitize final HTML output
         return wp_kses_post($html);
     }
+
+    /**
+     * The insert settings, and the insert HTML, added to a PDF's media data
+     *
+     * Kept as it was in 1.4.20 for code that called it or hooked it itself:
+     * a public method is not removed in a release. Nothing here hooks it any
+     * more (review after 1.4.31: no script read either).
+     *
+     * @deprecated 1.4.42 Nothing replaces it; "Insert into post" builds the
+     *             HTML when it is pressed.
+     *
+     * @param mixed $response Attachment response data
+     * @param mixed $attachment Attachment post object
+     * @param mixed $meta Attachment meta data
+     * @return mixed The response, with the settings added for a PDF
+     */
+    public function addInsertSettingsToJs($response, $attachment = null, $meta = false)
+    {
+        if (!is_array($response) || !$attachment instanceof \WP_Post
+            || 'application/pdf' !== ($response['mime'] ?? '')) {
+            return $response;
+        }
+
+        $hasThumbnail = $this->generator->hasThumbnail($attachment->ID);
+        $response['picInsertSettings'] = [
+            'type' => $this->settings->getInsertType(),
+            'size' => $this->settings->getInsertSize(),
+            'link' => $this->settings->getInsertLink(),
+            'hasThumbnail' => $hasThumbnail,
+        ];
+        if ($hasThumbnail) {
+            $response['picInsertHtml'] = $this->generateInsertHtml($attachment->ID);
+        }
+
+        return $response;
+    }
 }

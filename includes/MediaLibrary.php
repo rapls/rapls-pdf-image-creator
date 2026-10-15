@@ -480,7 +480,7 @@ final class MediaLibrary
         }
 
         // Only process PDFs
-        if ($response['mime'] !== 'application/pdf') {
+        if ('application/pdf' !== ($response['mime'] ?? '')) {
             return $response;
         }
 
@@ -967,6 +967,50 @@ final class MediaLibrary
     }
 
     /**
+     * AJAX handler for regenerating a thumbnail, as 1.4.20 had it
+     *
+     * Kept for code that hooked it itself: a public method is not removed in
+     * a release. Nothing here hooks it any more; the row action regenerates
+     * through handleRegenerateAction(). Every check it made is still made --
+     * the nonce, upload_files, edit_post on this PDF -- before anything is
+     * drawn.
+     *
+     * @deprecated 1.4.42 Use the "Regenerate Thumbnail" row action.
+     */
+    public function ajaxRegenerateThumbnail(): void
+    {
+        check_ajax_referer('rapls_pic_admin', 'nonce');
+
+        if (!current_user_can('upload_files')) {
+            wp_send_json_error(['message' => __('Permission denied.', 'rapls-pdf-image-creator')], 403);
+        }
+
+        $attachmentId = isset($_POST['attachment_id']) ? absint($_POST['attachment_id']) : 0;
+        if (!$attachmentId) {
+            wp_send_json_error(['message' => __('Invalid attachment ID.', 'rapls-pdf-image-creator')]);
+        }
+
+        if (!current_user_can('edit_post', $attachmentId)) {
+            wp_send_json_error(['message' => __('Permission denied.', 'rapls-pdf-image-creator')], 403);
+        }
+
+        if ('application/pdf' !== get_post_mime_type($attachmentId)) {
+            wp_send_json_error(['message' => __('Not a PDF file.', 'rapls-pdf-image-creator')]);
+        }
+
+        $result = $this->generator->generate($attachmentId, !empty($_POST['force']));
+
+        if ($result) {
+            wp_send_json_success([
+                'message' => __('Thumbnail generated successfully.', 'rapls-pdf-image-creator'),
+                'thumbnail_id' => $result,
+                'thumbnail_url' => $this->generator->getThumbnailUrl($attachmentId, 'thumbnail'),
+            ]);
+        }
+        wp_send_json_error(['message' => __('Failed to generate thumbnail.', 'rapls-pdf-image-creator')]);
+    }
+
+    /**
      * Whether a size in an image's metadata has the file and measures read from it
      *
      * @param mixed $size
@@ -1047,7 +1091,7 @@ final class MediaLibrary
              * load -- still leaves PDFs out, as it did with 1.4.20. A picker
              * that can take only images may be handed a PDF.
              *
-             * @since 1.4.39
+             * @since 1.4.42
              *
              * @param bool  $every Whether to.
              * @param array $query The media query's arguments. Asked once

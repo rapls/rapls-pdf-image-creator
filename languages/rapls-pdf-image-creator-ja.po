@@ -4,7 +4,7 @@
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: Rapls PDF Image Creator 1.4.41\n"
+"Project-Id-Version: Rapls PDF Image Creator 1.4.42\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-14 12:00+0900\n"
 "PO-Revision-Date: 2026-10-14 12:00+0900\n"
@@ -309,6 +309,7 @@ msgstr "対処方法:"
 msgid "See Site Health for the full report"
 msgstr "詳しい状況はサイトヘルスで確認できます"
 
+#. translators: 1: PDF title, 2: how long ago, e.g. "3 hours"
 #, php-format
 msgid "Last happened with the PDF \"%1$s\", %2$s ago."
 msgstr "最後に起きたのは PDF「%1$s」で、%2$s前です。"
@@ -333,6 +334,7 @@ msgstr "ホスティング事業者に、次のいずれかを依頼してくだ
 msgid "Upgrade ImageMagick to version 7."
 msgstr "ImageMagick をバージョン7に更新する。"
 
+#. translators: 1: delegates.xml, 2: ps:cmyk, 3: bmpsep8, 4: pamcmyk32
 #, php-format
 msgid "In %1$s, change the %2$s delegate from %3$s to %4$s."
 msgstr "%1$s の %2$s デリゲートを %3$s から %4$s に変更する。"
@@ -392,6 +394,7 @@ msgstr "エラーが発生しました。"
 msgid "Start bulk generation? This may take a while."
 msgstr "一括生成を開始しますか ? 時間がかかる場合があります。"
 
+#. translators: %1$d: current number, %2$d: total number
 #, php-format
 msgid "Generating thumbnail %1$d of %2$d..."
 msgstr "%2$d件中%1$d件目のサムネイルを生成しています..."
@@ -431,6 +434,7 @@ msgstr "セキュリティチェックに失敗しました。"
 msgid "Permission denied."
 msgstr "権限がありません。"
 
+#. translators: 1: number of PDF rows, 2: post statuses and counts, e.g. "inherit=3, private=1"
 #, php-format
 msgid ""
 "The database has %1$d PDF attachment(s) (%2$s) but the query returned none. "
@@ -442,6 +446,7 @@ msgstr ""
 "を追加した別のプラグインです。他のプラグインを停止して、もう一度スキャンして"
 "ください。"
 
+#. translators: %d: number of PDFs that already have a thumbnail
 #, php-format
 msgid ""
 "%d PDF already has a thumbnail. Tick \"Include PDFs that already have "
@@ -464,6 +469,12 @@ msgstr "無効な PDF ID です。"
 
 msgid "Not a PDF file."
 msgstr "PDF ファイルではありません。"
+
+msgid "Invalid attachment ID."
+msgstr "無効な添付ファイル ID です。"
+
+msgid "Thumbnail generated successfully."
+msgstr "サムネイルが正常に生成されました。"
 
 msgid "Thumbnail generated."
 msgstr "サムネイルを生成しました。"
@@ -493,6 +504,7 @@ msgstr "サムネイルの生成中にエラーが発生しました。"
 msgid "An error occurred while fetching status."
 msgstr "ステータスの取得中にエラーが発生しました。"
 
+#. translators: %s: absolute path to the policy.xml file
 #, php-format
 msgid "Policy file: %s"
 msgstr "ポリシーファイル: %s"
@@ -585,10 +597,12 @@ msgstr "ページが真っ白な画像として描画されました。"
 msgid "Failed to create output directory."
 msgstr "出力先ディレクトリを作成できませんでした。"
 
+#. translators: %s: error message
 #, php-format
 msgid "Imagick error: %s"
 msgstr "Imagick エラー: %s"
 
+#. translators: %s: a Ghostscript output device name, e.g. bmpsep8
 #, php-format
 msgid "This build renders CMYK PDFs through the %s device."
 msgstr "このビルドは CMYK の PDF を %s デバイスで描画します。"
@@ -621,6 +635,7 @@ msgstr "CMYK のテストページが真っ白で返りました。ImageMagick �
 msgid "RGB PDFs are not affected."
 msgstr "RGB の PDF には影響しません。"
 
+#. translators: %s: the error ImageMagick or PHP reported
 #, php-format
 msgid ""
 "The test could not be run, so this is a guess based on the version number "
@@ -675,6 +690,7 @@ msgstr "フィルターで無効化 (簡易変換で動作中)"
 msgid "Active (ICC)"
 msgstr "有効 (ICC)"
 
+#. translators: 1: CMYK profile filename, 2: sRGB profile filename
 #, php-format
 msgid "Converting %1$s to %2$s"
 msgstr "%1$s → %2$s で変換"
@@ -692,6 +708,7 @@ msgstr ""
 "このサーバーには CMYK プロファイルも sRGB プロファイルもありません。カラー変"
 "換には両方が必要です。"
 
+#. translators: %s: a colour profile type, CMYK or sRGB
 #, php-format
 msgid ""
 "No %s profile found on this server. Colour conversion needs both a CMYK and "
@@ -733,6 +750,17 @@ msgstr "このページは %1$s dpi で大きさを測れませんでした。�
 
 msgid "This page is too large to draw, even at the lowest resolution."
 msgstr "このページは大きすぎるため、最も低い解像度でも描画できません。"
+
+msgid "This PDF is a portfolio that holds other files, and its pages are not drawn: Ghostscript would draw the files inside it instead, and their size cannot be checked first."
+msgstr "この PDF は、ほかのファイルをまとめたポートフォリオのため、ページを描画しません。Ghostscript はページの代わりに中のファイルを描画し、その大きさを先に確かめられないためです。"
+
+#: includes/FailureCode.php
+msgid "This PDF is a portfolio that holds other files."
+msgstr "この PDF は、ほかのファイルをまとめたポートフォリオです。"
+
+#: includes/FailureCode.php
+msgid "Its own pages are not drawn: Ghostscript would draw the files inside it instead. Open the portfolio, save the PDF inside it you want a thumbnail of, and upload that file instead."
+msgstr "この PDF 自身のページは描画しません。Ghostscript は代わりに中のファイルを描画するためです。ポートフォリオを開き、サムネイルにしたい中の PDF を保存して、そのファイルをアップロードしてください。"
 
 msgid "This PDF holds a page too large to draw, even at the lowest resolution, so none of its pages is drawn."
 msgstr "この PDF には、最も低い解像度でも描画できないほど大きなページがあるため、どのページも描画しません。"
@@ -836,6 +864,7 @@ msgstr "PDF の描画"
 msgid "PDF rendering detail"
 msgstr "PDF の描画 (詳細)"
 
+#. translators: %d: resolution in dots per inch
 #, php-format
 msgid "%d DPI"
 msgstr "%d DPI"
@@ -924,6 +953,7 @@ msgstr "ImageMagick 6では、CMYK の PDF で画像が真っ白になる場合�
 msgid "Some ImageMagick 6 builds render CMYK PDFs through Ghostscript's bmpsep8 device, which produces a separation BMP that ImageMagick cannot read back. ImageMagick 7 does not have this problem."
 msgstr "一部の ImageMagick 6は、CMYK の PDF を Ghostscript の bmpsep8 デバイスで描画します。これは ImageMagick が読み戻せない分版 BMP を出力します。ImageMagick 7にはこの問題はありません。"
 
+#. translators: 1: gslib, 2: convert -list configure
 msgid "This has no effect where ImageMagick calls Ghostscript as a library (%1$s in the output of %2$s); then only the upgrade helps."
 msgstr "ImageMagick が Ghostscript をライブラリとして呼び出す場合 (%2$s の出力に %1$s がある場合) は効果がなく、そのときはアップグレードだけが有効です。"
 
@@ -934,7 +964,7 @@ msgid "Where WordPress shows a file-type icon for a PDF, the generated thumbnail
 msgstr "WordPress が PDF にファイル形式のアイコンを表示する場所で、代わりに生成したサムネイルを表示します。メディアライブラリのグリッドとリストでは、この設定に関係なく PDF のサムネイルを表示します。"
 
 msgid "This also decides what happens to the image when its PDF is deleted. Checked: the image is deleted with the PDF, unless something else uses it. Another PDF that shares it keeps it as its thumbnail; one a post uses as its featured image, or a post's content or excerpt or a widget shows, is kept as an ordinary image -- a post in the trash included, as it can be restored. Featured images, post content and excerpts, and widgets, are checked; other settings are not. Unchecked: the image is kept -- as the thumbnail of another PDF that shares it, otherwise as an ordinary image."
-msgstr "PDF を削除したときに画像をどうするかも、この設定で決まります。オンにすると、画像も PDF と一緒に削除します。ただし、ほかのものが使っている画像は残します。同じ画像を使っているほかの PDF があれば、その PDF のサムネイルとして残します。投稿がアイキャッチ画像として使っている画像や、投稿の本文または抜粋、ウィジェットに表示されている画像は、普通の画像として残します。ゴミ箱の投稿も、元に戻せるので含めます。確かめるのはアイキャッチ画像、投稿の本文と抜粋、ウィジェットで、ほかの設定は確かめません。オフにすると、画像は残します。同じ画像を使っているほかの PDF があればそのサムネイルとして、なければ普通の画像として残ります。"
+msgstr "PDF を削除したときに画像をどうするかも、この設定で決まります。オンにすると、画像も PDF と一緒に削除します。ただし、ほかのものが使っている画像は残します。同じ画像を使っているほかの PDF があれば、その PDF のサムネイルとして残します。投稿がアイキャッチ画像として使っている画像や、投稿の本文または抜粋、ウィジェットに表示されている画像は、普通の画像として残します。ゴミ箱の投稿も、元に戻せるので含めます。確かめるのはアイキャッチ画像、投稿の本文と抜粋、ウィジェットで、ほかの設定は確かめません。オフにすると、画像は残ります。同じ画像を使っているほかの PDF があればそのサムネイルとして、なければ普通の画像として残ります。"
 
 msgid "These settings are used by \"Insert into post\" in the classic editor's Add Media window, where Size and Link To start at them for a PDF with a thumbnail; what is chosen there is used instead. The block editor does not use them."
 msgstr "これらの設定は、クラシックエディターの「メディアを追加」画面の「投稿に挿入」で使われます。サムネイルのある PDF では、画面のサイズとリンク先が最初にこの設定になり、画面で選んだものがあればそちらを使います。ブロックエディターでは使われません。"
@@ -969,6 +999,7 @@ msgstr "フルサイズ"
 msgid "Thumbnail"
 msgstr "サムネイル"
 
+#. translators: %d: number of PDFs in the trash
 msgid "The only PDF in the Media Library is in the trash (%d). Restore it to generate its thumbnail."
 msgid_plural "All the PDFs in the Media Library are in the trash (%d). Restore them to generate their thumbnails."
 msgstr[0] "メディアライブラリの PDF はすべてゴミ箱にあります (%d件)。サムネイルを生成するには、ゴミ箱から戻してください。"
@@ -979,6 +1010,7 @@ msgstr "このプラグインで PDF のサムネイルが作られています�
 msgid "Nothing was drawn, and ImageMagick raised no error. This is almost always the PDF renderer underneath it, Ghostscript, being too old for the file: Ghostscript 9.27 and earlier fail on files that Ghostscript 10 draws, and write an empty page. The page was already tried again with transparency switched off, which works around the most common case, where this server allows it. Ask your hosting provider which Ghostscript version is installed and whether it can be updated. If the page really is blank, choose another page."
 msgstr "何も描画されず、ImageMagick もエラーを出しませんでした。ほとんどの場合、その下で PDF を描く Ghostscript がこのファイルには古すぎることが原因です。Ghostscript 9.27以前は、Ghostscript 10なら描けるファイルで失敗し、空のページを書き出します。このページは、サーバーが許す場合、もっとも多い原因を回避するために透明効果を無効にして描き直しています。インストールされている Ghostscript のバージョンと更新できるかを、ホスティング事業者に確認してください。ページが本当に白紙なら、別のページを選んでください。"
 
+#. translators: 1: the page asked for, counted from 0; 2: how many pages the PDF has
 msgid "Page %1$d was asked for (counting from 0), but this PDF has %2$d page."
 msgid_plural "Page %1$d was asked for (counting from 0), but this PDF has %2$d pages."
 msgstr[0] "%1$dページ目 (0から数えます) が指定されましたが、この PDF は%2$dページです。"
@@ -1007,6 +1039,7 @@ msgstr "このサーバーでは、いまは PDF のサムネイルを作れま�
 msgid "Imagick Extension"
 msgstr "Imagick 拡張"
 
+#. translators: %s: post statuses and counts, e.g. "private=2, trash=1"
 #, php-format
 msgid "No PDF here is an ordinary Media Library item (%s). Bulk Generate handles those only; a PDF with any other status — private, in the trash, or one another plugin gave it — is left out until it is an ordinary item again."
 msgstr "メディアライブラリの通常の項目になっている PDF がありません (%s)。一括生成が扱うのは通常の項目だけです。ほかの状態の PDF (非公開、ゴミ箱の中、ほかのプラグインが状態を付けたもの) は、通常の項目に戻るまで対象になりません。"

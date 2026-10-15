@@ -60,7 +60,7 @@ check('shown by its ID', [ContentUse::shows('[gallery ids="5,71"]', 71, []), Con
 
 echo "\n--- Fragments that narrow the posts read ---\n";
 check('the stem fragments, as they are and percent-encoded, lower case', ContentUse::fragments(['d', '資料']), ['d', '資料', strtolower(rawurlencode('資料'))]);
-check('  ...a stem not all ASCII gives its longest ASCII run too (review after 1.4.37)', ContentUse::fragments(['報告書-pdf-thumbnail']), ['報告書-pdf-thumbnail', strtolower(rawurlencode('報告書-pdf-thumbnail')), '-pdf-thumbnail']);
+check('  ...a stem not all ASCII gives its longest ASCII run too (review after 1.4.37)', ContentUse::fragments(['報告書-pdf-thumbnail']), ['報告書-pdf-thumbnail', strtolower(rawurlencode('報告書-pdf-thumbnail')), '-pdf-thumbnail', 'thumbnail', 'thum', 'nail']);
 foreach ([
     'a class' => '<img class="wp-image-71">',
     'an image block' => '<!-- wp:image {"id":71} -->',
@@ -103,7 +103,7 @@ check('the digits must follow a form: "wp-image-71", "\"id\"…71", not 71 anywh
     ContentUse::candidate('<!-- wp:image {"lightbox":{"enabled":true},"id":71} -->', 71, []),
 ], [false, true, false, true]);
 $likes71 = ContentUse::idLikesSql(71, static function (string $s): string { return addcslashes($s, '_%\\'); });
-check('the ID is asked by LIKE only: beside each character that can stand before it, and after a \\u00 escape', [count($likes71), $likes71[0], in_array('%\\\\71%', $likes71, true), end($likes71)], [18, '%=71%', true, '%u00%71%']);
+check('the ID is asked by LIKE only: beside each character that can stand before it, and after a \\u00 escape', [count($likes71), $likes71[0], in_array('%\\\\71%', $likes71, true), end($likes71)], [23, '%=71%', true, '%u00%71%']);
 check('a density suffix with a fraction, "@1.5x"', [ContentUse::stem('d-300x200@1.5x.jpg'), array_keys(ContentUse::stemsIn('<img src="/u/d-300x200@1.5x.jpg">'))], ['d', ['d']]);
 check('a name partly percent-encoded, or with a character as an entity', [
     array_keys(ContentUse::stemsIn('<img src="/u/報告' . rawurlencode('書') . '-pdf-thumbnail.jpg">')),
@@ -116,7 +116,10 @@ if (class_exists('Normalizer')) {
 $limitWas = ini_get('pcre.backtrack_limit');
 ini_set('pcre.backtrack_limit', '1000');
 $long = '<img src="/u/e-pdf-thumbnail.jpg">' . str_repeat('a.', 20000);
-check('names past PCRE\'s backtrack limit: not "none", the plainer test keeps it', [ContentUse::stemsIn($long), ContentUse::stemsShown($long, ['e-pdf-thumbnail', 'z-pdf-thumbnail']), ContentUse::shows($long, 9, ['e-pdf-thumbnail'])], [null, ['e-pdf-thumbnail'], true]);
+check('names past PCRE\'s backtrack limit: not "none", the plainer test keeps it', [ContentUse::stemsIn($long), ContentUse::stemsShown($long, ['e-pdf-thumbnail', 'zebra-yak9-pdf-thumbnail']), ContentUse::shows($long, 9, ['e-pdf-thumbnail'])], [null, ['e-pdf-thumbnail'], true]);
+// A stem with nothing distinctive of four letters or more is asked by
+// "thumbnail" too, so here it counts: one too many, never one too few.
+check('  ...a stem asked by "thumbnail" alone counts there (kept, not deleted)', ContentUse::stemsShown($long, ['z-pdf-thumbnail']), ['z-pdf-thumbnail']);
 ini_set('pcre.backtrack_limit', (string) $limitWas);
 check('this plugin\'s own shortcodes naming a PDF', array_keys(ContentUse::shortcodePdfIdsIn('[rapls_pdf_thumbnail id="31"] [rapls_pdf_download_link id=32 text="x"] [rapls_pdf_thumbnail_url id=&quot;33&quot;] [rapls_pdf_clickable_thumbnail id=\'34\'] [other id="35"]')), [31, 32, 33, 34]);
 
@@ -219,8 +222,8 @@ echo "\n--- Review of 1.4.39 ---\n";
 // A block writes "--" in its JSON attributes as \u002d\u002d: the PHP read
 // it, the SQL never handed it the post (from "report-.pdf").
 $dashed = '<!-- wp:acme/pdf-card {"thumb":"https:\\/\\/x\\/u\\/report\\u002d\\u002dpdf-thumbnail.jpg"} /-->';
-check('a name holding "--" written \\u002d\\u002d: shown, and a candidate by its longest piece', [ContentUse::shows($dashed, 9, ['report--pdf-thumbnail']), ContentUse::candidate($dashed, 9, ['report--pdf-thumbnail']), ContentUse::fragments(['report--pdf-thumbnail'])], [true, true, ['report--pdf-thumbnail', 'pdf-thumbnail']]);
-check('  ...a stem not all ASCII, its ASCII run holding "--"', ContentUse::fragments(['資料--pdf-thumbnail']), ['資料--pdf-thumbnail', strtolower(rawurlencode('資料--pdf-thumbnail')), '--pdf-thumbnail', 'pdf-thumbnail', '%e8%b3%87%e6%96%99']);
+check('a name holding "--" written \\u002d\\u002d: shown, and a candidate by its longest piece', [ContentUse::shows($dashed, 9, ['report--pdf-thumbnail']), ContentUse::candidate($dashed, 9, ['report--pdf-thumbnail']), ContentUse::fragments(['report--pdf-thumbnail'])], [true, true, ['report--pdf-thumbnail', 'report', 'thumbnail', 'thum', 'nail', 'pdf-thumbnail']]);
+check('  ...a stem not all ASCII, its ASCII run holding "--"', ContentUse::fragments(['資料--pdf-thumbnail']), ['資料--pdf-thumbnail', strtolower(rawurlencode('資料--pdf-thumbnail')), '--pdf-thumbnail', 'thumbnail', 'thum', 'nail', 'pdf-thumbnail', '%e8%b3%87%e6%96%99']);
 check('an ID first in a list that is not a gallery\'s: {"image_ids":[555]}', [ContentUse::shows('<!-- wp:acme/slider {"image_ids":[555,12]} /-->', 555, []), $sqlFinds('{"image_ids":[555,12]}')], [true, true]);
 // A character outside the Basic Multilingual Plane is a pair of escapes,
 // decoded together or not at all.
@@ -241,7 +244,7 @@ $t = microtime(true);
 $found77 = isset(ContentUse::idsIn($many)[77]);
 check('  ...a post with many "wp:" and one comment is read in one pass', [$found77, microtime(true) - $t < 1.0], [true, true]);
 
-check('a stem\'s ASCII run is the longest, of four characters or more', [ContentUse::fragments(['報告-ab-書-pdf-thumbnail']), ContentUse::fragments(['報告abc書'])], [['報告-ab-書-pdf-thumbnail', strtolower(rawurlencode('報告-ab-書-pdf-thumbnail')), '-pdf-thumbnail'], ['報告abc書', strtolower(rawurlencode('報告abc書'))]]);
+check('a stem\'s ASCII run is the longest, of four characters or more', [ContentUse::fragments(['報告-ab-書-pdf-thumbnail']), ContentUse::fragments(['報告abc書'])], [['報告-ab-書-pdf-thumbnail', strtolower(rawurlencode('報告-ab-書-pdf-thumbnail')), '-pdf-thumbnail', 'thumbnail', 'thum', 'nail'], ['報告abc書', strtolower(rawurlencode('報告abc書'))]]);
 
 echo "\n--- Review of 1.4.40 ---\n";
 // Mutation testing of 1.4.40: each edge, held.
@@ -272,7 +275,74 @@ $GLOBALS['wp_options'] = [
 ];
 $real = ContentUse::widgetContent();
 check('widgets with booleans, floats and many values: read; an ID not shown is not found, a float ID shown is', [is_string($real), ContentUse::shows((string) $real, 999, ['other-pdf-thumbnail']), ContentUse::shows((string) $real, 555, ['not-shown-pdf-thumbnail'])], [true, false, true]);
+// A Text widget holding a [gallery] whose ID is written as an entity: only
+// idsIn() reads it (mutation testing after 1.4.41).
+$GLOBALS['wp_options'] = ['widget_text' => [2 => ['title' => '', 'text' => '[gallery ids="&#53;55"]', 'filter' => true]]];
+check('a widget [gallery] naming the image by an entity: shown', ContentUse::shows((string) ContentUse::widgetContent(), 555, []), true);
 $GLOBALS['wp_options'] = [];
+
+// One character of an ASCII name written another way -- an entity, percent-
+// encoded, JSON's \u escape -- and an ID after a JSON escape: the PHP finds
+// each, so the SQL must hand it the post (review of 1.4.41).
+$encodedForms = [
+    'entity' => '<img src="/u/report&#45;pdf-thumbnail.jpg">',
+    'percent' => '<img src="/u/report%2Dpdf-thumbnail.jpg">',
+    'json' => '<!-- wp:image {"url":"/u/report-pdf-thumbnail.jpg"} -->',
+    'inside a word' => '<img src="/u/rep&#111;rt-pdf-thumbnail.jpg">',
+    'inside "thumbnail"' => '<img src="/u/annual-report-pdf-thumb&#110;ail.jpg">',
+];
+$found = [];
+foreach ($encodedForms as $label => $html) {
+    $stem = 'inside "thumbnail"' === $label ? 'annual-report-pdf-thumbnail' : 'report-pdf-thumbnail';
+    $found[$label] = [ContentUse::shows($html, 9, [$stem]), ContentUse::candidate($html, 9, [$stem])];
+}
+check('an ASCII name with one character written another way: shown, and a candidate for the SQL', $found, array_fill_keys(array_keys($encodedForms), [true, true]));
+$escaped = [];
+foreach (['\t', '\n', '\r', '\f'] as $escape) {
+    $html = '<!-- wp:image {"id":"' . $escape . '555"} -->';
+    $escaped[$escape] = [ContentUse::shows($html, 555, []), ContentUse::candidate($html, 555, [])];
+}
+check('an ID after JSON\'s \t, \n, \r or \f: shown, and a candidate for the SQL', $escaped, array_fill_keys(['\t', '\n', '\r', '\f'], [true, true]));
+// ...and after a "+": {"id":"+555"} is 555 to is_numeric() (review of
+// 1.4.41's fixes).
+check('an ID after a "+": shown, and a candidate for the SQL', [ContentUse::shows('<!-- wp:image {"id":"+555"} -->', 555, []), ContentUse::candidate('<!-- wp:image {"id":"+555"} -->', 555, [])], [true, true]);
+// A word of odd length broken at its middle character: each half leaves it
+// out, and one of them is still asked (review of 1.4.41's fixes).
+check('an odd-length word broken at its middle: still a candidate', ContentUse::candidate('<img src="/u/docume&#110;tation-pdf-thumbnail.jpg">', 9, ['documentation-pdf-thumbnail']), true);
+check('"thumbnail" is asked only where the rest of the name can all be broken by one character', [ContentUse::fragments(['annual-report-pdf-thumbnail']), in_array('thumbnail', ContentUse::fragments(['report-pdf-thumbnail']), true)], [['annual-report-pdf-thumbnail', 'annual', 'report'], true]);
+
+// Whatever the PHP finds, the SQL hands it: shows() implies candidate(),
+// over names and IDs written every way above, at random.
+mt_srand(41);
+$pieces = ['report', 'annual', 'x', 'pdf', 'thumbnail', '2026', 'ab', '555', '55', '5550', 'documentation'];
+$writers = [
+    static function (string $c): string { return $c; },
+    static function (string $c): string { return '&#' . ord($c) . ';'; },
+    static function (string $c): string { return '%' . strtoupper(bin2hex($c)); },
+    static function (string $c): string { return '\u00' . bin2hex($c); },
+];
+$against = 0;
+for ($round = 0; $round < 3000; $round++) {
+    $parts = [];
+    for ($n = mt_rand(1, 3); $n > 0; $n--) {
+        $parts[] = $pieces[mt_rand(0, count($pieces) - 1)];
+    }
+    $stem = implode('-', $parts) . '-pdf-thumbnail';
+    $name = $stem;
+    $at = mt_rand(0, strlen($name) - 1);
+    $name = substr($name, 0, $at) . $writers[mt_rand(0, 3)]($name[$at]) . substr($name, $at + 1);
+    $forms = [
+        '<img src="/u/' . $name . '.jpg">',
+        '<!-- wp:image {"id":"' . ['', '\t', '\n', '\r', '\f'][mt_rand(0, 4)] . '555","url":"/u/' . $name . '.jpg"} -->',
+        '[gallery ids="1 ' . ['555', '0555', '55'][mt_rand(0, 2)] . '"]',
+    ];
+    foreach ($forms as $html) {
+        if (ContentUse::shows($html, 555, [$stem]) && !ContentUse::candidate($html, 555, [$stem])) {
+            $against++;
+        }
+    }
+}
+check('shows() implies candidate(), over 9,000 random contents', $against, 0);
 
 echo "\n$pass passed, $fail failed\n";
 exit($fail ? 1 : 0);

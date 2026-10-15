@@ -97,7 +97,9 @@ check('"Check this server again" also forgets where the ICC profiles are', false
 $pluginSource = (string) file_get_contents(RAPLS_PIC_PLUGIN_DIR . 'includes/Plugin.php');
 check('an update forgets what the previous version measured about the server', false !== strpos($pluginSource, "foreach (\\Rapls\\PDFImageCreator\\Engine\\ImagickEngine::probeTransients() as \$transient) {\n            delete_transient(\$transient);"), true);
 $inserterSource = (string) file_get_contents(RAPLS_PIC_PLUGIN_DIR . 'includes/Inserter.php');
-check('no insert data is added to every PDF in the media modal', [false !== strpos($inserterSource, 'wp_prepare_attachment_for_js'), false !== strpos($inserterSource, 'picInsertHtml')], [true, false]);
+// addInsertSettingsToJs() stays, deprecated, for code that calls it, and is
+// hooked to nothing (review of 1.4.41).
+check('no insert data is added to every PDF in the media modal', [1 === preg_match("/add_filter\\(\\s*'wp_prepare_attachment_for_js'/", $inserterSource), 1 === preg_match("/\\[\\s*\\\$this\\s*,\\s*'addInsertSettingsToJs'\\s*\\]/", $inserterSource)], [false, false]);
 
 // Verification of the change: the template's placeholders are escaped, so a
 // title or URL with a quote in it cannot close the attribute it sits in.

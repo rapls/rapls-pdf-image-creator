@@ -605,4 +605,80 @@ final class BulkProcessor
 
         return ['pdf_id' => null, 'after' => $after, 'done' => false];
     }
+
+    /**
+     * Every PDF, with whether it has a thumbnail
+     *
+     * Kept as it was in 1.4.20 for code that called it: a public method is
+     * not removed in a release. Nothing here calls it or hooks it; the Bulk
+     * Generate tab reads the library a page at a time instead.
+     *
+     * @deprecated 1.4.42 Read nextToGenerate() and statsPage() instead.
+     *
+     * @param bool $includeExisting Include PDFs that already have thumbnails
+     * @return array<array<string, mixed>>
+     */
+    public function getPDFs(bool $includeExisting = false): array
+    {
+        $query = new \WP_Query([
+            'post_type' => 'attachment',
+            'post_mime_type' => 'application/pdf',
+            'post_status' => 'inherit',
+            'posts_per_page' => -1,
+            'fields' => 'ids',
+            'rapls_pic_internal' => true,
+        ]);
+
+        $pdfs = [];
+        foreach ((array) $query->posts as $pdfId) {
+            $pdfId = (int) $pdfId;
+            $hasThumbnail = $this->generator->hasThumbnail($pdfId);
+            if (!$includeExisting && $hasThumbnail) {
+                continue;
+            }
+            $pdfs[] = [
+                'id' => $pdfId,
+                'title' => get_the_title($pdfId),
+                'filename' => basename((string) get_attached_file($pdfId)),
+                'has_thumbnail' => $hasThumbnail,
+            ];
+        }
+
+        return $pdfs;
+    }
+
+    /**
+     * How many PDFs there are, and how many have a thumbnail
+     *
+     * Kept as it was in 1.4.20, for the same reason as getPDFs().
+     *
+     * @deprecated 1.4.42 Read statsPage() instead.
+     *
+     * @return array<string, int>
+     */
+    public function getStats(): array
+    {
+        $query = new \WP_Query([
+            'post_type' => 'attachment',
+            'post_mime_type' => 'application/pdf',
+            'post_status' => 'inherit',
+            'posts_per_page' => -1,
+            'fields' => 'ids',
+            'rapls_pic_internal' => true,
+        ]);
+        $pdfIds = (array) $query->posts;
+
+        $withThumbnail = 0;
+        foreach ($pdfIds as $pdfId) {
+            if ($this->generator->hasThumbnail((int) $pdfId)) {
+                ++$withThumbnail;
+            }
+        }
+
+        return [
+            'total' => count($pdfIds),
+            'with_thumbnail' => $withThumbnail,
+            'without_thumbnail' => count($pdfIds) - $withThumbnail,
+        ];
+    }
 }

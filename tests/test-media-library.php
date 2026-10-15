@@ -250,6 +250,17 @@ namespace {
     $GLOBALS['meta'][3000]['_wp_attached_file'] = '2026/10/doc-pdf-thumbnail.jpg';
     $GLOBALS['urls'][3000] = 'https://cdn.example.net/media/2026/10/doc-pdf-thumbnail.jpg';
     $GLOBALS['attachment_meta'][3000] = ['width' => 1024, 'height' => 768, 'sizes' => ['medium' => ['file' => 'doc-pdf-thumbnail-300x225.jpg', 'width' => 300, 'height' => 225]]];
+    // Another plugin's filter handing back a response with no "mime": handed
+    // on as it is, with no warning (review of 1.4.41).
+    set_error_handler(static function (int $no, string $message): bool { throw new \ErrorException($message, 0, $no); });
+    try {
+        $noMime = $library->filterAttachmentForJs(['url' => 'https://example.test/301.pdf'], new WP_Post(301, 0, 'application/pdf'), []);
+    } catch (\Throwable $e) {
+        $noMime = get_class($e) . ': ' . $e->getMessage();
+    } finally {
+        restore_error_handler();
+    }
+    check('a response with no mime: handed on, no warning', $noMime, ['url' => 'https://example.test/301.pdf']);
     $cdnJs = $library->filterAttachmentForJs(['url' => 'https://example.test/300.pdf', 'mime' => 'application/pdf'], new WP_Post(300, 0, 'application/pdf'), []);
     $cdnRest = $library->filterRestAttachment(new WP_REST_Response(['id' => 300, 'mime_type' => 'application/pdf', 'source_url' => 'https://example.test/300.pdf', 'media_details' => []]), new WP_Post(300, 0, 'application/pdf'), new WP_REST_Request())->get_data();
     check('a PDF\'s sizes sit beside its image\'s own address (a CDN\'s), in the media modal and the REST answer (review after 1.4.31)', [

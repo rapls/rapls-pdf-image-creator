@@ -109,8 +109,25 @@ namespace {
             return $rows;
         }
         /** The ordinary images still attached to a PDF (reparentKeptImages()). */
+        public $markedLookupFails = false;
         public function get_col($q) {
             $this->last_error = '';
+            // The marked images whose source is a PDF (reparentKeptImages()),
+            // as the SQL asks: by the source key, marked, attachments only.
+            if (false !== strpos($q[0], "s.meta_key = '_rapls_pic_source_pdf' AND s.meta_value = %s")) {
+                if ($this->markedLookupFails) { $this->last_error = 'simulated failure'; return []; }
+                $markedOnly = false !== strpos($q[0], "EXISTS (SELECT 1 FROM {$this->postmeta} m WHERE m.post_id = p.ID AND m.meta_key = '_rapls_pic_is_thumbnail')");
+                $attachmentsOnly = false !== strpos($q[0], "p.post_type = 'attachment'");
+                $ids = [];
+                foreach ($GLOBALS['posts'] as $id => $post) {
+                    if ((string) ($GLOBALS['meta'][$id]['_rapls_pic_source_pdf'] ?? '') === (string) $q[1][0]
+                        && (!$markedOnly || isset($GLOBALS['meta'][$id]['_rapls_pic_is_thumbnail']))
+                        && (!$attachmentsOnly || 'attachment' === ($post->post_type ?? ''))) {
+                        $ids[] = (string) $id;
+                    }
+                }
+                return $ids;
+            }
             if (false === strpos($q[0], 'p.post_parent = %d')) {
                 throw new \RuntimeException('unexpected get_col: ' . $q[0]);
             }
@@ -470,7 +487,7 @@ namespace {
     $generator->deleteThumbnail(390);
     $sql = (string) ($GLOBALS['content_sql'][0] ?? '');
     check('the SQL: content and excerpt each on its own, lowered, trash read, revisions and auto-drafts not', [
-        false !== strpos($sql, '(post_content LIKE %s AND (' . implode(' OR ', array_fill(0, count(\Rapls\PDFImageCreator\ContentUse::idLikesSql(392, 'strval')), 'post_content LIKE %s')) . ')) OR (post_excerpt LIKE %s AND (post_excerpt LIKE %s') && false === strpos($sql, 'REGEXP') && false !== strpos($sql, 'LOWER(post_content) LIKE %s OR LOWER(post_excerpt) LIKE %s') && false === strpos($sql, 'CONCAT') && 1 === substr_count($sql, 'LOWER(post_content)'),
+        false !== strpos($sql, '(post_content LIKE %s AND (' . implode(' OR ', array_fill(0, count(\Rapls\PDFImageCreator\ContentUse::idLikesSql(392, 'strval')), 'post_content LIKE %s')) . ')) OR (post_excerpt LIKE %s AND (post_excerpt LIKE %s') && false === strpos($sql, 'REGEXP') && false !== strpos($sql, 'LOWER(post_content) LIKE %s OR LOWER(post_excerpt) LIKE %s') && false === strpos($sql, 'CONCAT') && count(\Rapls\PDFImageCreator\ContentUse::fragments(['v-pdf-thumbnail'])) === substr_count($sql, 'LOWER(post_content)'),
         false !== strpos($sql, "post_type NOT IN ('attachment', 'revision')"),
         false !== strpos($sql, "post_status NOT IN ('auto-draft')"),
         1 === preg_match('/\bID > %d\b/', $sql),
@@ -624,9 +641,44 @@ namespace {
     $own(502, 500);
     $GLOBALS['posts'][502]->post_parent = 500;
     $GLOBALS['cleaned'] = [];
+    // 503: marked, from PDF 500, still the one PDF 500 names -- left alone.
+    $own(503, 500);
+    $GLOBALS['posts'][503]->post_parent = 500;
+    $GLOBALS['meta'][500]['_rapls_pic_thumbnail_id'] = 503;
     $generator->reparentKeptImages(500);
-    check('the PDF\'s ordinary images go to its parent, their cache cleared; its marked thumbnail stays', [$GLOBALS['posts'][501]->post_parent, $GLOBALS['posts'][502]->post_parent, $GLOBALS['cleaned']], [77, 500, [501]]);
-    unset($GLOBALS['posts'][500], $GLOBALS['posts'][501], $GLOBALS['posts'][502]);
+    check('the PDF\'s ordinary images go to its parent, their cache cleared; an orphan marked one (502) made ordinary and moved too; the one it names (503) stays', [$GLOBALS['posts'][501]->post_parent, $GLOBALS['posts'][502]->post_parent, isset($GLOBALS['meta'][502]['_rapls_pic_is_thumbnail']), $GLOBALS['posts'][503]->post_parent, isset($GLOBALS['meta'][503]['_rapls_pic_is_thumbnail'])], [77, 77, false, 500, true]);
+    unset($GLOBALS['posts'][500], $GLOBALS['posts'][501], $GLOBALS['posts'][502], $GLOBALS['posts'][503], $GLOBALS['meta'][500], $GLOBALS['meta'][502], $GLOBALS['meta'][503]);
+
+    // A marked orphan from PDF 504 that another PDF (506) names by this
+    // plugin's key: handed to 506, attached to it, still marked.
+    $GLOBALS['posts'][504] = (object) ['ID' => 504, 'post_type' => 'attachment', 'post_mime_type' => 'application/pdf', 'post_parent' => 77];
+    $GLOBALS['posts'][506] = (object) ['ID' => 506, 'post_type' => 'attachment', 'post_mime_type' => 'application/pdf'];
+    $own(505, 504);
+    $GLOBALS['posts'][505]->post_parent = 504;
+    $GLOBALS['meta'][506]['_rapls_pic_thumbnail_id'] = 505;
+    $generator->reparentKeptImages(504);
+    check('an orphan marked image another PDF names: handed to it and attached to it', [$GLOBALS['meta'][505]['_rapls_pic_source_pdf'] ?? null, isset($GLOBALS['meta'][505]['_rapls_pic_is_thumbnail']), $GLOBALS['posts'][505]->post_parent], [506, true, 506]);
+    unset($GLOBALS['posts'][504], $GLOBALS['posts'][505], $GLOBALS['posts'][506], $GLOBALS['meta'][505], $GLOBALS['meta'][506]);
+
+    // The marked lookup fails: nothing marked is touched.
+    $GLOBALS['posts'][507] = (object) ['ID' => 507, 'post_type' => 'attachment', 'post_parent' => 77];
+    $own(508, 507);
+    $GLOBALS['posts'][508]->post_parent = 507;
+    $GLOBALS['wpdb']->markedLookupFails = true;
+    $generator->reparentKeptImages(507);
+    $GLOBALS['wpdb']->markedLookupFails = false;
+    check('the marked lookup fails: the marked image stays as it was', [isset($GLOBALS['meta'][508]['_rapls_pic_is_thumbnail']), $GLOBALS['posts'][508]->post_parent], [true, 507]);
+    unset($GLOBALS['posts'][507], $GLOBALS['posts'][508], $GLOBALS['meta'][508]);
+
+    // An image with only the source key, no marker -- not this plugin's
+    // thumbnail any more -- attached elsewhere: left alone (mutation testing
+    // after 1.4.41: the marker's EXISTS was not held).
+    $GLOBALS['posts'][509] = (object) ['ID' => 509, 'post_type' => 'attachment', 'post_parent' => 77];
+    $GLOBALS['posts'][510] = (object) ['ID' => 510, 'post_type' => 'attachment', 'post_parent' => 88];
+    $GLOBALS['meta'][510] = ['_rapls_pic_source_pdf' => 509];
+    $generator->reparentKeptImages(509);
+    check('an image with the source key and no marker: left alone, its key and its parent as they were', [$GLOBALS['meta'][510]['_rapls_pic_source_pdf'] ?? null, $GLOBALS['posts'][510]->post_parent], [509, 88]);
+    unset($GLOBALS['posts'][509], $GLOBALS['posts'][510], $GLOBALS['meta'][510]);
 
     // No file recorded: its address names it; with neither, kept.
     $GLOBALS['deleted'] = [];
@@ -652,8 +704,9 @@ namespace {
     // "_" in a name is a letter, not LIKE's any-character: escaped.
     $GLOBALS['deleted'] = [];
     $GLOBALS['content_read'] = [];
-    $shown(552, 550, '2026/10/q_r-pdf-thumbnail.jpg');
-    $GLOBALS['content'] = [742 => '<img src="/u/qxr-pdf-thumbnail.jpg">'];
+    // Two words of its own, so "thumbnail" is not asked (ContentUse::fragments()).
+    $shown(552, 550, '2026/10/ab_cd-efgh-ijkl-pdf-thumbnail.jpg');
+    $GLOBALS['content'] = [742 => '<img src="/u/abxcd-pdf-thumbnail.jpg">'];
     check('"_" in a name is matched as itself: another name is not read', [$generator->deleteThumbnail(550), $GLOBALS['content_read']], [true, []]);
     $GLOBALS['content'] = [];
 
@@ -804,6 +857,23 @@ namespace {
     $GLOBALS['meta'][570]['_rapls_pic_thumbnail_id'] = 572;
     $generator->deleteThumbnail(570);
     check('  ...of two PDFs that name it, the lowest ID takes it', (int) ($GLOBALS['meta'][572]['_rapls_pic_source_pdf'] ?? 0), 571);
+    // Mutation testing after 1.4.41: an image the user attached to a post
+    // is handed over and stays attached to that post.
+    $own(6592, 6590);
+    $GLOBALS['posts'][6591] = (object) ['ID' => 6591, 'post_type' => 'attachment', 'post_parent' => 0, 'post_mime_type' => 'application/pdf'];
+    $GLOBALS['posts'][6592]->post_parent = 77;
+    $GLOBALS['meta'][6590]['_rapls_pic_thumbnail_id'] = 6592;
+    $GLOBALS['meta'][6591]['_rapls_pic_thumbnail_id'] = 6592;
+    $generator->deleteThumbnail(6590);
+    check('  ...one the user attached to a post: handed over, still attached to the post', [(int) ($GLOBALS['meta'][6592]['_rapls_pic_source_pdf'] ?? 0), $GLOBALS['posts'][6592]->post_parent], [6591, 77]);
+    // ...and an attachment that is no PDF -- an audio file carrying this
+    // plugin's key -- does not take it.
+    $own(6597, 6595);
+    $GLOBALS['posts'][6596] = (object) ['ID' => 6596, 'post_type' => 'attachment', 'post_parent' => 0, 'post_mime_type' => 'audio/mpeg'];
+    $GLOBALS['meta'][6595]['_rapls_pic_thumbnail_id'] = 6597;
+    $GLOBALS['meta'][6596]['_rapls_pic_thumbnail_id'] = 6597;
+    $generator->deleteThumbnail(6595);
+    check('  ...an audio file carrying the key: not handed to it, an ordinary image', [$GLOBALS['meta'][6597]['_rapls_pic_source_pdf'] ?? '', $GLOBALS['meta'][6597]['_rapls_pic_is_thumbnail'] ?? ''], ['', '']);
     // Review of 1.4.40: a refused deletion for a PDF whose own key is empty
     // -- named only by its `_thumbnail_id` -- is left for the next attempt.
     $own(582, 580);

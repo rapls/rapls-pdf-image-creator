@@ -193,6 +193,7 @@ class Imagick
             throw new ImagickException(self::$failMessage);
         }
         self::$log[] = 'readImage' . ($suffixed ? '[n]' : '(whole)');
+        $this->suffixed = $suffixed;
         self::$lastPath = $p;
         [$this->w, $this->h] = [self::$readW, self::$readH];
         // The page itself, in points: drawn at this instance's density, and
@@ -218,6 +219,12 @@ class Imagick
             if ($this->w * $this->h * 8 > $cache) {
                 throw new ImagickException("CacheResourcesExhausted `x.pdf' @ error/cache.c/OpenPixelCache/3892");
             }
+        }
+        // Each image a read gave, in pixels: the page, then any a test says
+        // came back with it (moreImages, in points), for setIteratorIndex().
+        $this->sizes = [[$this->w, $this->h]];
+        foreach (self::$moreImages as $more) {
+            $this->sizes[] = [(int) floor($more[0] * $this->density / 72), (int) floor($more[1] * $this->density / 72)];
         }
         $this->colorspace = self::$readColorspace;
         $this->flat = self::$emptyFor[$suffixed ? 'suffix' : 'whole'];
@@ -255,7 +262,11 @@ class Imagick
     }
     /** What a count (ping) answers, when a test makes it differ from the pages a read finds. */
     public static $countSays = null;
-    public function getNumberImages() { return self::$countSays ?? self::$pageCount; }
+    /** Images a read of one page ([n]) gives: one, as Ghostscript draws one page, unless a test says it drew more (a portfolio's embedded files). */
+    public static $imagesPerPage = 1;
+    /** Whether this instance's last read named a page. */
+    public $suffixed = false;
+    public function getNumberImages() { return $this->suffixed ? self::$imagesPerPage : (self::$countSays ?? self::$pageCount); }
     /** A ping's page size in points, as ImageMagick reports it at 72 dpi (A4 unless a test says otherwise). */
     public static $pingSize = [595, 842];
     /** The page read, in points, when a test makes it differ from what a ping reports (ImageMagick 7 pings the largest page). */
@@ -278,7 +289,17 @@ class Imagick
         [$this->w, $this->h] = self::$pingSize;
         return true;
     }
-    public function setIteratorIndex($i) { self::$log[] = "setIteratorIndex($i)"; return true; }
+    public function setIteratorIndex($i) {
+        self::$log[] = "setIteratorIndex($i)";
+        if (isset($this->sizes[$i])) {
+            [$this->w, $this->h] = $this->sizes[$i];
+        }
+        return true;
+    }
+    /** The images a read gave, [width, height] in pixels each (readImage()). */
+    public $sizes = [];
+    /** Images besides the page a read gives, [width, height] in points each: a portfolio's files, or the other pages of a build that ignores [n]. */
+    public static $moreImages = [];
     public function getImage() { self::$log[] = 'getImage'; $n = clone $this; return $n; }
     public function getImageColorspace() { return $this->colorspace; }
     public function setImageColorspace($cs) { self::$log[] = "setImageColorspace($cs)"; $this->colorspace = $cs; }
@@ -898,13 +919,37 @@ check('  ...and the sheet itself refused by them, once', $im6Sheet, [1, 'resourc
 // file without them is drawn as asked, as before 1.4.34.
 $cacheNames->setValue(null, ['RESOURCETYPE_NO_SUCH_MEMORY']);
 [$r, $log] = run(['format' => 'jpeg']);
-$noLimitSheet = [$readsOf($log), $r->getCode()];
+$noLimitSheet = [$readsOf($log), $r->getCode(), $r->getError()];
+// A cover beside the sheet, and a box at /UserUnit 1000: refused unread, as
+// the file's, before an Imagick with no limit lets the page through (review
+// of 1.4.41: asked after, the cover was "this page", and the /UserUnit file
+// was drawn as asked).
+boxes([595, 842], [300000, 300000]);
+[$r, $log] = run(['format' => 'jpeg']);
+$noLimitCover = [$readsOf($log), $r->getCode(), $r->getError()];
+file_put_contents($pdf, "%PDF-1.4\n<< /Type /Page /MediaBox [0 0 14400 14400] /UserUnit 1000 >>\n");
+[$r, $log] = run(['format' => 'jpeg']);
+$noLimitUnit = [$readsOf($log), $r->getCode(), $r->getError()];
 file_put_contents($pdf, '%PDF-1.4');
 $page([595, 842]);
 [$r, $log] = run(['format' => 'jpeg']);
 $names->setValue(null, $namesWere);
 $cacheNames->setValue(null, $cacheWere);
-check('  ...with no limit to set, a sheet the boxes say is too large is not read; a file without boxes is drawn as asked', [$noLimitSheet, [$densities($log), $r->isSuccess()]], [[0, 'resource_limit'], [['setResolution(150)'], true]]);
+check('  ...with no limit to set, a cover beside the sheet and a box at /UserUnit 1000 are refused unread, as the file\'s', [$noLimitCover, $noLimitUnit], array_fill(0, 2, [0, 'resource_limit', 'This PDF holds a page too large to draw, even at the lowest resolution, so none of its pages is drawn.']));
+check('  ...with no limit to set, a sheet the boxes say is too large is not read, and said to be the file\'s; a file without boxes is drawn as asked', [$noLimitSheet, [$densities($log), $r->isSuccess()]], [[0, 'resource_limit', 'This PDF holds a page too large to draw, even at the lowest resolution, so none of its pages is drawn.'], [['setResolution(150)'], true]]);
+// ...and a page whose boxes say it fits only below the density asked, still
+// above 2 dpi, is drawn at the density that fits, not as asked (mutation
+// testing after 1.4.41).
+$names->setValue(null, ['RESOURCETYPE_NO_SUCH_WIDTH', 'RESOURCETYPE_HEIGHT']);
+$cacheNames->setValue(null, ['RESOURCETYPE_NO_SUCH_MEMORY']);
+boxes([20000, 20000]);
+$page([20000, 20000]);
+[$r, $log] = run(['format' => 'jpeg']);
+$noLimitFitted = [$readsOf($log), $densities($log)];
+$names->setValue(null, $namesWere);
+$cacheNames->setValue(null, $cacheWere);
+$page([595, 842]);
+check('  ...with no limit to set, a box that fits only below the density asked is read once, at the density that fits', $noLimitFitted, [1, ['setResolution(22.76)']]);
 
 // A request that dies inside the read runs no finally: the limits are put
 // back at shutdown, for the next request this worker serves.
@@ -1328,6 +1373,114 @@ foreach (["/UserUnit 1 %c\n0 R", "/UserUnit 1 +0 R", "/UserUnit 1 0%c\nR"] as $f
     $refForms[] = [$densities($log)[0] ?? null, $r->isSuccess()];
 }
 check('  ...a /UserUnit reference with a comment or a sign inside it: measured, not drawn as asked', $refForms, array_fill(0, 3, ['setResolution(2)', true]));
+// A portfolio (/Collection in the catalog): Ghostscript draws the PDFs
+// embedded in it instead of its own pages, and their boxes are in compressed
+// streams the box reading never opens -- an outer Letter page vouched for a
+// huge embedded one (review of 1.4.41). Refused unread, wherever /Collection
+// is seen: in the bytes, in an inflated object stream, spelt with escapes,
+// and in a file the token reading cannot follow.
+$portfolioSays = 'This PDF is a portfolio that holds other files, and its pages are not drawn: Ghostscript would draw the files inside it instead, and their size cannot be checked first.';
+$portfolios = [];
+foreach ([
+    'in the bytes' => "<< /Type /Catalog /Pages 2 0 R /Collection << /Type /Collection >> >>\n<< /Type /Page /MediaBox [0 0 612 792] >>",
+    'in an object stream' => "<< /Type /Page /MediaBox [0 0 612 792] >>\n" . $stream('/Type /ObjStm /N 1 /First 4 /Filter /FlateDecode', gzcompress('1 0 << /Type /Catalog /Collection 3 0 R >>')),
+    'spelt with escapes' => "<< /Type /Catalog /C#6Fllection << >> >>\n<< /Type /Page /MediaBox [0 0 612 792] >>",
+    'where the token reading stops' => "<< /Type /Catalog /Collection << >> { >>\n<< /Type /Page /MediaBox [0 0 612 792] >>",
+] as $where => $body) {
+    $pdf = $boxFile($body);
+    [$r, $log] = run(['format' => 'jpeg']);
+    $portfolios[$where] = [$readsOf($log), $r->getCode(), $r->getError()];
+}
+check('a portfolio (/Collection) is not drawn: in the bytes, in an object stream, spelt with escapes, where the token reading stops', $portfolios, array_fill_keys(array_keys($portfolios), [0, 'pdf_portfolio', $portfolioSays]));
+// Bytes before the header do not hide it: readers allow the header anywhere
+// in the first 1024 bytes (review of 1.4.41's fixes).
+file_put_contents($pdf, "junk before the header\n%PDF-1.7\n<< /Type /Catalog /Collection << >> >>\n<< /Type /Page /MediaBox [0 0 612 792] >>\n");
+[$r, $log] = run(['format' => 'jpeg']);
+check('  ...bytes before the header do not hide a portfolio', [$readsOf($log), $r->getCode()], [0, 'pdf_portfolio']);
+// ...but a file with no PDF header in its first 1024 bytes -- PostScript
+// naming /Collection -- is no portfolio (review of 1.4.41's fixes).
+file_put_contents($pdf, "%!PS-Adobe-3.0\n%%BoundingBox: 0 0 595 842\n/Collection 1 def\nshowpage\n");
+[$r, $log] = run(['format' => 'jpeg']);
+check('  ...PostScript that names /Collection is no portfolio', [$r->getCode() === 'pdf_portfolio', $readsOf($log) > 0], [false, true]);
+// A longer name is not /Collection, and an ordinary page is drawn as asked.
+$pdf = $boxFile("<< /Type /Catalog /CollectionItem << >> >>\n<< /Type /Page /MediaBox [0 0 595 842] >>");
+[$r, $log] = run(['format' => 'jpeg']);
+check('  .../CollectionItem is not /Collection: drawn as asked', [$densities($log), $r->isSuccess()], [['setResolution(150)'], true]);
+check('  ...largestPageBox() vouches for nothing in a portfolio', ImagickEngine::largestPageBox($boxFile("<< /Collection << >> >>\n<< /MediaBox [0 0 595 842] >>")), null);
+// And where nothing in the bytes said so, a measuring read that comes back
+// with more than the one page asked is not drawn (the safety net).
+// Only where the bytes could not be read: where they could, they show no
+// /Collection, and a build that ignores "[n]" and returns every page had an
+// ordinary multi-page PDF refused for good (review of 1.4.41's fixes).
+$pdf = $boxFile('<< /Type /Page /MediaBox [0 0 595 842] /UserUnit 1 >>');
+Imagick::$imagesPerPage = 2;
+[$r, $log] = run(['format' => 'jpeg']);
+Imagick::$imagesPerPage = 1;
+check('  ...a readable PDF read as every page by a build that ignores [n]: measured from the first image, drawn', [$readsOf($log), $r->isSuccess()], [2, true]);
+// A file whose bytes cannot be read, more than one image back, its page
+// count unknown or other than the images: not drawn, said as a portfolio.
+$pdf = $boxFile("<< /Type /Page /MediaBox [0 0 595 842] /X { >>");
+Imagick::$imagesPerPage = 2;
+[$r, $log] = run(['format' => 'jpeg']);
+check('  ...a measuring read that gives more than one image for one page, the bytes unreadable: not drawn, said as a portfolio', [$readsOf($log), $r->getCode(), $r->getError()], [1, 'pdf_portfolio', $portfolioSays]);
+// ...as many images as the file says it has pages: such a build, the first
+// image taken.
+$pdf = $boxFile("1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n2 0 obj << /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >> endobj\n<< /Type /Page /MediaBox [0 0 595 842] /X { >>");
+[$r, $log] = run(['format' => 'jpeg']);
+Imagick::$imagesPerPage = 1;
+check('  ...as many images as the file\'s page count, the bytes unreadable: the first image taken, drawn', [\Rapls\PDFImageCreator\Engine\ImagickEngine::pagesFromBytes($pdf), $readsOf($log), $r->isSuccess()], [2, 2, true]);
+// The resolution is bounded by the largest image that came back, not by
+// the first: the read that follows draws them all (review of 1.4.41's
+// fixes). Unreadable bytes, as many images as pages, the second a
+// 20,000-point page beside an A4 one: drawn at what fits the large one.
+$page([595, 842]);
+Imagick::$imagesPerPage = 2;
+Imagick::$moreImages = [[20000, 20000]];
+[$r, $log] = run(['format' => 'jpeg']);
+$unreadableLargest = [$resolutionRead($log), $r->isSuccess()];
+// ...a readable file with an A4 page and a 20,000-point one, on a build that
+// returns every page: the same.
+boxes([595, 842], [20000, 20000]);
+[$r, $log] = run(['format' => 'jpeg']);
+$readableLargest = [$resolutionRead($log), $r->isSuccess()];
+Imagick::$imagesPerPage = 1;
+Imagick::$moreImages = [];
+// ...the larger first: still the largest, not the last.
+boxes([20000, 20000], [595, 842]);
+$page([20000, 20000]);
+Imagick::$imagesPerPage = 2;
+Imagick::$moreImages = [[595, 842]];
+[$r, $log] = run(['format' => 'jpeg']);
+$largestFirst = [$resolutionRead($log), $r->isSuccess()];
+Imagick::$imagesPerPage = 1;
+Imagick::$moreImages = [];
+$page([595, 842]);
+// ...and one image back from an ordinary file: drawn as asked, as before.
+boxes([595, 842]);
+[$r, $log] = run(['format' => 'jpeg']);
+$oneImage = [$resolutionRead($log), $r->isSuccess()];
+$page(null);
+check('  ...more than one image back: the resolution fits the largest of them, readable or not, first or last; one image, as before', [$unreadableLargest, $readableLargest, $largestFirst, $oneImage], [['setResolution(22.76)', true], ['setResolution(22.75)', true], ['setResolution(22.75)', true], ['setResolution(150)', true]]);
+// A portfolio is so tomorrow too: a queue does not retry it (review of
+// 1.4.41's fixes: it was a render error, retried).
+check('  ...a portfolio is a permanent failure, in the vocabulary, described', [\Rapls\PDFImageCreator\FailureCode::isPermanent(\Rapls\PDFImageCreator\FailureCode::PDF_PORTFOLIO), in_array(\Rapls\PDFImageCreator\FailureCode::PDF_PORTFOLIO, \Rapls\PDFImageCreator\FailureCode::all(), true), "" !== \Rapls\PDFImageCreator\FailureCode::describe(\Rapls\PDFImageCreator\FailureCode::PDF_PORTFOLIO)["label"]], [true, true, true]);
+// ...and more than one image from a file that is no PDF -- PostScript --
+// is a read that failed, not a portfolio (review of 1.4.41's fixes).
+file_put_contents($pdf, "%!PS-Adobe-3.0\n%%BoundingBox: 0 0 595 842\nshowpage\n");
+Imagick::$imagesPerPage = 2;
+[$r, $log] = run(['format' => 'jpeg']);
+Imagick::$imagesPerPage = 1;
+check('  ...more than one image from PostScript: a failed read, not said as a portfolio', [$r->isSuccess(), $r->getCode(), false === stripos((string) $r->getError(), 'portfolio')], [false, 'render_error', true]);
+// The same engine then converting an ordinary page says nothing of a portfolio.
+$engineAgain = new ImagickEngine();
+$pdf = $boxFile("<< /Collection << >> >>\n<< /Type /Page /MediaBox [0 0 595 842] >>");
+Imagick::$log = [];
+$first = $engineAgain->convert($pdf, RAPLS_PIC_TEST_TMP . '/again-1.jpg', ['format' => 'jpeg']);
+$pdf = $boxFile("<< /Type /Page /MediaBox [0 0 595 842] /UserUnit 1 >>");
+$page([10000000, 10000000]);
+$second = $engineAgain->convert($pdf, RAPLS_PIC_TEST_TMP . '/again-2.jpg', ['format' => 'jpeg']);
+$page(null);
+check('  ...one engine: a portfolio refused, then a page refused when measured, each in its own words', [$first->getError(), $second->getError()], [$portfolioSays, 'This page is too large to draw, even at the lowest resolution.']);
 // A /UserUnit under 1 is not read as making the largest smaller, so a
 // 10,000,000-point box at 0.0001 -- a 1,000-point page -- is refused unread
 // (accepted: refusing more, for a file no writer makes). One given by
@@ -1477,6 +1630,12 @@ $pdf = $boxFile("<< /Type /Page /X { >>");
 $page([100000, 100000]);
 [$r, $log] = run(['format' => 'jpeg']);
 check('  ...a page that would be measured finer at under 4 dpi is not measured again', [$readsOf($log), $r->isSuccess()], [2, true]);
+// ...the edge: a 48,000-point page would be measured finer at 3 dpi, which
+// is over the least and under twice it -- not measured again (mutation
+// testing after 1.4.41: "at least the least" measured it a third time).
+$page([48000, 48000]);
+[$r, $log] = run(['format' => 'jpeg']);
+check('  ...a page that would be measured finer at 3 dpi is not measured again', [$readsOf($log), $r->isSuccess()], [2, true]);
 // Measured finer, a long page is given a side as long as it is there.
 $page([595, 100000]);
 [$r, $log] = run(['format' => 'jpeg']);
@@ -1529,6 +1688,22 @@ $leastAt = static function (float $side) use ($boxFile, &$pdf, $page, $readsOf):
     return $readsOf($log);
 };
 check('  ...a page whose lower bound is at the measuring bound is measured; a point past it, not read', [$leastAt($edge - 1) > 0, $leastAt($edge + 1)], [true, 0]);
+// The same edge with no limit to set, and with the largest known (no
+// /UserUnit): the bound is the file's either way (mutation testing after
+// 1.4.41). The lower bound now refuses nothing the largest, or 'refuse',
+// does not refuse first; these hold the edge whichever answers.
+$names->setValue(null, ['RESOURCETYPE_NO_SUCH_WIDTH', 'RESOURCETYPE_HEIGHT']);
+$cacheNames->setValue(null, ['RESOURCETYPE_NO_SUCH_MEMORY']);
+$noLimitEdge = [$leastAt($edge - 1) > 0, $leastAt($edge + 1)];
+$names->setValue(null, $namesWere);
+$cacheNames->setValue(null, $cacheWere);
+$knownAt = static function (float $side) use ($boxFile, &$pdf, $page, $readsOf): int {
+    $pdf = $boxFile('<< /Type /Page /MediaBox [0 0 ' . sprintf('%.4F', $side) . ' ' . sprintf('%.4F', $side) . '] >>');
+    $page([1000, 1000]);
+    [, $log] = run(['format' => 'jpeg']);
+    return $readsOf($log);
+};
+check('  ...with no limit to set, and with the largest known: read at the edge, not a point past it', [$noLimitEdge, [$knownAt($edge - 1) > 0, $knownAt($edge + 1)]], [[true, 0], [true, 0]]);
 $page(null);
 $pdf = $pdfWas;
 

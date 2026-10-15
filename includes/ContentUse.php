@@ -401,9 +401,13 @@ final class ContentUse
      *
      * ID_CONTEXT's context characters, "-" of "wp-image-", PCRE's \s,
      * the quotes and backslash of a run, and a leading zero; idsIn()'s forms
-     * all end in one of them too.
+     * all end in one of them too. And the letters of JSON's "\t", "\n",
+     * "\r" and "\f": idsIn() reads a block's attributes as JSON, and
+     * {"id":"\t555"} is 555 to is_numeric() -- the PHP found it, the SQL
+     * never handed it the post (review of 1.4.41). And "+": {"id":"+555"}
+     * is 555 to is_numeric() too (review of 1.4.41's fixes).
      */
-    private const ID_BEFORE = ['=', ':', ',', '|', ';', '[', '-', ' ', "\t", "\n", "\r", "\x0B", "\f", '"', "'", '\\', '0'];
+    private const ID_BEFORE = ['=', ':', ',', '|', ';', '[', '-', '+', ' ', "\t", "\n", "\r", "\x0B", "\f", '"', "'", '\\', '0', 't', 'n', 'r', 'f'];
 
     /**
      * The LIKE patterns, for the SQL, one of which any post naming this ID holds
@@ -528,6 +532,42 @@ final class ContentUse
             }
             if (1 === preg_match('/[^\x20-\x7e]/', $stem) && preg_match_all('/[\x21-\x7e]{4,}/', $stem, $runs)) {
                 $fragments[] = self::longest($runs[0]);
+            }
+            // Runs of four or more letters and digits, each on its own, and
+            // the first and last halves of a long one: one character written
+            // as an entity ("&#45;"), percent-encoded ("%2D") or as JSON's
+            // "\u002d" breaks the stem as it is, and one written so inside a
+            // run breaks that run too, but not another run, nor both halves
+            // of a long one -- an ASCII name so written was found by the
+            // PHP, never handed to it by the SQL, and the image deleted
+            // (review of 1.4.41). "thumbnail", which every name this plugin
+            // writes ends in, is asked only where the rest could all be
+            // broken by one character: asked always, it handed the PHP every
+            // post that shows any thumbnail. Two such characters in one name
+            // are not looked for; no editor writes a file name so.
+            $words = preg_match_all('/[a-z0-9]{4,}/', $stem, $found) ? $found[0] : [];
+            $pieces = [];
+            $survives = 0;
+            foreach ($words as $word) {
+                if ('thumbnail' === $word) {
+                    continue;
+                }
+                $pieces[] = $word;
+                $half = intdiv(strlen($word) - 1, 2);
+                if ($half >= 4) {
+                    $pieces[] = substr($word, 0, $half);
+                    $pieces[] = substr($word, -$half);
+                    $survives += 2;
+                } else {
+                    ++$survives;
+                }
+            }
+            if ($survives < 2 && in_array('thumbnail', $words, true)) {
+                // Its halves too, for the character written inside it.
+                array_push($pieces, 'thumbnail', 'thum', 'nail');
+            }
+            foreach ($pieces as $piece) {
+                $fragments[] = $piece;
             }
         }
         // A stem holding "--" gives its longest piece between them too: a

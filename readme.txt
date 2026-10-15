@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.1
-Stable tag: 1.4.41
+Stable tag: 1.4.42
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -193,7 +193,7 @@ With "Hide Generated Images" on, the PDF's thumbnail is deleted with it, unless 
 
 = Why can't I pick a PDF in my page builder's or field plugin's image picker? =
 
-Since 1.4.41, PDFs with a thumbnail are offered only in WordPress's own image pickers: the image, gallery and featured image blocks, and the classic editor's featured image. An image picker of another plugin may take only images, and a PDF handed to it broke there. If yours takes them, as every picker did up to 1.4.20, turn it back on: `add_filter( 'rapls_pdf_image_creator_pdfs_in_every_image_picker', '__return_true' );`.
+Since 1.4.42, PDFs with a thumbnail are offered only in WordPress's own image pickers: the image, gallery and featured image blocks, and the classic editor's featured image. An image picker of another plugin may take only images, and a PDF handed to it broke there. If yours takes them, as every picker did up to 1.4.20, turn it back on: `add_filter( 'rapls_pdf_image_creator_pdfs_in_every_image_picker', '__return_true' );`.
 
 = Can I use a different page for the thumbnail? =
 
@@ -339,7 +339,7 @@ No other profile is bundled. CMYK profiles are read from the host when one is
 present and are never redistributed.
 
 == Changelog ==
-= 1.4.41 =
+= 1.4.42 =
 Choosing a PDF as an image
 * Changed: PDFs with a thumbnail are offered in WordPress's own image pickers only -- the image, gallery and Post Featured Image blocks, the block editor's featured image, and the classic editor's "Set featured image" and the featured image view of "Add Media". Other plugins' image pickers, core pickers that also take other media such as Cover and Media & Text, and the classic editor's "Create Gallery" (whose [gallery] shortcode shows images only) are not given PDFs. The filter rapls_pdf_image_creator_pdfs_in_every_image_picker, returning true, offers them in every picker that asks for images, as up to 1.4.20
 * Fixed: a PDF in a gallery block, or chosen at a size its thumbnail has no file for, shows the thumbnail instead of a broken image
@@ -365,7 +365,7 @@ Making the thumbnail
 * New: a page number past the end of the PDF fails with its own reason, which says how many pages the file has, and is not retried. The pages are counted from the PDF's own page tree, which is not trusted for anything else: having Ghostscript count them draws every page, and nothing bounds how many a file holds. A PDF that claims more pages than it has, had pages deleted when it was last saved, or keeps its page tree in compressed object streams, as many recent PDFs do, gets the ordinary failure reason instead
 * Fixed: an error from ImageMagick while drawing a page is reported as a drawing failure, not as a server that cannot render PDFs
 * Removed: the retry that read the whole document when the chosen page came back blank. It never rescued a page, and a PDF that understates its page count could make it draw every page -- 954 MB for one 60-page file. A blank page is still tried once more with Ghostscript's transparency handling switched off
-* Fixed: a page is drawn at a lower resolution when it would come out larger than 40 million pixels, or larger than this server's own ImageMagick limits on width, height, memory and disk. Its size is read from the PDF's page boxes, compressed object streams included, with the file read token by token as a PDF reader reads it, so that no key, string or comment can hide a page from it, and with limits on how deep, how long and how many of anything it reads, so that no file can exhaust PHP's memory or stack while it is read; a page they cannot vouch for -- a box whose numbers are too large to hold, or /UserUnit, among them -- or one in a document with a page over the limit, is drawn small to measure it first. Nothing in a PDF is drawn when a page in it is too large even at the lowest resolution, since that page would be drawn before any limit could refuse it: an ordinary page beside it is refused with it. A PostScript or EPS file, which Ghostscript draws as it does a PDF, is bounded the same way -- found by its first bytes or by its name, XPS and PCL included -- and so is any file that does not start like an image ImageMagick reads by itself; images are read as they are, as before, even one named .pdf. A page too thin to measure, in a PDF with a page far too large to measure it more finely or whose largest page size cannot be read, is not drawn, and says so, with the resolution it was measured at. A small PDF with a 200-inch page used to take 76 seconds and 2.9 GB; it now takes about two, and a 100,000-point page hidden in an object stream about one and a half. A page too large even at the lowest resolution is refused with its own reason. The filter rapls_pdf_image_creator_max_render_pixels changes the limit
+* Fixed: a page is drawn at a lower resolution when it would come out larger than 40 million pixels, or larger than this server's own ImageMagick limits on width, height, memory and disk. Its size is read from the PDF's page boxes, compressed object streams included, with the file read token by token as a PDF reader reads it, so that no key, string or comment can hide a page from it, and with limits on how deep, how long and how many of anything it reads, so that no file can exhaust PHP's memory or stack while it is read; a page they cannot vouch for -- a box whose numbers are too large to hold, or /UserUnit, among them -- or one in a document with a page over the limit, is drawn small to measure it first. Where the page sizes can be read from the file, nothing in a PDF is drawn when a page in it is too large even at the lowest resolution, since that page would be drawn before any limit could refuse it: an ordinary page beside it is refused with it. A PDF portfolio, which holds other files that Ghostscript draws in place of its own pages, is not drawn either, and says so. A PostScript or EPS file, which Ghostscript draws as it does a PDF, is bounded the same way -- found by its first bytes or by its name, XPS and PCL included -- and so is any file that does not start like an image ImageMagick reads by itself; images are read as they are, as before, even one named .pdf. A page too thin to measure, in a PDF with a page far too large to measure it more finely or whose largest page size cannot be read, is not drawn, and says so, with the resolution it was measured at. A small PDF with a 200-inch page used to take 76 seconds and 2.9 GB; it now takes about two, and a 100,000-point page hidden in an object stream about one and a half. A page too large even at the lowest resolution is refused with its own reason. The filter rapls_pdf_image_creator_max_render_pixels changes the limit
 * Fixed: the Page Selection test on the Status tab now asks for a page by number, as making a thumbnail does
 * Fixed: numbers that a filter hands back as text are made whole numbers, and an error raised during conversion is a failed conversion, not a broken upload
 * Fixed: the list of functions a host disables is read the way PHP reads it, so the blank-page retry is no longer turned off by a name PHP does not disable
@@ -406,10 +406,13 @@ Keeping and deleting images
 * Fixed: when another plugin refuses to let a regeneration delete the old thumbnail, it is kept as an ordinary image, instead of staying hidden with nothing naming it
 * Fixed: deleting a generated image from the Media Library no longer leaves its PDF naming an image that is gone
 * Fixed: when a PDF is deleted, an old thumbnail a regeneration kept is attached where the PDF was, and its image is kept as an ordinary one if another plugin refuses to delete it, instead of staying hidden and attached to nothing
+* Fixed: when a PDF is deleted, a thumbnail of it that an earlier version left hidden, with nothing naming it, is handed to a PDF that names it or kept as an ordinary image, instead of staying hidden
+* Fixed: an image is kept when a post shows its file name with one character written as an HTML entity, percent-encoded or as a JSON escape, or names its ID after a JSON escape
 * Fixed: an image that an audio or video file uses as its cover is no longer taken for another PDF's thumbnail, which left it marked and hidden
 * New: a regeneration that kept the old thumbnail says so on the screen that ran it, and why: a post shows it (and still shows the old picture until it is replaced there), a post uses it as its featured image, another copy of the PDF -- a translation's -- uses it, or whether anything uses it could not be told
 * Changed: "Insert into post" gives the image the "wp-image-" class with its ID, as WordPress's own insert does, so WordPress adds srcset to it
 * Removed: the AJAX action rapls_pic_regenerate_thumbnail, unused since the Media Library's own Regenerate link took over; and the insert keys the plugin added to wp_prepare_attachment_for_js, which nothing read
+* Changed: the methods behind those two -- MediaLibrary::ajaxRegenerateThumbnail() and Inserter::addInsertSettingsToJs() -- and BulkProcessor::getPDFs() and getStats(), which Bulk Generate no longer uses, are kept, deprecated and hooked to nothing, for code that calls them
 
 = 1.4.20 =
 * Fixed: deleting the plugin from a multisite network now cleans up every site, each by its own "Keep Images on Uninstall" setting. Before, only the site it was deleted from was cleaned up, and the other sites kept the plugin's settings, its markers on PDFs and images, and -- with that setting off -- the generated images
@@ -653,7 +656,7 @@ Keeping and deleting images
 
 == Upgrade Notice ==
 
-= 1.4.41 =
+= 1.4.42 =
 PDFs appear only in core's image pickers, shortcodes take a PDF's ID only, and a dropped PDF becomes a File block; two filters restore the old pickers and IDs (see FAQ). Bulk Generate handles large libraries, huge pages cannot exhaust the server, and regenerating keeps images posts show.
 
 = 1.4.20 =

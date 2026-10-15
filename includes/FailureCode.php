@@ -41,6 +41,8 @@ final class FailureCode
     // The page asked for is past the end of the file. The same name the Pro
     // add-on's queue gives it.
     public const PAGE_OUT_OF_RANGE = 'page_out_of_range';
+    /** A PDF portfolio, which holds other files: its pages are not drawn (since 1.4.41). */
+    public const PDF_PORTFOLIO = 'pdf_portfolio';
 
     // This attempt.
     public const BLANK_RENDER = 'blank_render';
@@ -69,6 +71,7 @@ final class FailureCode
             self::NOT_A_PDF,
             self::SOURCE_MISSING,
             self::PAGE_OUT_OF_RANGE,
+            self::PDF_PORTFOLIO,
             self::RESOURCE_LIMIT,
             self::BLANK_RENDER,
         ];
@@ -215,6 +218,12 @@ final class FailureCode
                     'action' => __('Page Number on the Settings tab counts from 0 (0 is the first page). Choose a page this PDF has, then generate the thumbnail again.', 'rapls-pdf-image-creator'),
                 ];
 
+            case self::PDF_PORTFOLIO:
+                return [
+                    'label' => __('This PDF is a portfolio that holds other files.', 'rapls-pdf-image-creator'),
+                    'action' => __('Its own pages are not drawn: Ghostscript would draw the files inside it instead. Open the portfolio, save the PDF inside it you want a thumbnail of, and upload that file instead.', 'rapls-pdf-image-creator'),
+                ];
+
             case self::RESOURCE_LIMIT:
                 // Two causes share this code: ImageMagick refusing a page at
                 // the resolution asked, which a lower one can fix, and the
@@ -259,6 +268,7 @@ final class FailureCode
             self::NOT_A_PDF,
             self::SOURCE_MISSING,
             self::PAGE_OUT_OF_RANGE,
+            self::PDF_PORTFOLIO,
             self::RESOURCE_LIMIT,
             self::BLANK_RENDER,
             self::WRITE_FAILED,
