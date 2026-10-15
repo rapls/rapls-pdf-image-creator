@@ -975,7 +975,7 @@ final class MediaLibrary
      * the nonce, upload_files, edit_post on this PDF -- before anything is
      * drawn.
      *
-     * @deprecated 1.4.43 Use the "Regenerate Thumbnail" row action.
+     * @deprecated 1.4.44 Use the "Regenerate Thumbnail" row action.
      */
     public function ajaxRegenerateThumbnail(): void
     {
@@ -1091,7 +1091,7 @@ final class MediaLibrary
              * load -- still leaves PDFs out, as it did with 1.4.20. A picker
              * that can take only images may be handed a PDF.
              *
-             * @since 1.4.43
+             * @since 1.4.44
              *
              * @param bool  $every Whether to.
              * @param array $query The media query's arguments. Asked once

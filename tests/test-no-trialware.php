@@ -72,7 +72,7 @@ check('  ...the scripts among them', count(array_filter($files, static function 
 // people the add-on exists"). Its address is taken out of that file before the
 // scans below, and is looked for everywhere else.
 $upsellFile = RAPLS_PIC_PLUGIN_DIR . 'includes/Upsell.php';
-$addOnUrl = '#https?://raplsworks\.com/plugins/rapls-pdf-image-creator-pro/?[^\'"\s]*#';
+$addOnUrl = '#https?://raplsworks\.com/(plugins/)?rapls-pdf-image-creator-pro/?[^\'"\s]*#';
 $scanned = static function (string $file) use ($upsellFile, $addOnUrl): string {
     $contents = (string) file_get_contents($file);
     return $file === $upsellFile ? (string) preg_replace($addOnUrl, '', $contents) : $contents;

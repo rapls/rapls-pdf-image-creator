@@ -180,6 +180,7 @@ if (!defined('ABSPATH')) {
                         <p class="description">
                             <?php esc_html_e('Page to use for thumbnail (0 = first page).', 'rapls-pdf-image-creator'); ?>
                         </p>
+                        <?php \Rapls\PDFImageCreator\Upsell::renderPageHint($config['page'] ?? 0); ?>
                     </td>
                 </tr>
             </table>
@@ -386,6 +387,8 @@ if (!defined('ABSPATH')) {
 
             <?php submit_button(); ?>
         </form>
+
+        <?php \Rapls\PDFImageCreator\Upsell::renderSettingsCard(); ?>
     </div>
 
     <!-- Bulk Generate Tab -->
@@ -531,6 +534,7 @@ if (!defined('ABSPATH')) {
                 </a>
             </p>
         </div>
+        <?php \Rapls\PDFImageCreator\Upsell::renderStatusOptions(); ?>
         <?php endif; ?>
 
         <?php
@@ -675,6 +679,12 @@ if (!defined('ABSPATH')) {
                 </tr>
             </tbody>
         </table>
+
+        <?php
+        if ($rapls_pic_is_available) {
+            \Rapls\PDFImageCreator\Upsell::renderStatusNote();
+        }
+        ?>
 
         <?php if (\Rapls\PDFImageCreator\Admin::showsSupportBox($capabilities)) : ?>
         <!-- Support -->

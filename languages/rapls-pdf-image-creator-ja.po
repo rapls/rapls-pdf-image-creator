@@ -4,7 +4,7 @@
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: Rapls PDF Image Creator 1.4.43\n"
+"Project-Id-Version: Rapls PDF Image Creator 1.4.44\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-14 12:00+0900\n"
 "PO-Revision-Date: 2026-10-14 12:00+0900\n"
@@ -1058,3 +1058,87 @@ msgstr "統計を読み込めませんでした。もう一度お試しくださ
 
 msgid "Bulk Generate and the statistics need JavaScript. Without it, use the \"Generate Thumbnail\" link under each PDF in the Media Library's list view."
 msgstr "一括生成と統計には JavaScript が必要です。JavaScript を使えないときは、メディアライブラリのリスト表示で、各 PDF の下にある「サムネイル生成」のリンクを使ってください。"
+
+#: includes/Upsell.php
+msgid "Optional add-on"
+msgstr "任意のアドオン"
+
+#: includes/Upsell.php
+msgid "Everything on this page stays free."
+msgstr "このページの機能は、すべて無料のままです。"
+
+#: includes/Upsell.php
+msgid "Rapls PDF Image Creator Pro, an optional add-on"
+msgstr "Rapls PDF Image Creator Pro（任意の有料アドオン）"
+
+#: includes/Upsell.php
+msgid "Crops white margins, keeps the top of the page, or pads to a fixed shape, so small thumbnails stay readable."
+msgstr "白い余白を切り取る、ページの上部だけを使う、決まった縦横比に合わせる、などで、小さなサムネイルでも読めるようにします。"
+
+#: includes/Upsell.php
+msgid "Chooses the page and the crop for each PDF on its own edit screen."
+msgstr "PDF ごとに、編集画面でページと切り取り方を選べます。"
+
+#: includes/Upsell.php
+msgid "Makes thumbnails in a background queue, retries what may be temporary, and says why one could not be made."
+msgstr "サムネイルをバックグラウンドのキューで作り、一時的な失敗は再試行し、作れなかった理由を表示します。"
+
+#: includes/Upsell.php
+msgid "Replaces a PDF in place, keeping the previous file so the replacement can be undone."
+msgstr "PDF をその場で差し替えます。前のファイルを残すので、差し替えを元に戻せます。"
+
+#: includes/Upsell.php
+msgid "Renders with Ghostscript directly where ImageMagick cannot read PDFs. This needs a host that lets PHP start programs (exec or proc_open) and has Ghostscript installed."
+msgstr "ImageMagick が PDF を読めないサーバーでも、Ghostscript で直接描画します。これには、PHP からプログラムを起動できる（exec または proc_open）うえ、Ghostscript が入っているサーバーが必要です。"
+
+#: includes/Upsell.php
+msgid "One-time purchase, no subscription. 14-day money-back guarantee."
+msgstr "買い切りで、定期購入ではありません。14 日間の返金保証があります。"
+
+#: includes/Upsell.php
+msgid "About the add-on"
+msgstr "アドオンについて"
+
+#: includes/Upsell.php
+msgid "Your options"
+msgstr "選べる方法"
+
+#: includes/Upsell.php
+msgid "Ask your hosting provider (free)."
+msgstr "ホスティング会社に頼む（無料）。"
+
+#: includes/Upsell.php
+msgid "Send them the message above under \"What to do\". Most hosts can allow ImageMagick to read PDFs."
+msgstr "上の「対処方法」の内容を伝えてください。多くのホスティング会社は、ImageMagick が PDF を読めるように設定できます。"
+
+#: includes/Upsell.php
+msgid "Use another host (free)."
+msgstr "別のサーバーを使う（無料）。"
+
+#: includes/Upsell.php
+msgid "A host whose ImageMagick can read PDFs makes thumbnails with this plugin as it is."
+msgstr "ImageMagick が PDF を読めるサーバーなら、このプラグインのままでサムネイルを作れます。"
+
+#: includes/Upsell.php
+msgid "Use the optional add-on (paid)."
+msgstr "任意のアドオンを使う（有料）。"
+
+#: includes/Upsell.php
+msgid "This plugin cannot start Ghostscript itself: WordPress.org does not allow plugins in its directory to start other programs. The add-on is not in the directory and renders with Ghostscript directly. It needs a host that lets PHP start programs (exec or proc_open) and has Ghostscript installed."
+msgstr "このプラグインは Ghostscript を自分で起動できません。WordPress.org のディレクトリにあるプラグインは、ほかのプログラムを起動してはいけない決まりだからです。アドオンはディレクトリの外にあり、Ghostscript で直接描画します。PHP からプログラムを起動できる（exec または proc_open）うえ、Ghostscript が入っているサーバーが必要です。"
+
+#: includes/Upsell.php
+msgid "This server does not let PHP start programs, so the add-on cannot render PDFs here either."
+msgstr "このサーバーでは PHP からプログラムを起動できないため、アドオンでも PDF を描画できません。"
+
+#: includes/Upsell.php
+msgid "This page is used for every PDF. To choose a page for each PDF on its own, there is an optional add-on."
+msgstr "このページ番号は、すべての PDF に使われます。PDF ごとにページを選びたい場合は、任意のアドオンがあります。"
+
+#: includes/Upsell.php
+msgid "Do not show this again"
+msgstr "今後は表示しない"
+
+#: includes/Upsell.php
+msgid "This server renders PDFs, and everything here works as it is. An optional add-on adds cropping, a page and a crop for each PDF, a background queue, and replacing a PDF in place."
+msgstr "このサーバーは PDF を描画でき、ここにある機能はそのまま使えます。任意のアドオンでは、切り取り、PDF ごとのページと切り取り、バックグラウンドのキュー、PDF のその場での差し替えが加わります。"

@@ -17,6 +17,7 @@ $suites = [
     'test-failure-codes.php',
     'test-no-trialware.php',
     'test-review-prompt.php',
+    'test-upsell.php',
     'test-media-library.php',
     'test-content-use.php',
     'test-thumbnail-ownership.php',

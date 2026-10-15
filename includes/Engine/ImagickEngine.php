@@ -63,7 +63,7 @@ final class ImagickEngine implements EngineInterface
     /**
      * Get the colour profile resolver
      *
-     * @deprecated 1.4.43 Kept for code that reached it through
+     * @deprecated 1.4.44 Kept for code that reached it through
      *             Generator::getEngines() or the
      *             rapls_pdf_image_creator_engines filter: it was public up to
      *             1.4.20, and taking a public method away is a fatal error in
@@ -1585,7 +1585,7 @@ final class ImagickEngine implements EngineInterface
             }
         }
 
-        $fitted = $this->fittedResolution($measured[0], $measured[1], $resolution, $limit);
+        $fitted = $this->fittedResolution($measured[0], $measured[1], $resolution, $limit, $measured[2] ?? null);
 
         // Measured at MIN_RESOLUTION, a pixel over each way is up to 36
         // points over: an A4 page at 600 dpi came out at 596 (review after
@@ -1596,12 +1596,12 @@ final class ImagickEngine implements EngineInterface
         // the file, or a refusal at more (review after 1.4.38: only the
         // first was measured again).
         if ($measureAt <= self::MIN_RESOLUTION && null !== $fitted && $fitted < $resolution) {
-            $fine = min($resolution, 72 * sqrt(self::MEASURE_MAX_PIXELS / ($measured[0] * $measured[1])));
+            $fine = min($resolution, 72 * sqrt(self::MEASURE_MAX_PIXELS / max($measured[0] * $measured[1], $measured[2] ?? 0.0)));
 
             if ($fine >= 2 * self::MIN_RESOLUTION) {
                 try {
                     $again = $this->measurePage($pdfPath . '[' . $page . ']', $fine, max($side, (int) min(ceil(max($measured[0], $measured[1]) * $fine / 72) + 2, (float) self::SIDE_MAX)), $pixels);
-                    $finer = $this->fittedResolution($again[0], $again[1], $resolution, $limit);
+                    $finer = $this->fittedResolution($again[0], $again[1], $resolution, $limit, $again[2] ?? null);
                     $fitted = null !== $finer ? max($fitted, $finer) : $fitted;
                 } catch (\Throwable $e) {
                     // The first measurement stands -- unless the read drew
@@ -1664,7 +1664,7 @@ final class ImagickEngine implements EngineInterface
          * cut down to the Settings tab's maximum size afterwards, so this
          * costs nothing a visitor sees unless the page is cropped first.
          *
-         * @since 1.4.43
+         * @since 1.4.44
          *
          * @param int                  $pixels  Pixels. Default 40,000,000.
          * @param string               $pdfPath Absolute path to the PDF.
@@ -1700,7 +1700,7 @@ final class ImagickEngine implements EngineInterface
      *                    the size is not one: a page of no width is not one
      *                    to draw as asked, whatever said so.
      */
-    private function fittedResolution(float $width, float $height, float $resolution, float $limit): ?float
+    private function fittedResolution(float $width, float $height, float $resolution, float $limit, ?float $area = null): ?float
     {
         // Nor a size past what a float holds: a box of 400 digits came out
         // as INF, INF / INF as NaN, and NaN compares false either way, so it
@@ -1716,7 +1716,11 @@ final class ImagickEngine implements EngineInterface
         // was refused at 80 dpi and drawn at 60 (review after 1.4.34).
         $cache = self::cachePixels();
 
-        $fits = 72 * sqrt(min($limit, null === $cache ? $limit : $cache) / ($width * $height));
+        // The area is that of every image a read draws where it draws more
+        // than one (measurePage()), the sides still each image's; never
+        // less than the page's own.
+        $area = max($width * $height, null === $area || !is_finite($area) ? 0.0 : $area);
+        $fits = 72 * sqrt(min($limit, null === $cache ? $limit : $cache) / $area);
 
         // And within the server's own width and height limits, where it has
         // stricter ones: past them ImageMagick refuses the page after
@@ -2612,7 +2616,9 @@ final class ImagickEngine implements EngineInterface
      * @param int    $side    Most pixels either side may have.
      * @param float  $pixels  Most pixels it may have, where a side cannot
      *                        be limited (lowerLimits()).
-     * @return array{0: float, 1: float} Width and height, a pixel more each way.
+     * @return array{0: float, 1: float, 2: float} Width and height of the
+     *         largest image, a pixel more each way, and the area of all the
+     *         images together, in points.
      * @throws \Throwable The read's error; a page refused by the limits says
      *                    so in ImageMagick's words (refusedAsTooLarge()).
      */
@@ -2652,18 +2658,25 @@ final class ImagickEngine implements EngineInterface
             // a portfolio its embedded files -- so the resolution is bounded
             // by the largest, not by the first (review of 1.4.41's fixes:
             // image 0 alone let the others be drawn at a density sized for
-            // it). Stacked, not overlaid: the widest by the heights added
-            // up, so the area bounded is all of them together -- the largest
-            // alone let N images each up to the limit be drawn, N times the
-            // limit, with nothing bounding N (review of 1.4.42). One image
-            // is as before.
+            // it). The sides are the largest one image has -- the server's
+            // width and height limits are each image's -- and the area is
+            // all of them added up, which the pixel limit and the cache
+            // bound: the largest alone let N images each up to the limit be
+            // drawn, N times it (review of 1.4.42), and their heights added
+            // up held a 50-page A4 document on such a build to 27 dpi
+            // against a side limit no page came near (review of 1.4.43).
+            // One image is as before.
             $width = 0;
             $height = 0;
+            $area = 0.0;
 
             for ($i = 0, $count = max(1, (int) $images); $i < $count; $i++) {
                 $one->setIteratorIndex($i);
-                $width = max($width, (int) $one->getImageWidth());
-                $height += (int) $one->getImageHeight();
+                $w = (int) $one->getImageWidth();
+                $h = (int) $one->getImageHeight();
+                $width = max($width, $w);
+                $height = max($height, $h);
+                $area += ($w + 1) * ($h + 1);
             }
 
             if ($count > 1) {
@@ -2675,6 +2688,7 @@ final class ImagickEngine implements EngineInterface
             return [
                 ($width + 1) * 72 / $density,
                 ($height + 1) * 72 / $density,
+                $area * (72 / $density) ** 2,
             ];
         } finally {
             if (null !== $one) {

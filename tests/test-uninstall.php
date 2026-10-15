@@ -276,7 +276,7 @@ check('both sites: every option gone', [array_keys($GLOBALS['sites'][1]['options
 check('both sites: every transient gone', [array_keys($GLOBALS['sites'][1]['transients']), array_keys($GLOBALS['sites'][2]['transients'])], [[], []]);
 check('both sites: markers gone, a post\'s featured image kept', [$GLOBALS['sites'][1]['meta'], $GLOBALS['sites'][2]['meta']], [[], [[25, '_thumbnail_id', '21']]]);
 check('back on the site it started from', [$GLOBALS['blog'], $GLOBALS['switches']], [1, []]);
-check('user flags removed once, for the network', count($GLOBALS['user_meta_deleted']), 2);
+check('user flags removed once, for the network', count($GLOBALS['user_meta_deleted']), 3);
 
 echo "\n--- Images posts still show, keep off ---\n";
 

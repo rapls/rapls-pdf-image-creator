@@ -313,3 +313,4 @@ if (is_multisite() && function_exists('get_sites')) {
 // The per-user notice dismissal flags: users are the network's, so once.
 delete_metadata('user', 0, 'rapls_pic_color_notice_dismissed', '', true);
 delete_metadata('user', 0, 'rapls_pic_engine_notice_dismissed', '', true);
+delete_metadata('user', 0, 'rapls_pic_page_hint_dismissed', '', true);

@@ -41,7 +41,7 @@ final class FailureCode
     // The page asked for is past the end of the file. The same name the Pro
     // add-on's queue gives it.
     public const PAGE_OUT_OF_RANGE = 'page_out_of_range';
-    /** A PDF portfolio, which holds other files: its pages are not drawn (since 1.4.43). */
+    /** A PDF portfolio, which holds other files: its pages are not drawn (since 1.4.44). */
     public const PDF_PORTFOLIO = 'pdf_portfolio';
 
     // This attempt.
