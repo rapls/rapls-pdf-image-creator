@@ -12,6 +12,8 @@
 declare(strict_types=1);
 
 require dirname(__DIR__) . '/includes/ContentUse.php';
+// The widgets' options, for widgetContent() (review of 1.4.40).
+function get_option($key, $default = false) { return $GLOBALS['wp_options'][$key] ?? $default; }
 
 use Rapls\PDFImageCreator\ContentUse;
 
@@ -240,6 +242,37 @@ $found77 = isset(ContentUse::idsIn($many)[77]);
 check('  ...a post with many "wp:" and one comment is read in one pass', [$found77, microtime(true) - $t < 1.0], [true, true]);
 
 check('a stem\'s ASCII run is the longest, of four characters or more', [ContentUse::fragments(['報告-ab-書-pdf-thumbnail']), ContentUse::fragments(['報告abc書'])], [['報告-ab-書-pdf-thumbnail', strtolower(rawurlencode('報告-ab-書-pdf-thumbnail')), '-pdf-thumbnail'], ['報告abc書', strtolower(rawurlencode('報告abc書'))]]);
+
+echo "\n--- Review of 1.4.40 ---\n";
+// Mutation testing of 1.4.40: each edge, held.
+check('an ID after "|", as a builder lists "12|555": shown, and the SQL asks it', [ContentUse::shows('[acme ids="12|555"]', 555, []), ContentUse::candidate('[acme ids="12|555"]', 555, []), $sqlFinds('[acme ids="12|555"]')], [true, true, true]);
+check('a shortcode naming PDF 1', ContentUse::shortcodePdfIdsIn('[rapls_pdf_thumbnail id="1"]'), [1 => true]);
+check('a stem\'s ASCII run of exactly four is a fragment; of three, not', [ContentUse::fragments(['資料abcd']), ContentUse::fragments(['資料abc'])], [['資料abcd', strtolower(rawurlencode('資料abcd')), 'abcd'], ['資料abc', strtolower(rawurlencode('資料abc'))]]);
+check('a piece between "--" of exactly four is a fragment; of three, not', [ContentUse::fragments(['abcd--abc']), ContentUse::fragments(['abc--ab'])], [['abcd--abc', 'abcd'], ['abc--ab']]);
+check('the ID anywhere after "u00": a candidate, as LIKE \'%u00%ID%\' finds it', [ContentUse::candidate('u00xx555', 555, []), ContentUse::candidate('xx555', 555, [])], [true, false]);
+// The widgets: each value after its key, a string as it is.
+$GLOBALS['wp_options'] = ['widget_block' => [2 => ['content' => 'a\u002d\u002db.jpg']], 'widget_media_gallery' => [5 => ['ids' => [7, 612]]]];
+check('the widgets as one string: a string as it is, a number after its key', ContentUse::widgetContent(), "\"content\": a\\u002d\\u002db.jpg\n\"0\": 7\n\"1\": 612");
+// A value that starts with a file name: the name a word of its own. Joined
+// to the key's colon it was read as ":report-pdf-thumbnail", and missed
+// (review of 1.4.40's fixes).
+$GLOBALS['wp_options'] = ['widget_custom_html' => [3 => ['title' => '', 'content' => 'report-pdf-thumbnail.jpg']]];
+check('a widget value that starts with a file name: found', ContentUse::stemsShown((string) ContentUse::widgetContent(), ['report-pdf-thumbnail']), ['report-pdf-thumbnail']);
+// Widgets as WordPress stores them: booleans, floats and many values. None
+// of them makes the widgets unreadable -- that would keep every image on
+// every regeneration and uninstall -- and an image they do not show is not
+// found, one they show by ID is, a float ID too.
+$texts = ['_multiwidget' => 1];
+for ($i = 2; $i < 40; $i++) {
+    $texts[$i] = ['title' => 'Box ' . $i, 'text' => '<p>Opening hours ' . $i . '</p>', 'filter' => true, 'visual' => false];
+}
+$GLOBALS['wp_options'] = [
+    'widget_text' => $texts,
+    'widget_media_image' => [2 => ['attachment_id' => 555.0, 'url' => 'https://example.test/x.jpg', 'size' => 'full', 'width' => 1024, 'height' => 768.5, 'link_target_blank' => false, 'image_title' => '', 'caption' => null], '_multiwidget' => 1],
+];
+$real = ContentUse::widgetContent();
+check('widgets with booleans, floats and many values: read; an ID not shown is not found, a float ID shown is', [is_string($real), ContentUse::shows((string) $real, 999, ['other-pdf-thumbnail']), ContentUse::shows((string) $real, 555, ['not-shown-pdf-thumbnail'])], [true, false, true]);
+$GLOBALS['wp_options'] = [];
 
 echo "\n$pass passed, $fail failed\n";
 exit($fail ? 1 : 0);

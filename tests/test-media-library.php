@@ -37,6 +37,30 @@ namespace {
     require RAPLS_PIC_PLUGIN_DIR . 'includes/Generator.php';
     require RAPLS_PIC_PLUGIN_DIR . 'includes/MediaLibrary.php';
 
+    // This run's own folder, as harness.php's rapls_pic_test_tmp() gives
+    // one, removed when it ends: the uploads below were written straight
+    // into the system's temporary folder and left there (review of 1.4.40).
+    $testTmp = getenv('RAPLS_PIC_TEST_TMP');
+    if (!is_string($testTmp) || '' === $testTmp || !is_dir($testTmp)) {
+        $testTmp = sys_get_temp_dir() . '/rapls-pic-tests-' . getmypid() . '-' . bin2hex(random_bytes(4));
+        @mkdir($testTmp, 0700, true);
+        register_shutdown_function(static function () use ($testTmp): void {
+            $remove = static function (string $path) use (&$remove): void {
+                if (is_dir($path) && !is_link($path)) {
+                    foreach ((array) scandir($path) as $name) {
+                        if ('.' !== $name && '..' !== $name) {
+                            $remove($path . '/' . $name);
+                        }
+                    }
+                    @rmdir($path);
+                } else {
+                    @unlink($path);
+                }
+            };
+            $remove($testTmp);
+        });
+    }
+
     $pass = 0;
     $fail = 0;
     function check($label, $got, $want) {
@@ -75,7 +99,7 @@ namespace {
     // year/month folder. Core's PDF metadata has no `file` key, so reading
     // the folder from it deleted a same-named file in the uploads root and
     // left the real preview on disk.
-    $uploads = sys_get_temp_dir() . '/rapls-pic-test-' . getmypid();
+    $uploads = $testTmp . '/rapls-pic-test-' . getmypid();
     @mkdir($uploads . '/2026/09', 0777, true);
     file_put_contents($uploads . '/2026/09/doc.pdf', '%PDF');
     file_put_contents($uploads . '/2026/09/doc-pdf.jpg', 'preview');
@@ -435,7 +459,7 @@ namespace {
     };
 
     // Core's PDF preview is removed only with auto-generate off, and only a PDF's.
-    $previewDir = sys_get_temp_dir() . '/rapls-pic-gate-' . getmypid();
+    $previewDir = $testTmp . '/rapls-pic-gate-' . getmypid();
     @mkdir($previewDir . '/2026/10', 0777, true);
     $GLOBALS['uploads'] = $previewDir;
     $GLOBALS['mimes'][500] = 'application/pdf';

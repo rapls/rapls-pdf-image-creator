@@ -23,8 +23,9 @@ namespace Rapls\PDFImageCreator;
  *
  * A post's content and its excerpt are read: WooCommerce keeps a product's
  * short description in post_excerpt, and an image inserted there was
- * deleted (review after 1.4.37). A widget, an option, a theme or page
- * builder setting kept outside the post is not read.
+ * deleted (review after 1.4.37). The widgets are read too
+ * (WIDGET_OPTIONS, widgetContent()); an option, a theme or page builder
+ * setting kept elsewhere is not.
  *
  * Beyond the forms core writes, any number where an ID could stand -- an
  * attribute's value, a JSON value, an item of a list -- counts as naming
@@ -64,30 +65,64 @@ final class ContentUse
      */
     public const WIDGET_OPTIONS = ['widget_block', 'widget_text', 'widget_custom_html', 'widget_media_image', 'widget_media_gallery'];
 
+    /** The most values widgetContent() reads before it answers "cannot tell". */
+    private const WIDGET_VALUES_MAX = 200000;
+
     /**
      * The widgets' settings as one string, for shows() and the rest
      *
-     * JSON, so a key and its number stand as "attachment_id":71 does in a
-     * block's attributes, and a name as it does there. Reading one too
-     * many only keeps an image. A string with a byte that is not UTF-8 keeps
-     * the rest of itself (JSON_INVALID_UTF8_SUBSTITUTE, PHP 7.2): partial
-     * output alone dropped the whole string (review of 1.4.39's fixes).
+     * Every value, each after its key as JSON writes it ("attachment_id":71,
+     * a gallery's ids one by one), a string as it is. Not JSON-encoded:
+     * that doubled every backslash in a block widget's content, a block's
+     * "\u002d\u002d" was no longer an escape to read, and an image named
+     * "report--pdf-thumbnail" that only a block widget showed was deleted
+     * (review of 1.4.40). Nothing here can fail on a byte that is not UTF-8,
+     * a NaN or a depth that json_encode() refuses: walked with a list, not
+     * by recursion.
+     *
+     * An object a plugin stored is read as its properties. Null when a value
+     * is none of these (a resource, which an option cannot hold), or past
+     * WIDGET_VALUES_MAX values -- an option unserialized with a reference to
+     * itself never ends: the caller then keeps, as for a pattern that cannot
+     * run. Reading one too many only keeps an image.
      */
-    public static function widgetContent(): string
+    public static function widgetContent(): ?string
     {
         if (!function_exists('get_option')) {
             return '';
         }
-        $widgets = [];
-        foreach (self::WIDGET_OPTIONS as $option) {
-            $value = get_option($option, []);
+        // A list taken from its end, filled in reverse: read in order.
+        $pending = [];
+        foreach (array_reverse(self::WIDGET_OPTIONS) as $option) {
+            $pending[] = [$option, get_option($option, [])];
+        }
+        $parts = [];
+        $seen = 0;
+        while ([] !== $pending) {
+            if (++$seen > self::WIDGET_VALUES_MAX) {
+                return null;
+            }
+            [$key, $value] = array_pop($pending);
+            if (is_object($value)) {
+                // An object a plugin stored, read as its properties.
+                $value = (array) $value;
+            }
             if (is_array($value)) {
-                $widgets[] = $value;
+                foreach (array_reverse($value, true) as $innerKey => $inner) {
+                    $pending[] = [(string) $innerKey, $inner];
+                }
+            } elseif (is_string($value) || is_int($value)) {
+                $parts[] = '"' . $key . '": ' . $value;
+            } elseif (is_float($value)) {
+                if (is_finite($value)) {
+                    $parts[] = '"' . $key . '": ' . $value;
+                }
+            } elseif (null !== $value && !is_bool($value)) {
+                return null;
             }
         }
-        $json = [] === $widgets ? '' : json_encode($widgets, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE | JSON_PARTIAL_OUTPUT_ON_ERROR);
 
-        return is_string($json) ? $json : '';
+        return implode("\n", $parts);
     }
 
     /**
@@ -344,7 +379,10 @@ final class ContentUse
      * "0x22b", "5.55e2"), as no editor or builder writes an attachment's ID
      * (review of 1.4.39); and an ID whose digits are themselves written as
      * \u escapes ("\u0035\u0035\u0035"), which PHP reads and the SQL does not
-     * ask for, for the same reason (review of 1.4.39's fixes).
+     * ask for, for the same reason (review of 1.4.39's fixes); and a
+     * [gallery] ID whose digits are HTML entities (ids="&#53;55"), which
+     * idsIn() decodes and the SQL does not ask for, as no editor writes one
+     * (review of 1.4.40).
      *
      * The SQL asks a superset, with LIKE only (idLikesSql()): whatever
      * stands right before the ID's first digit here -- one of the context

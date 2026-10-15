@@ -279,8 +279,8 @@ $keptNotice = static function (string $value) use ($admin): string {
     return (string) ob_get_clean();
 };
 check('a regeneration that kept the old thumbnail says the post still shows it; one that did not, does not', [
-    false !== strpos($keptNotice('kept'), 'A post may still show the previous thumbnail'),
-    false !== strpos($keptNotice('1'), 'A post may still show the previous thumbnail'),
+    false !== strpos($keptNotice('kept'), 'A post or a widget may still show the previous thumbnail'),
+    false !== strpos($keptNotice('1'), 'A post or a widget may still show the previous thumbnail'),
     false !== strpos($keptNotice('1'), 'PDF thumbnail generated successfully.'),
 ], [true, false, true]);
 // Review after 1.4.38: the reason it was kept, each said as it is; an

@@ -293,8 +293,10 @@ final class MediaLibrary
             // Only this PDF's own: an image made from another PDF (a
             // translation's copied meta) is still that PDF's thumbnail.
             if ($thumbnailId && $this->generator->isOwnThumbnail($thumbnailId, $attachmentId)) {
-                // A regular image now, attached where the PDF was.
-                $this->generator->makeOrdinary($thumbnailId, $attachmentId, true);
+                // Another PDF's thumbnail too (a translation's copy): handed
+                // to it. Otherwise a regular image now, attached where the
+                // PDF was.
+                $this->generator->letGoOf($thumbnailId, $attachmentId, true);
             }
             delete_post_meta($attachmentId, Generator::THUMBNAIL_META_KEY);
             delete_post_meta($attachmentId, '_thumbnail_id');

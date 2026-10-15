@@ -243,7 +243,7 @@ if (!defined('ABSPATH')) {
                             <?php esc_html_e('Hide generated thumbnail images in the Media Library', 'rapls-pdf-image-creator'); ?>
                         </label>
                         <p class="description">
-                            <?php esc_html_e('This also decides what happens to the image when its PDF is deleted. Checked: the image is deleted with the PDF, unless something else uses it. Another PDF that shares it keeps it as its thumbnail; one a post uses as its featured image, or a post\'s content or excerpt shows, is kept as an ordinary image -- a post in the trash included, as it can be restored. Only featured images, post content and excerpts are checked, not widgets or other settings. Unchecked: the image is kept as an ordinary image.', 'rapls-pdf-image-creator'); ?>
+                            <?php esc_html_e('This also decides what happens to the image when its PDF is deleted. Checked: the image is deleted with the PDF, unless something else uses it. Another PDF that shares it keeps it as its thumbnail; one a post uses as its featured image, or a post\'s content or excerpt or a widget shows, is kept as an ordinary image -- a post in the trash included, as it can be restored. Featured images, post content and excerpts, and widgets, are checked; other settings are not. Unchecked: the image is kept -- as the thumbnail of another PDF that shares it, otherwise as an ordinary image.', 'rapls-pdf-image-creator'); ?>
                         </p>
                     </td>
                 </tr>
@@ -258,7 +258,7 @@ if (!defined('ABSPATH')) {
                         </label>
                         <p class="description">
                             <?php esc_html_e('If checked, generated image files will be handled as ordinary image files after plugin removal.', 'rapls-pdf-image-creator'); ?>
-                            <?php esc_html_e('Images a post still shows, as its featured image or in its content or excerpt, are kept either way, a post in the trash included. A post whose featured image was a PDF is given that PDF\'s image.', 'rapls-pdf-image-creator'); ?>
+                            <?php esc_html_e('Images a post still shows, as its featured image or in its content or excerpt, and images a widget shows, are kept either way, a post in the trash included. A post whose featured image was a PDF is given that PDF\'s image.', 'rapls-pdf-image-creator'); ?>
                         </p>
                     </td>
                 </tr>

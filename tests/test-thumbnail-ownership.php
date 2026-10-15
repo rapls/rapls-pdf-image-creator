@@ -33,7 +33,15 @@ namespace {
     // test can see the component asked for (mutation testing of 1.4.39: with
     // no stand-in, only the parse_url() fallback ever ran).
     function wp_parse_url($url, $component = -1) { $GLOBALS['wp_parse_url_calls'][] = [$url, $component]; return parse_url((string) $url, $component); }
-    function get_option($key, $default = false) { return $GLOBALS['options'][$key] ?? $default; }
+    function get_option($key, $default = false) {
+        // PCRE starved once a widget is read, so the widgets alone cannot
+        // be run over (review of 1.4.40).
+        if (!empty($GLOBALS['starve_pcre_on'][$key])) {
+            ini_set('pcre.jit', '0');
+            ini_set('pcre.backtrack_limit', '1');
+        }
+        return $GLOBALS['options'][$key] ?? $default;
+    }
     // Review after 1.4.36: the parent is written to the row, not through wp_update_post() and its hooks.
     function wp_update_post($args) {
         $GLOBALS['update_post_calls'] = ($GLOBALS['update_post_calls'] ?? 0) + 1;
@@ -109,8 +117,10 @@ namespace {
             $ids = [];
             // Marked images left out only by the clause that says so.
             $unmarkedOnly = false !== strpos($q[0], "NOT EXISTS (SELECT 1 FROM {$this->postmeta} m WHERE m.post_id = p.ID AND m.meta_key = '_rapls_pic_is_thumbnail')");
+            // Only attachments, when the SQL says so (mutation testing of 1.4.40).
+            $attachmentsOnly = false !== strpos($q[0], "p.post_type = 'attachment'");
             foreach ($GLOBALS['posts'] as $id => $post) {
-                if ((int) ($post->post_parent ?? 0) === (int) $q[1][0] && 'attachment' === ($post->post_type ?? '') && !($unmarkedOnly && isset($GLOBALS['meta'][$id]['_rapls_pic_is_thumbnail']))) {
+                if ((int) ($post->post_parent ?? 0) === (int) $q[1][0] && (!$attachmentsOnly || 'attachment' === ($post->post_type ?? '')) && !($unmarkedOnly && isset($GLOBALS['meta'][$id]['_rapls_pic_is_thumbnail']))) {
                     $ids[] = (string) $id;
                 }
             }
@@ -124,18 +134,25 @@ namespace {
             if ($failing) { return null; }
             // As MySQL would: the PDF itself is left out only by the clause
             // that says so (mutation testing after 1.4.34).
-            [$metaA, $metaB, $value] = $q[1];
-            $except = preg_match('/\bAND (?:meta\.)?post_id <> %d\b/', $q[0]) ? ($q[1][3] ?? null) : null;
+            // One key or two, as the SQL asks: another PDF by this plugin's
+            // key alone (review of 1.4.40).
+            $two = false !== strpos($q[0], 'meta_key IN (%s, %s)');
+            $metaKeys = $two ? [$q[1][0], $q[1][1]] : [$q[1][0]];
+            $value = $q[1][$two ? 2 : 1];
+            $except = preg_match('/\bAND (?:meta\.)?post_id <> %d\b/', $q[0]) ? ($q[1][$two ? 3 : 2] ?? null) : null;
+            // In ID order only when the SQL asks for it.
+            $rows = $GLOBALS['meta'];
+            if (false !== strpos($q[0], 'ORDER BY meta.post_id')) { ksort($rows); }
             // Only attachments name it, when the SQL says so (another PDF).
             $attachmentsOnly = false !== strpos($q[0], "post_type = 'attachment'");
             // Only PDFs, when the SQL says so: an audio file's cover image is
             // not another PDF's thumbnail (review after 1.4.38).
             $pdfsOnly = false !== strpos($q[0], "post_mime_type = 'application/pdf'");
-            foreach ($GLOBALS['meta'] as $post => $keys) {
+            foreach ($rows as $post => $keys) {
                 if (null !== $except && (int) $post === (int) $except) { continue; }
                 if ($attachmentsOnly && 'attachment' !== ($GLOBALS['posts'][$post]->post_type ?? '')) { continue; }
                 if ($pdfsOnly && 'application/pdf' !== ($GLOBALS['posts'][$post]->post_mime_type ?? 'application/pdf')) { continue; }
-                foreach ([$metaA, $metaB] as $key) {
+                foreach ($metaKeys as $key) {
                     if (isset($keys[$key]) && (string) $keys[$key] === $value) { return (string) $post; }
                 }
             }
@@ -694,7 +711,13 @@ namespace {
     $GLOBALS['mimes'][520] = 'application/pdf';
     $library->onAttachmentDeleted(520);
     check('  ...an old thumbnail a regeneration kept goes to the PDF\'s parent too', $GLOBALS['posts'][521]->post_parent, 8);
-    unset($GLOBALS['posts'][520], $GLOBALS['posts'][521]);
+    // ...not a post that names the PDF as its parent: only attachments move.
+    $GLOBALS['posts'][525] = (object) ['ID' => 525, 'post_type' => 'attachment', 'post_parent' => 8];
+    $GLOBALS['posts'][526] = (object) ['ID' => 526, 'post_type' => 'page', 'post_parent' => 525];
+    $GLOBALS['mimes'][525] = 'application/pdf';
+    $library->onAttachmentDeleted(525);
+    check('  ...a post whose parent is the PDF is not moved', $GLOBALS['posts'][526]->post_parent, 525);
+    unset($GLOBALS['posts'][520], $GLOBALS['posts'][521], $GLOBALS['posts'][525], $GLOBALS['posts'][526]);
     // A thumbnail shared with a translation's copy, its PDF deleted with
     // "Hide Generated Images" on (off, the image is let go of as an ordinary
     // one, as above): the
@@ -732,6 +755,116 @@ namespace {
     $generator->deleteThumbnail(330);
     check('  ...not when only the thumbnail is let go of', $GLOBALS['posts'][332]->post_parent, 330);
     $GLOBALS['content'] = [];
+
+    // Review of 1.4.40: a hand-over with "Hide Generated Images" off, and on
+    // a regeneration, attaches the image to the PDF that takes it.
+    $own(542, 540);
+    $GLOBALS['posts'][540] = (object) ['ID' => 540, 'post_type' => 'attachment', 'post_parent' => 9];
+    $GLOBALS['posts'][541] = (object) ['ID' => 541, 'post_type' => 'attachment', 'post_parent' => 9, 'post_mime_type' => 'application/pdf'];
+    $GLOBALS['posts'][542]->post_parent = 540;
+    $GLOBALS['meta'][540]['_rapls_pic_thumbnail_id'] = 542;
+    $GLOBALS['meta'][541]['_rapls_pic_thumbnail_id'] = 542;
+    $GLOBALS['mimes'][540] = 'application/pdf';
+    $GLOBALS['mimes'][541] = 'application/pdf';
+    $prop->setValue($settings, ['hide_generated_images' => false]);
+    $library->onAttachmentDeleted(540);
+    check('"Hide Generated Images" off: one a translation shares is handed to it, still its thumbnail', [$GLOBALS['posts'][542]->post_parent, (int) ($GLOBALS['meta'][542]['_rapls_pic_source_pdf'] ?? 0), $GLOBALS['meta'][542]['_rapls_pic_is_thumbnail'] ?? ''], [541, 541, '1']);
+    unset($GLOBALS['posts'][540], $GLOBALS['posts'][541], $GLOBALS['posts'][542]);
+    $GLOBALS['deleted'] = [];
+    $own(552, 550);
+    $GLOBALS['posts'][551] = (object) ['ID' => 551, 'post_type' => 'attachment', 'post_parent' => 0, 'post_mime_type' => 'application/pdf'];
+    $GLOBALS['posts'][552]->post_parent = 550;
+    $GLOBALS['meta'][550]['_rapls_pic_thumbnail_id'] = 552;
+    $GLOBALS['meta'][551]['_rapls_pic_thumbnail_id'] = 552;
+    $generator->deleteThumbnail(550);
+    check('  ...and when only the thumbnail is let go of: attached to that PDF too', [$GLOBALS['deleted'], $GLOBALS['posts'][552]->post_parent, (int) ($GLOBALS['meta'][552]['_rapls_pic_source_pdf'] ?? 0)], [[], 551, 551]);
+    // ...a PDF whose ID is 1 takes it as any other does.
+    $own(692, 690);
+    $GLOBALS['posts'][1] = (object) ['ID' => 1, 'post_type' => 'attachment', 'post_parent' => 0, 'post_mime_type' => 'application/pdf'];
+    $GLOBALS['meta'][690]['_rapls_pic_thumbnail_id'] = 692;
+    $GLOBALS['meta'][1]['_rapls_pic_thumbnail_id'] = 692;
+    $generator->deleteThumbnail(690);
+    check('  ...PDF 1 takes it as any PDF does', [(int) ($GLOBALS['meta'][692]['_rapls_pic_source_pdf'] ?? 0), $GLOBALS['meta'][692]['_rapls_pic_is_thumbnail'] ?? ''], [1, '1']);
+    unset($GLOBALS['meta'][1], $GLOBALS['posts'][1]);
+    // Review of 1.4.40: a PDF whose `_thumbnail_id` alone names the image
+    // (its own key names another) does not take it; it becomes ordinary.
+    $own(562, 560);
+    $GLOBALS['posts'][561] = (object) ['ID' => 561, 'post_type' => 'attachment', 'post_parent' => 0, 'post_mime_type' => 'application/pdf'];
+    $GLOBALS['meta'][560]['_rapls_pic_thumbnail_id'] = 562;
+    $GLOBALS['meta'][561]['_rapls_pic_thumbnail_id'] = 999;
+    $GLOBALS['meta'][561]['_thumbnail_id'] = 562;
+    $generator->deleteThumbnail(560);
+    check('  ...a PDF that names it only as its featured image: not handed to it, an ordinary image', [$GLOBALS['deleted'], $GLOBALS['meta'][562]['_rapls_pic_is_thumbnail'] ?? '', $GLOBALS['meta'][562]['_rapls_pic_source_pdf'] ?? '', $generator->keptReasonFor(560)], [[], '', '', 'featured']);
+    // ...and of several that do, the lowest ID each time.
+    $own(572, 570);
+    $GLOBALS['meta'][579] = ['_rapls_pic_thumbnail_id' => 572];
+    $GLOBALS['meta'][571] = ['_rapls_pic_thumbnail_id' => 572];
+    $GLOBALS['posts'][571] = (object) ['ID' => 571, 'post_type' => 'attachment', 'post_mime_type' => 'application/pdf'];
+    $GLOBALS['posts'][579] = (object) ['ID' => 579, 'post_type' => 'attachment', 'post_mime_type' => 'application/pdf'];
+    $GLOBALS['meta'][570]['_rapls_pic_thumbnail_id'] = 572;
+    $generator->deleteThumbnail(570);
+    check('  ...of two PDFs that name it, the lowest ID takes it', (int) ($GLOBALS['meta'][572]['_rapls_pic_source_pdf'] ?? 0), 571);
+    // Review of 1.4.40: a refused deletion for a PDF whose own key is empty
+    // -- named only by its `_thumbnail_id` -- is left for the next attempt.
+    $own(582, 580);
+    $GLOBALS['meta'][580] = ['_thumbnail_id' => 582];
+    $GLOBALS['refuse_delete'] = [582];
+    $refused = $generator->deleteThumbnail(580);
+    $GLOBALS['refuse_delete'] = [];
+    check('a refused deletion, the PDF\'s own key empty: left as it was', [$refused, $GLOBALS['meta'][582]['_rapls_pic_is_thumbnail'] ?? '', (int) ($GLOBALS['meta'][580]['_thumbnail_id'] ?? 0)], [false, '1', 582]);
+    // Review of 1.4.40: the content and the excerpt each on its own, as the
+    // SQL asks them; joined, a number ending one and the ID starting the
+    // other made an ID.
+    $GLOBALS['deleted'] = [];
+    $shown(592, 590, '2026/10/z-pdf-thumbnail.jpg');
+    $GLOBALS['content'] = [760 => 'z-pdf-thumbnail-notes 1024'];
+    $GLOBALS['excerpts'] = [760 => '592 apples'];
+    check('the content and the excerpt are read each on its own', [$generator->deleteThumbnail(590), $GLOBALS['deleted']], [true, [592]]);
+    $GLOBALS['content'] = [];
+    $GLOBALS['excerpts'] = [];
+    // Review of 1.4.40: the widgets, each kind, and their values as they are.
+    $widgetKept = static function (int $image, int $pdf, string $file, string $option, $value) use ($shown, $generator): array {
+        $GLOBALS['deleted'] = [];
+        $shown($image, $pdf, $file);
+        $GLOBALS['options'][$option] = $value;
+        $result = [$generator->deleteThumbnail($pdf), $GLOBALS['deleted']];
+        unset($GLOBALS['options'][$option]);
+        return $result;
+    };
+    check('a block widget naming the image with "--", written as a block writes it: kept',
+        $widgetKept(602, 600, '2026/10/r--pdf-thumbnail.jpg', 'widget_block', [2 => ['content' => '<!-- wp:cover {"url":"https://example.test/wp-content/uploads/2026/10/r\u002d\u002dpdf-thumbnail.jpg"} /-->'], '_multiwidget' => 1]), [false, []]);
+    check('  ...a Gallery widget by ID: kept',
+        $widgetKept(612, 610, '2026/10/gw-pdf-thumbnail.jpg', 'widget_media_gallery', [5 => ['ids' => [7, 612], 'columns' => 3], '_multiwidget' => 1]), [false, []]);
+    check('  ...a Custom HTML widget by name: kept',
+        $widgetKept(622, 620, '2026/10/hw-pdf-thumbnail.jpg', 'widget_custom_html', [6 => ['title' => '', 'content' => '<img src="/wp-content/uploads/2026/10/hw-pdf-thumbnail-150x150.jpg">'], '_multiwidget' => 1]), [false, []]);
+    $deep = ['attachment_id' => 632];
+    for ($i = 0; $i < 600; $i++) { $deep = [$deep]; }
+    check('  ...nested deeper than JSON allows, with a NaN beside it: still read, kept',
+        $widgetKept(632, 630, '2026/10/dw-pdf-thumbnail.jpg', 'widget_media_image', [3 => $deep, 4 => ['x' => NAN, 'y' => INF]]), [false, []]);
+    check('  ...an object a plugin stored, read as its properties: kept, as shown',
+        [$widgetKept(642, 640, '2026/10/ow-pdf-thumbnail.jpg', 'widget_media_image', [3 => (object) ['attachment_id' => 642]]), $generator->keptReasonFor(640)], [[false, []], 'shown']);
+    $loop = ['a' => 1];
+    $loop['self'] = &$loop;
+    check('  ...one that holds itself: cannot tell, kept, as unknown',
+        [$widgetKept(652, 650, '2026/10/lw-pdf-thumbnail.jpg', 'widget_text', [4 => $loop]), $generator->keptReasonFor(650)], [[false, []], 'unknown']);
+    unset($loop);
+    check('  ...and a widget that names something else does not keep it',
+        $widgetKept(662, 660, '2026/10/nw-pdf-thumbnail.jpg', 'widget_media_gallery', [5 => ['ids' => [6620, 7]], '_multiwidget' => 1]), [true, [662]]);
+    $GLOBALS['options']['widget_media_gallery'] = [5 => ['ids' => [7]]];
+    $limitWas = ini_get('pcre.backtrack_limit');
+    $jitWas = ini_get('pcre.jit');
+    $GLOBALS['deleted'] = [];
+    $shown(672, 670, '2026/10/pw-pdf-thumbnail.jpg');
+    $GLOBALS['starve_pcre_on'] = ['widget_media_gallery' => true];
+    try {
+        $pcreKept = [$generator->deleteThumbnail(670), $GLOBALS['deleted']];
+    } finally {
+        $GLOBALS['starve_pcre_on'] = [];
+        ini_set('pcre.backtrack_limit', (string) $limitWas);
+        ini_set('pcre.jit', (string) $jitWas);
+    }
+    unset($GLOBALS['options']['widget_media_gallery']);
+    check('  ...widgets the ID pattern cannot be run over: kept', $pcreKept, [false, []]);
 
     // Uninstalling keeps what something else uses too, as deleteThumbnail()
     // does. test-uninstall.php runs uninstall.php for that, query failures

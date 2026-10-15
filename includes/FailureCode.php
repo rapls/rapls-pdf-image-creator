@@ -223,7 +223,7 @@ final class FailureCode
                 // The advice names both.
                 return [
                     'label' => __('The page was too large to draw.', 'rapls-pdf-image-creator'),
-                    'action' => __('Lower the resolution on the Settings tab and generate again: large-format pages at a high DPI can run to hundreds of millions of pixels. If the message says the page is too large even at the lowest resolution, no setting will help; that page cannot be made into a thumbnail.', 'rapls-pdf-image-creator'),
+                    'action' => __('Lower the resolution on the Settings tab and generate again: large-format pages at a high DPI can run to hundreds of millions of pixels. If the message says the page is too large even at the lowest resolution, no setting will help; that page cannot be made into a thumbnail. If it says the PDF holds such a page, none of its pages can, whichever page is chosen.', 'rapls-pdf-image-creator'),
                 ];
 
             case self::WRITE_FAILED:

@@ -25,6 +25,15 @@ final class ImagickEngine implements EngineInterface
     private ColorProfile $colorProfile;
 
     /**
+     * Whether boundedResolution()'s last refusal was for the file -- a page
+     * in it too large to measure, so no page of it is drawn -- rather than
+     * for the page asked. Said apart: a cover refused for a huge page beside
+     * it was told "this page is too large", and trying another page was no
+     * use (review of 1.4.40's fixes).
+     */
+    private bool $refusedForFile = false;
+
+    /**
      * Constructor
      *
      * @param ColorProfile|null $colorProfile Profile resolver, for testing.
@@ -37,7 +46,7 @@ final class ImagickEngine implements EngineInterface
     /**
      * Get the colour profile resolver
      *
-     * @deprecated 1.4.40 Kept for code that reached it through
+     * @deprecated 1.4.41 Kept for code that reached it through
      *             Generator::getEngines() or the
      *             rapls_pdf_image_creator_engines filter: it was public up to
      *             1.4.20, and taking a public method away is a fatal error in
@@ -828,13 +837,16 @@ final class ImagickEngine implements EngineInterface
             // name -- BigTIFF, HEIC, AVIF, JPEG 2000 -- once a side was past
             // the measuring read's bound (review after 1.4.38).
             if (self::drawnByGhostscript($pdfPath)) {
+                $this->refusedForFile = false;
                 $resolution = $this->boundedResolution($pdfPath, $page, $resolution, $options);
 
                 if (null === $resolution) {
                     $imagick->clear();
 
                     return ConversionResult::failure(
-                        __('This page is too large to draw, even at the lowest resolution.', 'rapls-pdf-image-creator'),
+                        $this->refusedForFile
+                            ? __('This PDF holds a page too large to draw, even at the lowest resolution, so none of its pages is drawn.', 'rapls-pdf-image-creator')
+                            : __('This page is too large to draw, even at the lowest resolution.', 'rapls-pdf-image-creator'),
                         \Rapls\PDFImageCreator\FailureCode::RESOURCE_LIMIT
                     );
                 }
@@ -1325,8 +1337,12 @@ final class ImagickEngine implements EngineInterface
      * large, and is not drawn again to find that out.
      *
      * A page so thin that it is under one pixel across at MIN_RESOLUTION
-     * and too long to be drawn at SMALL_PAGE_RESOLUTION -- 300,000 by 12
-     * points -- fails the measuring read. Where that read's error is
+     * and too long to be drawn at SMALL_PAGE_RESOLUTION fails the measuring
+     * read: in a file whose boxes cannot be read, or beside a page so large
+     * that it is measured at 2 dpi. Where the boxes are read and nothing in
+     * the file is much larger, it never reaches the measuring read -- 300,000
+     * by 12 points is drawn as asked (review of 1.4.40: this gave that
+     * example as one that failed). Where that read's error is
      * libpng's "Invalid IHDR data" it is reported as too large, as before
      * 1.4.34; a build that fails it otherwise (a delegates error was seen on
      * one) reports a render error, which says the page could not be measured
@@ -1384,8 +1400,14 @@ final class ImagickEngine implements EngineInterface
         // and A4 as the largest is: every page has a box by the standard,
         // inherited from its /Pages where not its own, and the floor would
         // leave the bound nothing to stop.
-        if (null === $box && null !== $scan && null !== $scan['least']
+        //
+        // Asked whether or not the largest is known: asked only where it was
+        // not, a file of nothing but pages too large was measured at 2 dpi,
+        // and drawn before the limits refused it (review of 1.4.40).
+        if (null !== $scan && null !== $scan['least']
             && $scan['least'] * (self::MIN_RESOLUTION / 72) ** 2 > $pixels) {
+            $this->refusedForFile = true;
+
             return null;
         }
 
@@ -1395,6 +1417,27 @@ final class ImagickEngine implements EngineInterface
         // page is drawn as asked, as before 1.4.34.
         if (!self::canLimitReads()) {
             return null === $box ? $resolution : $this->fittedResolution($box[0] / $box[1], $box[1], $resolution, $limit);
+        }
+
+        // A file whose largest box is past the measuring read's bound even at
+        // MIN_RESOLUTION is not read at all. The page asked may be that one,
+        // and Ghostscript draws it before any limit can refuse it: a small
+        // box anywhere -- a cover, a comment -- made the lower bound small,
+        // and a 10,000,000-point page was drawn at 2 dpi (review of 1.4.40).
+        // A page that is small beside such a page is refused with it; a step
+        // back from 1.4.20, accepted, as for the thin page below. Its area,
+        // or its longest side where that is the more: a page under a pixel
+        // across is drawn a pixel across, a row as long as its side.
+        //
+        // With /UserUnit the largest is unknown, and the largest by the
+        // largest factor read stands in -- for this refusal alone, never to
+        // let a page through (scanPageBoxes()'s 'refuse').
+        $whole = $box ?? (null === $scan ? null : ($scan['refuse'] ?? null));
+
+        if (null !== $whole && max($whole[0] * (self::MIN_RESOLUTION / 72) ** 2, $whole[1] * self::MIN_RESOLUTION / 72) > $pixels) {
+            $this->refusedForFile = true;
+
+            return null;
         }
 
         if (null !== $box) {
@@ -1448,7 +1491,8 @@ final class ImagickEngine implements EngineInterface
             } elseif ($measureAt < min($resolution, self::SMALL_PAGE_RESOLUTION)
                 && \Rapls\PDFImageCreator\FailureCode::RENDER_ERROR === \Rapls\PDFImageCreator\FailureCode::fromExceptionMessage($e->getMessage(), true)) {
                 // A page under a pixel at the measuring density, in a file
-                // with a page far too large to measure it more finely: not
+                // with a page far too large to measure it more finely, or
+                // whose boxes could not be read at all: not
                 // measured again, since the page asked might be that large
                 // one, and Ghostscript would draw it before any limit could
                 // refuse it. 1.4.20 drew a 300,000 by 10 point strip beside a
@@ -1456,11 +1500,16 @@ final class ImagickEngine implements EngineInterface
                 // as it is -- the read's own words named a configuration file
                 // on one build (review of 1.4.39). A page past the end fails
                 // the same way where the file's page count cannot be read, so
-                // both are named (review of 1.4.39's fixes).
+                // both are named (review of 1.4.39's fixes). The density named
+                // is the one used, which is more than 2 dpi where the largest
+                // box allowed it (review of 1.4.40: it said 2 dpi always).
                 throw new \ImagickException(sprintf(
-                    /* translators: 1: the lowest resolution, in dpi; 2: ImageMagick's own message */
-                    __('This page could not be measured at %1$s dpi, the lowest resolution used, and this PDF holds a page too large to measure it more finely. The page may not be in this PDF, or it may be too thin to draw. (%2$s)', 'rapls-pdf-image-creator'),
-                    (string) self::MIN_RESOLUTION,
+                    null === $box
+                        /* translators: 1: the resolution the page was measured at, in dpi; 2: ImageMagick's own message */
+                        ? __('This page could not be measured at %1$s dpi, and the size of this PDF\'s largest page could not be read from the file, so it is not measured more finely. The page may not be in this PDF, it may be too thin to draw, or it could not be read: %2$s', 'rapls-pdf-image-creator')
+                        /* translators: 1: the resolution the page was measured at, in dpi; 2: ImageMagick's own message */
+                        : __('This page could not be measured at %1$s dpi, and this PDF holds a page too large to measure it more finely. The page may not be in this PDF, it may be too thin to draw, or it could not be read: %2$s', 'rapls-pdf-image-creator'),
+                    self::dpiText($measureAt),
                     $e->getMessage()
                 ));
             } else {
@@ -1501,18 +1550,29 @@ final class ImagickEngine implements EngineInterface
      * The measuring read's limits refuse a page past them only after
      * Ghostscript has drawn it: drawing every page at 36 dpi to find a
      * small one was bounded by nothing when the file held a large one
-     * (review after 1.4.37). With no box, the page may be one under a pixel
-     * at 2 dpi, and is measured.
+     * (review after 1.4.37). With no box -- a file whose boxes the token
+     * reading could not follow -- nothing says the page asked is not a
+     * huge one, and it is not measured again: re-measured at 36 dpi, a
+     * long strip was drawn before any limit refused it (review of 1.4.40).
+     * The page is said to be one that could not be measured.
      *
      * @param array{0: float, 1: float}|null $box The largest box, or null.
      */
     private static function smallEnoughToMeasureAt(?array $box, float $density, float $pixels): bool
     {
         if (null === $box) {
-            return true;
+            return false;
         }
 
         return $box[0] * ($density / 72) ** 2 <= $pixels && $box[1] * $density / 72 <= ceil(sqrt($pixels));
+    }
+
+    /** A density as a message gives it: "2", "7.2". */
+    private static function dpiText(float $dpi): string
+    {
+        $text = rtrim(rtrim(sprintf('%.1F', $dpi), '0'), '.');
+
+        return '' === $text ? '0' : $text;
     }
 
     /** The longest side a measuring read is given, in pixels: an int, whatever the box says. */
@@ -1760,7 +1820,7 @@ final class ImagickEngine implements EngineInterface
      * small one. /UserUnit, which leaves the largest unknown, leaves this
      * known.
      *
-     * @return array{largest: array{0: float, 1: float}|null, least: float|null}|null
+     * @return array{largest: array{0: float, 1: float}|null, least: float|null, refuse: array{0: float, 1: float}}|null
      *         Null when the bytes say nothing of the page sizes.
      */
     private static function scanPageBoxes(string $pdfPath): ?array
@@ -1805,6 +1865,7 @@ final class ImagickEngine implements EngineInterface
         $least = INF;
         $units = INF;
         $userUnit = false;
+        $unitsMost = 1.0;
         $count = 0;
         $space = '[' . self::PDF_WHITESPACE . ']';
         $number = '([+-]?(?:\d+\.?\d*|\.\d+))';
@@ -1842,7 +1903,14 @@ final class ImagickEngine implements EngineInterface
             // /UserUnit makes a page larger than its box says, by a factor
             // only Ghostscript applies, page by page: the largest is not
             // known, the least is -- by the smallest factor, where one is
-            // under 1.
+            // under 1. The factor is not read for the largest: scaling the
+            // largest by it was tried, and a reference written with a
+            // comment or a sign inside it was read as the number 1, and the
+            // page drawn unmeasured (review of 1.4.40's fixes). A file with
+            // /UserUnit is measured at MIN_RESOLUTION, as one whose boxes
+            // cannot be read, and not measured more finely
+            // (smallEnoughToMeasureAt()). A misread factor only makes the
+            // least larger -- the side that refuses.
             $offset = 0;
 
             while (1 === ($result = preg_match('#/UserUnit' . $end . '#', $text, $key, PREG_OFFSET_CAPTURE, $offset))) {
@@ -1855,6 +1923,7 @@ final class ImagickEngine implements EngineInterface
                 }
 
                 $units = min($units, (float) $numbers[1]);
+                $unitsMost = max($unitsMost, (float) $numbers[1]);
             }
 
             if (false === $result) {
@@ -1911,7 +1980,33 @@ final class ImagickEngine implements EngineInterface
             // by the factor once, a 10,000,000-point box at 0.001 -- a
             // 10,000-point page -- was refused unread).
             'least' => $least * min(1.0, $units) ** 2,
+            // The largest by the largest /UserUnit read as a number, for one
+            // thing only: refusing the whole file unread (boundedResolution()).
+            // Never to say a page is small enough -- 'largest' stays unknown
+            // with /UserUnit, since a reference written with a comment or a
+            // sign inside it reads as the number 1 (review of 1.4.40's
+            // fixes). A factor misread can only refuse more, or leave the
+            // measuring read as it was: a 14,400-point box at /UserUnit 1000
+            // was drawn at 2 dpi before any limit refused it.
+            'refuse' => self::scaledForRefusal($area, $side, $unitsMost),
         ];
+    }
+
+    /**
+     * The largest box, Letter and A4 at least, by a /UserUnit factor over 1; INF where that is past a float
+     *
+     * Past a float is past any bound: the file is refused. An answer used
+     * only to refuse errs toward refusing (review of 1.4.40's fixes: null
+     * here let a /UserUnit of 1e300 through to the measuring read).
+     *
+     * @return array{0: float, 1: float}
+     */
+    private static function scaledForRefusal(float $area, float $side, float $factor): array
+    {
+        $area = max($area, 612.0 * 842.0) * $factor ** 2;
+        $side = max($side, 842.0) * $factor;
+
+        return is_finite($area) && is_finite($side) ? [$area, $side] : [INF, INF];
     }
 
     /** The characters PDF counts as white space, for a character class: NUL, tab, LF, FF, CR, space. */
@@ -2664,7 +2759,8 @@ final class ImagickEngine implements EngineInterface
         // or PostScript with no header at all, is drawn by Ghostscript too,
         // and each was read unbounded (review of 1.4.38's fixes). The names
         // of ImageMagick's Ghostscript coders: PDF, PostScript and EPS in
-        // their spellings, Illustrator, XPS and PCL (review of 1.4.39). Not a
+        // their spellings, Illustrator, XPS and PCL (review of 1.4.39), and
+        // the PDF coder's EPDF and PDFA (review of 1.4.40). Not a
         // file whose bytes ImageMagick reads as a raster by their own magic
         // -- a PNG named .pdf is read as a PNG, and bounded as a page one
         // past 6,325 pixels a side was refused, which 1.4.20 read -- unless
@@ -2672,7 +2768,7 @@ final class ImagickEngine implements EngineInterface
         // the magics readByOwnMagic() lists: a TGA's shape is no magic at
         // all, and a format whose coder needs a library a build may lack
         // could fall back to the name, and to Ghostscript.
-        if (1 === preg_match('/\.(?:pdf|ps|ps2|ps3|eps|eps2|eps3|epsf|epsi|epi|ept|ept2|ept3|ai|xps|pcl)\z/i', $path)) {
+        if (1 === preg_match('/\.(?:pdf|epdf|pdfa|ps|ps2|ps3|eps|eps2|eps3|epsf|epsi|epi|ept|ept2|ept3|ai|xps|pcl)\z/i', $path)) {
             return !(self::readByOwnMagic($head) && false === strpos($head, '%PDF-') && false === strpos($head, '%!'));
         }
 
@@ -3067,15 +3163,25 @@ final class ImagickEngine implements EngineInterface
      */
     private function canSetEnvironment(): bool
     {
-        if (!function_exists('putenv') || !function_exists('getenv')) {
+        return self::environmentSettable(function_exists('putenv'), function_exists('getenv'), (string) ini_get('disable_functions'));
+    }
+
+    /**
+     * canSetEnvironment()'s answer, from what it reads
+     *
+     * Apart so that PHP 7.4's case can be tested on PHP 8, where a disabled
+     * function does not exist at all (review of 1.4.40's mutation testing:
+     * the getenv() half went unnoticed when it was taken out).
+     */
+    private static function environmentSettable(bool $hasPutenv, bool $hasGetenv, string $disabled): bool
+    {
+        if (!$hasPutenv || !$hasGetenv) {
             return false;
         }
 
         // getenv() too: on PHP 7.4 a disabled function still exists, and
         // answers null with a warning -- read as "unset", and the value the
         // site had set was taken away by the put-back (review after 1.4.37).
-        $disabled = (string) ini_get('disable_functions');
-
         return !self::isListedDisabled('putenv', $disabled) && !self::isListedDisabled('getenv', $disabled);
     }
 

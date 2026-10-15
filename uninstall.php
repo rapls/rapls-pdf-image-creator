@@ -198,8 +198,8 @@ function rapls_pic_uninstall_move_featured(): bool
  * after 1.4.37), and so does either ID wherever an ID could stand, as page
  * builders keep an image (review after 1.4.38).
  *
- * The content and the excerpt are read: not widgets, not options, not a page
- * builder's own meta. Revisions and auto-drafts are not read: a revision
+ * The content, the excerpt and the widgets (ContentUse::WIDGET_OPTIONS) are
+ * read: not other options, not a page builder's own meta. Revisions and auto-drafts are not read: a revision
  * kept a picture taken out of the post long ago. A trashed post is: it can
  * be restored with its pictures (review after 1.4.37). Every other post
  * is read, 200 at a time, unless every thumbnail has been found sooner. On a
@@ -258,8 +258,10 @@ function rapls_pic_uninstall_shown_in_content(array $thumbnails): ?array
     };
     $rapls_pic_all = array_values(array_unique(array_map('intval', array_column($thumbnails, 'id'))));
 
-    // The widgets first, as regenerating reads them (review of 1.4.39).
-    if (!$rapls_pic_read(\Rapls\PDFImageCreator\ContentUse::widgetContent())) {
+    // The widgets first, as regenerating reads them (review of 1.4.39);
+    // not read, every image is kept (review of 1.4.40).
+    $rapls_pic_widgets = \Rapls\PDFImageCreator\ContentUse::widgetContent();
+    if (null === $rapls_pic_widgets || !$rapls_pic_read($rapls_pic_widgets)) {
         return $rapls_pic_all;
     }
 

@@ -211,12 +211,18 @@ namespace {
         /** Whether another post names the image, from $GLOBALS['meta'] (review after 1.4.38). */
         public function get_var($q) {
             $this->last_error = '';
-            [$keyA, $keyB, $value, $except] = $q[1] + [null, null, null, null];
+            // One key or two, as the SQL asks (review of 1.4.40).
+            $two = false !== strpos($q[0], 'meta_key IN (%s, %s)');
+            $keys2 = $two ? [$q[1][0], $q[1][1]] : [$q[1][0]];
+            $value = $q[1][$two ? 2 : 1] ?? null;
+            $except = $q[1][$two ? 3 : 2] ?? null;
             $pdfsOnly = false !== strpos($q[0], "post_mime_type = 'application/pdf'");
-            foreach ($GLOBALS['meta'] as $post => $keys) {
+            $rows = $GLOBALS['meta'];
+            if (false !== strpos($q[0], 'ORDER BY meta.post_id')) { ksort($rows); }
+            foreach ($rows as $post => $keys) {
                 if ((int) $post === (int) $except) { continue; }
                 if ($pdfsOnly && 'application/pdf' !== ($GLOBALS['mimes'][$post] ?? '')) { continue; }
-                foreach ([$keyA, $keyB] as $key) {
+                foreach ($keys2 as $key) {
                     if (isset($keys[$key]) && (string) $keys[$key] === (string) $value) { return (string) $post; }
                 }
             }
@@ -843,7 +849,7 @@ namespace {
     $GLOBALS['json_data'] = null;
     $bulkKept = $call([$bulk, 'ajaxGenerate'], ['pdf_id' => 101, 'force' => 1]);
     $GLOBALS['content'] = [];
-    check('  ...and Bulk Generate says why it kept one, and which', [$bulkKept[0], false !== strpos((string) $GLOBALS['json_message'], 'Thumbnail generated. A post may still show the previous thumbnail'), $GLOBALS['json_data']['kept_previous'] ?? null], [true, true, 102]);
+    check('  ...and Bulk Generate says why it kept one, and which', [$bulkKept[0], false !== strpos((string) $GLOBALS['json_message'], 'Thumbnail generated. A post or a widget may still show the previous thumbnail'), $GLOBALS['json_data']['kept_previous'] ?? null], [true, true, 102]);
     $GLOBALS['json_message'] = null;
     $GLOBALS['json_data'] = null;
     $call([$bulk, 'ajaxGenerate'], ['pdf_id' => 101, 'force' => 1]);

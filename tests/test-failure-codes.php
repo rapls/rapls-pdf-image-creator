@@ -47,6 +47,19 @@ $messages = [
     "unable to write blob `out.jpg': No space left on device"
         => FailureCode::WRITE_FAILED,
 
+    // Each phrase on its own (review of 1.4.40's mutation testing: every
+    // message above carried two of them, and dropping one went unseen).
+    "PixelCacheAllocationFailed `x.pdf' @ error/cache.c/OpenPixelCache/4083"
+        => FailureCode::RESOURCE_LIMIT,
+    "WidthOrHeightExceedsLimit `/tmp/magick-x'"
+        => FailureCode::RESOURCE_LIMIT,
+    "Permission denied `/var/www/uploads/x.jpg'"
+        => FailureCode::WRITE_FAILED,
+    "No space left on device `out.jpg'"
+        => FailureCode::WRITE_FAILED,
+    "unable to write blob `out.jpg'"
+        => FailureCode::WRITE_FAILED,
+
     "something nobody has seen before" => FailureCode::RENDER_ERROR,
     "" => FailureCode::RENDER_ERROR,
 ];
@@ -54,6 +67,12 @@ $messages = [
 foreach ($messages as $message => $expected) {
     $short = strlen($message) > 44 ? substr($message, 0, 41) . '...' : ($message ?: '(empty)');
     check($short, FailureCode::fromExceptionMessage($message), $expected);
+}
+
+// A library a page needed that this build lacks, while converting one file:
+// that file did not draw; the server reads PDFs.
+foreach (['freetype', 'fontconfig', 'lcms', 'lcms2'] as $library) {
+    check("  ...converting, a missing $library is a render error", FailureCode::fromExceptionMessage("delegate library support not built-in `x.pdf' ($library)", true), FailureCode::RENDER_ERROR);
 }
 
 echo "\n=== policy and delegate stay apart ===\n";

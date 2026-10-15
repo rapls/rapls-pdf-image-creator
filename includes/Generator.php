@@ -845,6 +845,13 @@ final class Generator
      * Library by "Hide Generated Images" while a post showed it (review of
      * 1.4.36).
      *
+     * Named by this plugin's own key, `_rapls_pic_thumbnail_id`: a PDF whose
+     * key names another image and whose `_thumbnail_id` alone names this
+     * one does not take it for its own on its regeneration or deletion, and
+     * the image handed to it stayed marked and hidden with nothing naming it
+     * (review of 1.4.40). Such a PDF counts as a featured image does. The
+     * lowest ID when several do, so the same one each time.
+     *
      * @return int|null The other PDF's ID, 0 when there is none, null when
      *                  the database did not answer.
      */
@@ -859,9 +866,8 @@ final class Generator
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.SlowDBQuery.slow_db_query_meta_key, WordPress.DB.SlowDBQuery.slow_db_query_meta_value
         $found = $wpdb->get_var($wpdb->prepare(
             "SELECT meta.post_id FROM {$wpdb->postmeta} meta INNER JOIN {$wpdb->posts} named ON named.ID = meta.post_id AND named.post_type = 'attachment' AND named.post_mime_type = 'application/pdf'
-             WHERE meta.meta_key IN (%s, %s) AND meta.meta_value = %s AND meta.post_id <> %d LIMIT 1",
+             WHERE meta.meta_key = %s AND meta.meta_value = %s AND meta.post_id <> %d ORDER BY meta.post_id LIMIT 1",
             self::THUMBNAIL_META_KEY,
-            '_thumbnail_id',
             (string) $thumbnailId,
             $pdfId
         ));
@@ -934,7 +940,12 @@ final class Generator
         }
         $stems = ContentUse::stemsOf($file, get_post_meta($thumbnailId, '_wp_attachment_backup_sizes', true));
         // The widgets first: one read of a few options (review of 1.4.39).
-        if (ContentUse::shows(ContentUse::widgetContent(), $thumbnailId, $stems)) {
+        // Not read is not known: the image is kept.
+        $widgets = ContentUse::widgetContent();
+        if (null === $widgets) {
+            return null;
+        }
+        if (ContentUse::shows($widgets, $thumbnailId, $stems)) {
             return true;
         }
         // ContentUse::candidate(), as SQL, LIKE only. The ID beside each
@@ -991,8 +1002,12 @@ final class Generator
 
             foreach ($rows as $row) {
                 $after = (int) ($row['ID'] ?? 0);
-                $shown = (string) ($row['post_content'] ?? '') . "\n" . (string) ($row['post_excerpt'] ?? '');
-                if (ContentUse::shows($shown, $thumbnailId, $stems)) {
+                // Each column on its own, as the SQL asks them: joined, a
+                // content ending in a number and an excerpt starting with
+                // the ID made an ID the SQL had not asked for (review of
+                // 1.4.40).
+                if (ContentUse::shows((string) ($row['post_content'] ?? ''), $thumbnailId, $stems)
+                    || ContentUse::shows((string) ($row['post_excerpt'] ?? ''), $thumbnailId, $stems)) {
                     return true;
                 }
             }
@@ -1060,22 +1075,8 @@ final class Generator
                 // post's featured image: an ordinary image. Not known: an
                 // ordinary image, said -- kept and visible is recoverable,
                 // marked with nothing pointing at it is lost in the library.
-                $byAttachment = $this->namedByAttachment($thumbnailId, $pdfId);
+                $byAttachment = $this->letGoOf($thumbnailId, $pdfId, $pdfGoing);
                 $this->keptReasons[$pdfId] = $byAttachment > 0 ? self::KEPT_SHARED : (0 === $byAttachment ? self::KEPT_FEATURED : self::KEPT_UNKNOWN);
-                if ($byAttachment > 0) {
-                    update_post_meta($thumbnailId, '_rapls_pic_source_pdf', $byAttachment);
-                    if ($pdfGoing) {
-                        // Attached to the PDF that names it now, not left on
-                        // one that is gone (review of 1.4.39's fixes).
-                        $this->attachTo($thumbnailId, $pdfId, $byAttachment);
-                    }
-                } else {
-                    $this->makeOrdinary($thumbnailId, $pdfId, $pdfGoing);
-                }
-                if (null === $byAttachment) {
-                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
-                    error_log(sprintf('Rapls PDF Image Creator: could not tell whether another PDF uses image #%d; PDF #%d let go of it and it was kept as an ordinary image.', $thumbnailId, $pdfId));
-                }
             } else {
                 $shown = $this->shownInContent($thumbnailId);
                 if (null === $shown) {
@@ -1107,7 +1108,7 @@ final class Generator
                     // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
                     error_log(sprintf('Rapls PDF Image Creator: image #%d of PDF #%d could not be deleted with the PDF; it was kept as an ordinary image.', $thumbnailId, $pdfId));
                     $result = self::RELEASE_FAILED;
-                } elseif ((int) get_post_meta($pdfId, self::THUMBNAIL_META_KEY, true) !== $thumbnailId) {
+                } elseif ($this->namesOtherThumbnail($pdfId, $thumbnailId)) {
                     // Refused while a regeneration replaces it: the PDF
                     // already names its new thumbnail, so there is no next
                     // attempt either, and the old one stayed marked and
@@ -1132,6 +1133,57 @@ final class Generator
         }
 
         return $result;
+    }
+
+    /**
+     * Whether the PDF's own key names a thumbnail other than this one
+     *
+     * Its new one, once a regeneration has recorded it. Not an empty key:
+     * getThumbnailId() also answers with `_thumbnail_id`, and a
+     * deleteThumbnail() for such a PDF, refused, made the image ordinary
+     * instead of leaving it for the next attempt (review of 1.4.40).
+     */
+    private function namesOtherThumbnail(int $pdfId, int $thumbnailId): bool
+    {
+        $own = (int) get_post_meta($pdfId, self::THUMBNAIL_META_KEY, true);
+
+        return $own > 0 && $own !== $thumbnailId;
+    }
+
+    /**
+     * This PDF lets go of one of its thumbnails that is kept
+     *
+     * Handed to another PDF that names it by this plugin's key -- a
+     * translation's copy -- with its markers, its source naming that PDF
+     * and, while it is attached to this one, attached to that one: left on
+     * this PDF it kept naming one that was later deleted (review of 1.4.40;
+     * it was moved only when this PDF itself went). Otherwise, or when that
+     * cannot be told, an ordinary image, and the latter said.
+     *
+     * Deleting a PDF with "Hide Generated Images" off asks the same: it made
+     * the image ordinary whatever named it, and the other PDF's thumbnail
+     * was no longer its own (review of 1.4.40).
+     *
+     * @param bool $pdfGoing The PDF itself is being deleted.
+     * @return int|null The PDF it was handed to, 0 when none, null when that
+     *                  could not be told.
+     */
+    public function letGoOf(int $imageId, int $pdfId, bool $pdfGoing = false): ?int
+    {
+        $byAttachment = $this->namedByAttachment($imageId, $pdfId);
+        if ($byAttachment > 0) {
+            update_post_meta($imageId, '_rapls_pic_source_pdf', $byAttachment);
+            $this->attachTo($imageId, $pdfId, $byAttachment);
+
+            return $byAttachment;
+        }
+        $this->makeOrdinary($imageId, $pdfId, $pdfGoing);
+        if (null === $byAttachment) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+            error_log(sprintf('Rapls PDF Image Creator: could not tell whether another PDF uses image #%d; PDF #%d let go of it and it was kept as an ordinary image.', $imageId, $pdfId));
+        }
+
+        return $byAttachment;
     }
 
     /**
@@ -1200,9 +1252,8 @@ final class Generator
      * the same way; it does not for a deleted attachment's. Images that
      * still carry this plugin's marker are not touched: they are a PDF's
      * thumbnail, this one's to delete or another's to keep. One another PDF
-     * shares stays attached to this PDF once it is gone, "Uploaded to"
-     * naming nothing; nothing reads that, and which PDF it should name
-     * instead is that PDF's to say -- left (review of 1.4.38's fixes).
+     * shares was attached to that PDF when this one let go of it
+     * (letGoOf()).
      */
     public function reparentKeptImages(int $pdfId): void
     {

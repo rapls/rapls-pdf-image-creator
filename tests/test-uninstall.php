@@ -101,7 +101,14 @@ function get_sites($args = []) { return array_keys($GLOBALS['sites']); }
 function switch_to_blog($id) { $GLOBALS['switches'][] = $GLOBALS['blog']; $GLOBALS['blog'] = (int) $id; return true; }
 function restore_current_blog() { $GLOBALS['blog'] = array_pop($GLOBALS['switches']); return true; }
 function &site() { return $GLOBALS['sites'][$GLOBALS['blog']]; }
-function get_option($key, $default = false) { return site()['options'][$key] ?? $default; }
+function get_option($key, $default = false) {
+    // PCRE starved once this option is read (review of 1.4.40).
+    if (!empty($GLOBALS['starve_pcre_on'][$key])) {
+        ini_set('pcre.jit', '0');
+        ini_set('pcre.backtrack_limit', '1');
+    }
+    return site()['options'][$key] ?? $default;
+}
 function delete_option($key) { unset(site()['options'][$key]); return true; }
 function delete_transient($key) { unset(site()['transients'][$key]); return true; }
 function wp_cache_delete($key, $group = '') { return true; }
@@ -170,8 +177,10 @@ $GLOBALS['wpdb'] = new class {
         }
         if (false !== strpos($sql, "marker.meta_key = '_rapls_pic_is_thumbnail'")) {
             $rows = [];
+            // Only a marker of "1", when the SQL says so.
+            $markerOne = false !== strpos($sql, "marker.meta_value = '1'");
             foreach (site()['meta'] as $row) {
-                if ('_rapls_pic_is_thumbnail' === $row[1] && '1' === $row[2]) {
+                if ('_rapls_pic_is_thumbnail' === $row[1] && (!$markerOne || '1' === $row[2])) {
                     $rows[] = ['id' => (string) $row[0], 'file' => meta_value($row[0], '_wp_attached_file'), 'pdf' => meta_value($row[0], '_rapls_pic_source_pdf'), 'backup' => false !== strpos($sql, "backup.meta_key = '_wp_attachment_backup_sizes'") ? meta_value($row[0], '_wp_attachment_backup_sizes') : null];
                 }
             }
@@ -525,6 +534,50 @@ try {
     ini_set('pcre.jit', (string) $rapls_jit_was);
 }
 check('  ...a post whose numbers cannot be read: every image kept', $GLOBALS['sites'][1]['deleted'], []);
+
+// Review of 1.4.40: every widget kind, and widgets that cannot be read.
+seed_site();
+$GLOBALS['sites'][1]['options']['widget_media_gallery'] = [5 => ['ids' => [7, 71]]];
+rapls_pic_uninstall_site();
+check('an image a Gallery widget names by ID is kept', $GLOBALS['sites'][1]['deleted'], []);
+seed_site();
+$GLOBALS['sites'][1]['options']['widget_custom_html'] = [6 => ['content' => '<img src="/wp-content/uploads/2026/10/d-pdf-thumbnail-150x150.jpg">']];
+rapls_pic_uninstall_site();
+check('  ...and one a Custom HTML widget shows', $GLOBALS['sites'][1]['deleted'], []);
+seed_site();
+$GLOBALS['sites'][1]['meta'] = array_map(static function (array $row): array {
+    return (71 === $row[0] && '_wp_attached_file' === $row[1]) ? [71, '_wp_attached_file', '2026/10/d--pdf-thumbnail.jpg'] : $row;
+}, $GLOBALS['sites'][1]['meta']);
+$GLOBALS['sites'][1]['options']['widget_block'] = [2 => ['content' => '<!-- wp:cover {"url":"https://example.test/wp-content/uploads/2026/10/d\u002d\u002dpdf-thumbnail.jpg"} /-->']];
+rapls_pic_uninstall_site();
+check('  ...and one a block widget names with "--", as a block writes it', $GLOBALS['sites'][1]['deleted'], []);
+seed_site();
+$rapls_loop = ['a' => 1];
+$rapls_loop['self'] = &$rapls_loop;
+$GLOBALS['sites'][1]['options']['widget_text'] = [4 => $rapls_loop];
+rapls_pic_uninstall_site();
+unset($rapls_loop);
+check('widgets that cannot be read: every image kept', $GLOBALS['sites'][1]['deleted'], []);
+seed_site();
+$GLOBALS['sites'][1]['options']['widget_media_gallery'] = [5 => ['ids' => [7]]];
+$rapls_limit_was = ini_get('pcre.backtrack_limit');
+$rapls_jit_was = ini_get('pcre.jit');
+$GLOBALS['starve_pcre_on'] = ['widget_media_gallery' => true];
+try {
+    rapls_pic_uninstall_site();
+} finally {
+    $GLOBALS['starve_pcre_on'] = [];
+    ini_set('pcre.backtrack_limit', (string) $rapls_limit_was);
+    ini_set('pcre.jit', (string) $rapls_jit_was);
+}
+check('  ...widgets whose numbers cannot be read: every image kept', $GLOBALS['sites'][1]['deleted'], []);
+// Review of 1.4.40: only a marker of "1" is this plugin's.
+seed_site();
+$GLOBALS['sites'][1]['meta'][] = [81, '_rapls_pic_is_thumbnail', 'yes'];
+$GLOBALS['sites'][1]['meta'][] = [81, '_wp_attached_file', '2026/10/e-other.jpg'];
+$GLOBALS['sites'][1]['attachments'][] = 81;
+rapls_pic_uninstall_site();
+check('an image marked with anything but "1" is not deleted', $GLOBALS['sites'][1]['deleted'], [71]);
 
 echo "\n$pass passed, $fail failed\n";
 exit($fail ? 1 : 0);

@@ -442,9 +442,9 @@ final class Admin
             case 'shared':
                 return __('The previous thumbnail is also another PDF\'s thumbnail (a translated copy\'s), so it was kept for that PDF.', 'rapls-pdf-image-creator');
             case 'unknown':
-                return __('Whether a post still shows the previous thumbnail could not be checked, so it was kept in the Media Library as an ordinary image.', 'rapls-pdf-image-creator');
+                return __('Whether a post or a widget still shows the previous thumbnail could not be checked, so it was kept in the Media Library as an ordinary image.', 'rapls-pdf-image-creator');
             default:
-                return __('A post may still show the previous thumbnail, so it was kept in the Media Library as an ordinary image. If one does, it still shows the old picture; replace it there to show the new one.', 'rapls-pdf-image-creator');
+                return __('A post or a widget may still show the previous thumbnail, so it was kept in the Media Library as an ordinary image. If one does, it still shows the old picture; replace it there to show the new one.', 'rapls-pdf-image-creator');
         }
     }
 

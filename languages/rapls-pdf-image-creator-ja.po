@@ -4,7 +4,7 @@
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: Rapls PDF Image Creator 1.4.40\n"
+"Project-Id-Version: Rapls PDF Image Creator 1.4.41\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-14 12:00+0900\n"
 "PO-Revision-Date: 2026-10-14 12:00+0900\n"
@@ -151,8 +151,8 @@ msgstr ""
 "チェックすると、プラグイン削除後も生成された画像ファイルは通常の画像ファイル"
 "として扱われます。"
 
-msgid "Images a post still shows, as its featured image or in its content or excerpt, are kept either way, a post in the trash included. A post whose featured image was a PDF is given that PDF's image."
-msgstr "投稿がまだ表示している画像 (アイキャッチ画像や、本文または抜粋の中の画像) は、どちらの場合も残します。ゴミ箱の投稿も含めます。PDF をアイキャッチ画像にしていた投稿には、その PDF の画像を設定します。"
+msgid "Images a post still shows, as its featured image or in its content or excerpt, and images a widget shows, are kept either way, a post in the trash included. A post whose featured image was a PDF is given that PDF's image."
+msgstr "投稿がまだ表示している画像 (アイキャッチ画像や、本文または抜粋の中の画像) と、ウィジェットが表示している画像は、どちらの場合も残します。ゴミ箱の投稿も含めます。PDF をアイキャッチ画像にしていた投稿には、その PDF の画像を設定します。"
 
 msgid "Insert Settings"
 msgstr "挿入設定"
@@ -468,8 +468,8 @@ msgstr "PDF ファイルではありません。"
 msgid "Thumbnail generated."
 msgstr "サムネイルを生成しました。"
 
-msgid "A post may still show the previous thumbnail, so it was kept in the Media Library as an ordinary image. If one does, it still shows the old picture; replace it there to show the new one."
-msgstr "前のサムネイルを表示している投稿があるかもしれないので、通常の画像としてメディアライブラリに残しました。表示している投稿があれば、前の画像が表示されたままです。新しい画像にするには、その投稿で差し替えてください。"
+msgid "A post or a widget may still show the previous thumbnail, so it was kept in the Media Library as an ordinary image. If one does, it still shows the old picture; replace it there to show the new one."
+msgstr "前のサムネイルを表示している投稿かウィジェットがあるかもしれないので、通常の画像としてメディアライブラリに残しました。表示しているものがあれば、前の画像が表示されたままです。新しい画像にするには、そこで差し替えてください。"
 
 #. translators: 1: the first sentence, 2: the next.
 msgid "%1$s %2$s"
@@ -481,8 +481,8 @@ msgstr "前のサムネイルは投稿のアイキャッチ画像か、ほかの
 msgid "The previous thumbnail is also another PDF's thumbnail (a translated copy's), so it was kept for that PDF."
 msgstr "前のサムネイルは別の PDF (翻訳されたコピー) のサムネイルでもあるため、その PDF 用に残しました。"
 
-msgid "Whether a post still shows the previous thumbnail could not be checked, so it was kept in the Media Library as an ordinary image."
-msgstr "投稿がまだ前のサムネイルを表示しているかを確認できなかったため、通常の画像としてメディアライブラリに残しました。"
+msgid "Whether a post or a widget still shows the previous thumbnail could not be checked, so it was kept in the Media Library as an ordinary image."
+msgstr "投稿かウィジェットがまだ前のサムネイルを表示しているかを確認できなかったため、通常の画像としてメディアライブラリに残しました。"
 
 msgid "Failed to generate thumbnail."
 msgstr "サムネイルの生成に失敗しました。"
@@ -719,25 +719,26 @@ msgstr ""
 msgid "The page was too large to draw."
 msgstr "ページが大きすぎて描画できませんでした。"
 
-#. translators: 1: the lowest resolution, in dpi; 2: ImageMagick's own message
+#. translators: 1: the resolution the page was measured at, in dpi; 2: ImageMagick's own message
 #: includes/Engine/ImagickEngine.php
 #, php-format
-msgid "This page could not be measured at %1$s dpi, the lowest resolution used, and this PDF holds a page too large to measure it more finely. The page may not be in this PDF, or it may be too thin to draw. (%2$s)"
-msgstr "このページは、使う中で最も低い解像度の %1$s dpi で大きさを測れませんでした。この PDF には、それより細かく測れないほど大きなページがあります。このページがこの PDF に無いか、細すぎて描画できない可能性があります。(%2$s)"
+msgid "This page could not be measured at %1$s dpi, and the size of this PDF's largest page could not be read from the file, so it is not measured more finely. The page may not be in this PDF, it may be too thin to draw, or it could not be read: %2$s"
+msgstr "このページは %1$s dpi で大きさを測れませんでした。この PDF の最も大きなページの大きさをファイルから読み取れないため、それより細かくは測りません。このページがこの PDF に無いか、細すぎて描画できないか、読み込めなかった可能性があります: %2$s"
+
+#. translators: 1: the resolution the page was measured at, in dpi; 2: ImageMagick's own message
+#: includes/Engine/ImagickEngine.php
+#, php-format
+msgid "This page could not be measured at %1$s dpi, and this PDF holds a page too large to measure it more finely. The page may not be in this PDF, it may be too thin to draw, or it could not be read: %2$s"
+msgstr "このページは %1$s dpi で大きさを測れませんでした。この PDF には、それより細かく測れないほど大きなページがあります。このページがこの PDF に無いか、細すぎて描画できないか、読み込めなかった可能性があります: %2$s"
 
 msgid "This page is too large to draw, even at the lowest resolution."
 msgstr "このページは大きすぎるため、最も低い解像度でも描画できません。"
 
-msgid ""
-"Lower the resolution on the Settings tab and generate again: large-format "
-"pages at a high DPI can run to hundreds of millions of pixels. If the "
-"message says the page is too large even at the lowest resolution, no "
-"setting will help; that page cannot be made into a thumbnail."
-msgstr ""
-"「設定」タブで解像度を下げて、もう一度生成してください。大判のページを高い "
-"DPI で描画すると、数億ピクセルに達することがあります。メッセージに最も低い解"
-"像度でも描画できないとある場合は、どの設定でも解決しません。そのページはサム"
-"ネイルにできません。"
+msgid "This PDF holds a page too large to draw, even at the lowest resolution, so none of its pages is drawn."
+msgstr "この PDF には、最も低い解像度でも描画できないほど大きなページがあるため、どのページも描画しません。"
+
+msgid "Lower the resolution on the Settings tab and generate again: large-format pages at a high DPI can run to hundreds of millions of pixels. If the message says the page is too large even at the lowest resolution, no setting will help; that page cannot be made into a thumbnail. If it says the PDF holds such a page, none of its pages can, whichever page is chosen."
+msgstr "「設定」タブで解像度を下げて、もう一度生成してください。大判のページを高い DPI で描画すると、数億ピクセルに達することがあります。メッセージに最も低い解像度でも描画できないとある場合は、どの設定でも解決しません。そのページはサムネイルにできません。PDF にそのようなページがあるとある場合は、どのページを選んでも、その PDF のページはサムネイルにできません。"
 
 msgid "The image could not be written to the uploads folder."
 msgstr "アップロードフォルダーに画像を書き出せませんでした。"
@@ -932,8 +933,8 @@ msgstr "このサーバーでは WebP を使えません。5.8より前の WordP
 msgid "Where WordPress shows a file-type icon for a PDF, the generated thumbnail is shown instead. The Media Library's grid and list show a PDF's thumbnail whether or not this is on."
 msgstr "WordPress が PDF にファイル形式のアイコンを表示する場所で、代わりに生成したサムネイルを表示します。メディアライブラリのグリッドとリストでは、この設定に関係なく PDF のサムネイルを表示します。"
 
-msgid "This also decides what happens to the image when its PDF is deleted. Checked: the image is deleted with the PDF, unless something else uses it. Another PDF that shares it keeps it as its thumbnail; one a post uses as its featured image, or a post's content or excerpt shows, is kept as an ordinary image -- a post in the trash included, as it can be restored. Only featured images, post content and excerpts are checked, not widgets or other settings. Unchecked: the image is kept as an ordinary image."
-msgstr "PDF を削除したときに画像をどうするかも、この設定で決まります。オンにすると、画像も PDF と一緒に削除します。ただし、ほかのものが使っている画像は残します。同じ画像を使っているほかの PDF があれば、その PDF のサムネイルとして残します。投稿がアイキャッチ画像として使っている画像や、投稿の本文または抜粋に表示されている画像は、普通の画像として残します。ゴミ箱の投稿も、元に戻せるので含めます。確かめるのはアイキャッチ画像と投稿の本文と抜粋だけで、ウィジェットやほかの設定は確かめません。オフにすると、画像は普通の画像として残ります。"
+msgid "This also decides what happens to the image when its PDF is deleted. Checked: the image is deleted with the PDF, unless something else uses it. Another PDF that shares it keeps it as its thumbnail; one a post uses as its featured image, or a post's content or excerpt or a widget shows, is kept as an ordinary image -- a post in the trash included, as it can be restored. Featured images, post content and excerpts, and widgets, are checked; other settings are not. Unchecked: the image is kept -- as the thumbnail of another PDF that shares it, otherwise as an ordinary image."
+msgstr "PDF を削除したときに画像をどうするかも、この設定で決まります。オンにすると、画像も PDF と一緒に削除します。ただし、ほかのものが使っている画像は残します。同じ画像を使っているほかの PDF があれば、その PDF のサムネイルとして残します。投稿がアイキャッチ画像として使っている画像や、投稿の本文または抜粋、ウィジェットに表示されている画像は、普通の画像として残します。ゴミ箱の投稿も、元に戻せるので含めます。確かめるのはアイキャッチ画像、投稿の本文と抜粋、ウィジェットで、ほかの設定は確かめません。オフにすると、画像は残します。同じ画像を使っているほかの PDF があればそのサムネイルとして、なければ普通の画像として残ります。"
 
 msgid "These settings are used by \"Insert into post\" in the classic editor's Add Media window, where Size and Link To start at them for a PDF with a thumbnail; what is chosen there is used instead. The block editor does not use them."
 msgstr "これらの設定は、クラシックエディターの「メディアを追加」画面の「投稿に挿入」で使われます。サムネイルのある PDF では、画面のサイズとリンク先が最初にこの設定になり、画面で選んだものがあればそちらを使います。ブロックエディターでは使われません。"

@@ -221,7 +221,7 @@ putenv('GS_OPTIONS');
 // Review after 1.4.32: a request that dies inside the retry's read --
 // max_execution_time -- runs no finally. The switch is still taken out of the
 // worker's environment at shutdown, and the site's own value put back.
-$dying = sys_get_temp_dir() . '/rapls-pic-gs-dies-' . getmypid() . '.php';
+$dying = rapls_pic_test_tmp() . '/rapls-pic-gs-dies-' . getmypid() . '.php';
 file_put_contents($dying, '<?php require ' . var_export(__DIR__ . '/harness.php', true) . ';'
     . ' require ' . var_export(RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/EngineInterface.php', true) . ';'
     . ' require ' . var_export(RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/ConversionResult.php', true) . ';'
@@ -296,7 +296,7 @@ foreach (['-dSAFER -dNOTRANSPARENCY', '-q -dNOTRANSPARENCY', '-DSAFER -q -dNOTRA
 // Review after 1.4.36: one unsafe switch is dropped and the rest kept. Refusing the whole value turned the
 // retry off for a site returning "-dNOTRANSPARENCY -dMaxBitmap=500000000", which 1.4.20 took, and its blank
 // pages stayed blank without a word. Said in the error log, once per value.
-$dropLog = tempnam(sys_get_temp_dir(), 'gsdrop');
+$dropLog = tempnam(rapls_pic_test_tmp(), 'gsdrop');
 $dropLogWas = ini_set('error_log', $dropLog);
 foreach ([['-dNOTRANSPARENCY -dMaxBitmap=500000000', '-dNOTRANSPARENCY'], ['-dNOTRANSPARENCY -dDELAYSAFER -q', '-dNOTRANSPARENCY -q'], ['-dNOTRANSPARENCY -sOutputFile=/srv/secret/x', '-dNOTRANSPARENCY'], ['-dNOTRANSPARENCY -I /home/u/fonts -c quit', '-dNOTRANSPARENCY']] as [$flags, $used]) {
     Imagick::$gsOptionsSeen = [];
@@ -323,7 +323,7 @@ foreach (["-dNOTRANSPARENCY -sFoo=a\"b", "-dNOTRANSPARENCY\t-dTextAlphaBits=4", 
     check('  ...a character no switch is made of: no retry, ' . json_encode($flags), [priv($engine, $ref, 'readWithGhostscriptOptions', '/tmp/none.pdf', 0, 150), Imagick::$gsOptionsSeen], [null, []]);
 }
 // Every switch left out is named, past a double space among them.
-$dropLog = tempnam(sys_get_temp_dir(), 'gsdrop');
+$dropLog = tempnam(rapls_pic_test_tmp(), 'gsdrop');
 $dropLogWas = ini_set('error_log', $dropLog);
 add_filter('rapls_pdf_image_creator_ghostscript_options', function () { return '-dMaxBitmap=1  -sFONTPATH=/x -dNOTRANSPARENCY'; });
 priv($engine, $ref, 'readWithGhostscriptOptions', '/tmp/none.pdf', 0, 150);
@@ -469,7 +469,7 @@ $missing = priv($engine, $ref, 'statusFromProbe', ['ok' => false, 'error' => "Fa
 check('Ghostscript exiting 1 in the check is "unable to check", not "no PDF support"; not found still is', [$exited['code'], $missing['code']], ['error', 'pdf_unsupported']);
 // putenv on the host's disable_functions turns the retry off, asked in a
 // PHP that has it there.
-$child = sys_get_temp_dir() . '/rapls-pic-canset-' . getmypid() . '.php';
+$child = rapls_pic_test_tmp() . '/rapls-pic-canset-' . getmypid() . '.php';
 file_put_contents($child, '<?php define("ABSPATH", "/"); function __($s, $d = null) { return $s; } require ' . var_export(RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/EngineInterface.php', true) . '; require ' . var_export(RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/ColorProfile.php', true) . '; require ' . var_export(RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/ImagickEngine.php', true) . '; $m = new ReflectionMethod(Rapls\\PDFImageCreator\\Engine\\ImagickEngine::class, "canSetEnvironment"); if (PHP_VERSION_ID < 80100) { $m->setAccessible(true); } echo $m->invoke(new Rapls\\PDFImageCreator\\Engine\\ImagickEngine()) ? "yes" : "no";');
 $asked = [];
 foreach (['putenv', 'exec', 'getenv'] as $list) {
@@ -479,6 +479,16 @@ foreach (['putenv', 'exec', 'getenv'] as $list) {
 }
 @unlink($child);
 check('putenv or getenv disabled on the host: the retry is not tried; otherwise it is', $asked, ['putenv' => 'no', 'exec' => 'yes', 'getenv' => 'no']);
+// PHP 7.4's case, where a disabled function still exists: the list decides.
+$settable = $ref->getMethod('environmentSettable');
+if (PHP_VERSION_ID < 80100) { $settable->setAccessible(true); }
+check('  ...on PHP 7.4, where both exist though disabled: putenv or getenv on the list turns it off', [
+    $settable->invoke(null, true, true, 'getenv'),
+    $settable->invoke(null, true, true, 'exec, putenv'),
+    $settable->invoke(null, true, true, 'exec'),
+    $settable->invoke(null, true, false, ''),
+    $settable->invoke(null, false, true, ''),
+], [false, false, true, false, false]);
 
 echo "\n--- Review after 1.4.33: what was not pinned ---\n";
 // The device note names bmpsep8 as the one ImageMagick cannot read back, and
