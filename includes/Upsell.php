@@ -116,7 +116,9 @@ final class Upsell
             </ul>
             <p>
                 <?php esc_html_e('One-time purchase, no subscription. 14-day money-back guarantee.', 'rapls-pdf-image-creator'); ?>
-                <a href="<?php echo esc_url(self::url('b')); ?>" target="_blank" rel="noopener"><?php esc_html_e('About the add-on', 'rapls-pdf-image-creator'); ?></a>
+            </p>
+            <p>
+                <a class="button button-secondary" href="<?php echo esc_url(self::url('b')); ?>" target="_blank" rel="noopener"><?php esc_html_e('About the add-on', 'rapls-pdf-image-creator'); ?></a>
             </p>
         </div>
         <?php
@@ -165,9 +167,11 @@ final class Upsell
     }
 
     /**
-     * E: on the Status tab, where this server renders PDFs, one short line
+     * E: on the Status tab, where this server renders PDFs, a small box
      *
-     * Added at the user's request (2026-10-15): a fifth place, light. Shown
+     * Added at the user's request (2026-10-15): a fifth place, a box with a
+     * heading and one button, made easier to see at the user's request the
+     * same day. Shown
      * only where rendering works, so it never meets C, and says what the
      * add-on adds to a working site, not that anything here is missing.
      */
@@ -177,10 +181,15 @@ final class Upsell
             return;
         }
         ?>
-        <p class="description rapls-pic-upsell-note">
-            <?php esc_html_e('This server renders PDFs, and everything here works as it is. An optional add-on adds cropping, a page and a crop for each PDF, a background queue, and replacing a PDF in place.', 'rapls-pdf-image-creator'); ?>
-            <a href="<?php echo esc_url(self::url('e')); ?>" target="_blank" rel="noopener"><?php esc_html_e('About the add-on', 'rapls-pdf-image-creator'); ?></a>
-        </p>
+        <div class="rapls-pic-upsell-note">
+            <h3><?php esc_html_e('Rapls PDF Image Creator Pro, an optional add-on', 'rapls-pdf-image-creator'); ?></h3>
+            <p>
+                <?php esc_html_e('This server renders PDFs, and everything here works as it is. An optional add-on adds cropping, a page and a crop for each PDF, a background queue, and replacing a PDF in place.', 'rapls-pdf-image-creator'); ?>
+            </p>
+            <p>
+                <a class="button button-secondary" href="<?php echo esc_url(self::url('e')); ?>" target="_blank" rel="noopener"><?php esc_html_e('About the add-on', 'rapls-pdf-image-creator'); ?></a>
+            </p>
+        </div>
         <?php
     }
 

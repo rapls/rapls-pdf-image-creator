@@ -237,7 +237,7 @@ final class Plugin
              * password only to someone who may edit it. Pages made with a
              * post's ID came out empty after 1.4.32 (review after 1.4.37).
              *
-             * @since 1.4.44
+             * @since 1.4.45
              *
              * @param bool $any Whether to.
              * @param int  $id  The ID the shortcode was given.

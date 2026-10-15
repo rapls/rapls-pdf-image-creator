@@ -63,7 +63,7 @@ final class ImagickEngine implements EngineInterface
     /**
      * Get the colour profile resolver
      *
-     * @deprecated 1.4.44 Kept for code that reached it through
+     * @deprecated 1.4.45 Kept for code that reached it through
      *             Generator::getEngines() or the
      *             rapls_pdf_image_creator_engines filter: it was public up to
      *             1.4.20, and taking a public method away is a fatal error in
@@ -1664,7 +1664,7 @@ final class ImagickEngine implements EngineInterface
          * cut down to the Settings tab's maximum size afterwards, so this
          * costs nothing a visitor sees unless the page is cropped first.
          *
-         * @since 1.4.44
+         * @since 1.4.45
          *
          * @param int                  $pixels  Pixels. Default 40,000,000.
          * @param string               $pdfPath Absolute path to the PDF.

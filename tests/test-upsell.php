@@ -94,7 +94,7 @@ check('  ...the add-on is not sold where this server forbids starting programs (
 
 echo "\n=== E: one line on the Status tab where this server renders PDFs ===\n";
 $note = $out([Upsell::class, 'renderStatusNote']);
-check('a short line that says everything here works, campaign e', [false !== strpos($note, 'everything here works as it is'), false !== strpos($note, 'utm_campaign=e'), substr_count($note, '<p')], [true, true, 1]);
+check('a short line that says everything here works, campaign e', [false !== strpos($note, 'everything here works as it is'), false !== strpos($note, 'utm_campaign=e'), false !== strpos($note, '<h3>')], [true, true, true]);
 
 echo "\n=== D: once, under the page-number field ===\n";
 $GLOBALS['user_meta'] = [];

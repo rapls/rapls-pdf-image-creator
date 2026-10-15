@@ -364,8 +364,9 @@
 .rapls-pic-upsell-card {
     margin-top: 30px;
     padding: 16px 20px;
-    background: #f6f7f7;
-    border: 1px solid #dcdcde;
+    background: #f0f6fc;
+    border: 1px solid #c5d9ed;
+    border-left: 4px solid #2271b1;
     border-radius: 4px;
     max-width: 760px;
 }
@@ -393,5 +394,19 @@
 }
 
 .rapls-pic-upsell-note {
-    margin-top: 20px;
+    margin-top: 24px;
+    padding: 14px 18px;
+    background: #f0f6fc;
+    border: 1px solid #c5d9ed;
+    border-left: 4px solid #2271b1;
+    border-radius: 4px;
+    max-width: 760px;
+}
+
+.rapls-pic-upsell-note h3 {
+    margin: 0 0 6px;
+}
+
+.rapls-pic-upsell-note p {
+    margin: 6px 0;
 }
