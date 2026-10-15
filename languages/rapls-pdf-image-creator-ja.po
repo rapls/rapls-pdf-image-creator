@@ -4,7 +4,7 @@
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: Rapls PDF Image Creator 1.4.42\n"
+"Project-Id-Version: Rapls PDF Image Creator 1.4.43\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-14 12:00+0900\n"
 "PO-Revision-Date: 2026-10-14 12:00+0900\n"

@@ -63,7 +63,7 @@ final class ImagickEngine implements EngineInterface
     /**
      * Get the colour profile resolver
      *
-     * @deprecated 1.4.42 Kept for code that reached it through
+     * @deprecated 1.4.43 Kept for code that reached it through
      *             Generator::getEngines() or the
      *             rapls_pdf_image_creator_engines filter: it was public up to
      *             1.4.20, and taking a public method away is a fatal error in
@@ -1664,7 +1664,7 @@ final class ImagickEngine implements EngineInterface
          * cut down to the Settings tab's maximum size afterwards, so this
          * costs nothing a visitor sees unless the page is cropped first.
          *
-         * @since 1.4.42
+         * @since 1.4.43
          *
          * @param int                  $pixels  Pixels. Default 40,000,000.
          * @param string               $pdfPath Absolute path to the PDF.
@@ -2632,7 +2632,13 @@ final class ImagickEngine implements EngineInterface
             // drawn again.
             $images = $one->getNumberImages();
 
-            if ($images > 1 && $this->measureNet && $images !== $this->measureNetPages) {
+            // Only where the file states a page count the images contradict:
+            // with no count known -- a page tree in object streams, or
+            // PostScript -- an ordinary document on a build that ignores
+            // "[n]" was refused for good as a portfolio, and PostScript was
+            // measured again for nothing (review of 1.4.42). The largest
+            // image bounds the read below either way.
+            if ($images > 1 && $this->measureNet && null !== $this->measureNetPages && $images !== $this->measureNetPages) {
                 // Said as a portfolio only of a file that is a PDF: anything
                 // else Ghostscript draws -- PostScript, EPS -- failed as a
                 // read fails (review of 1.4.41's fixes).
@@ -2646,14 +2652,18 @@ final class ImagickEngine implements EngineInterface
             // a portfolio its embedded files -- so the resolution is bounded
             // by the largest, not by the first (review of 1.4.41's fixes:
             // image 0 alone let the others be drawn at a density sized for
-            // it).
+            // it). Stacked, not overlaid: the widest by the heights added
+            // up, so the area bounded is all of them together -- the largest
+            // alone let N images each up to the limit be drawn, N times the
+            // limit, with nothing bounding N (review of 1.4.42). One image
+            // is as before.
             $width = 0;
             $height = 0;
 
             for ($i = 0, $count = max(1, (int) $images); $i < $count; $i++) {
                 $one->setIteratorIndex($i);
                 $width = max($width, (int) $one->getImageWidth());
-                $height = max($height, (int) $one->getImageHeight());
+                $height += (int) $one->getImageHeight();
             }
 
             if ($count > 1) {

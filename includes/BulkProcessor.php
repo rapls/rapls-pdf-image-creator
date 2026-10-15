@@ -613,7 +613,7 @@ final class BulkProcessor
      * not removed in a release. Nothing here calls it or hooks it; the Bulk
      * Generate tab reads the library a page at a time instead.
      *
-     * @deprecated 1.4.42 Read nextToGenerate() and statsPage() instead.
+     * @deprecated 1.4.43 Read nextToGenerate() and statsPage() instead.
      *
      * @param bool $includeExisting Include PDFs that already have thumbnails
      * @return array<array<string, mixed>>
@@ -652,7 +652,7 @@ final class BulkProcessor
      *
      * Kept as it was in 1.4.20, for the same reason as getPDFs().
      *
-     * @deprecated 1.4.42 Read statsPage() instead.
+     * @deprecated 1.4.43 Read statsPage() instead.
      *
      * @return array<string, int>
      */

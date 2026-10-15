@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.1
-Stable tag: 1.4.42
+Stable tag: 1.4.43
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -193,7 +193,7 @@ With "Hide Generated Images" on, the PDF's thumbnail is deleted with it, unless 
 
 = Why can't I pick a PDF in my page builder's or field plugin's image picker? =
 
-Since 1.4.42, PDFs with a thumbnail are offered only in WordPress's own image pickers: the image, gallery and featured image blocks, and the classic editor's featured image. An image picker of another plugin may take only images, and a PDF handed to it broke there. If yours takes them, as every picker did up to 1.4.20, turn it back on: `add_filter( 'rapls_pdf_image_creator_pdfs_in_every_image_picker', '__return_true' );`.
+Since 1.4.43, PDFs with a thumbnail are offered only in WordPress's own image pickers: the image, gallery and featured image blocks, and the classic editor's featured image. An image picker of another plugin may take only images, and a PDF handed to it broke there. If yours takes them, as every picker did up to 1.4.20, turn it back on: `add_filter( 'rapls_pdf_image_creator_pdfs_in_every_image_picker', '__return_true' );`.
 
 = Can I use a different page for the thumbnail? =
 
@@ -339,7 +339,7 @@ No other profile is bundled. CMYK profiles are read from the host when one is
 present and are never redistributed.
 
 == Changelog ==
-= 1.4.42 =
+= 1.4.43 =
 Choosing a PDF as an image
 * Changed: PDFs with a thumbnail are offered in WordPress's own image pickers only -- the image, gallery and Post Featured Image blocks, the block editor's featured image, and the classic editor's "Set featured image" and the featured image view of "Add Media". Other plugins' image pickers, core pickers that also take other media such as Cover and Media & Text, and the classic editor's "Create Gallery" (whose [gallery] shortcode shows images only) are not given PDFs. The filter rapls_pdf_image_creator_pdfs_in_every_image_picker, returning true, offers them in every picker that asks for images, as up to 1.4.20
 * Fixed: a PDF in a gallery block, or chosen at a size its thumbnail has no file for, shows the thumbnail instead of a broken image
@@ -656,7 +656,7 @@ Keeping and deleting images
 
 == Upgrade Notice ==
 
-= 1.4.42 =
+= 1.4.43 =
 PDFs appear only in core's image pickers, shortcodes take a PDF's ID only, and a dropped PDF becomes a File block; two filters restore the old pickers and IDs (see FAQ). Bulk Generate handles large libraries, huge pages cannot exhaust the server, and regenerating keeps images posts show.
 
 = 1.4.20 =

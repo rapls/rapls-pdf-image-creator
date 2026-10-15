@@ -1417,12 +1417,19 @@ Imagick::$imagesPerPage = 2;
 [$r, $log] = run(['format' => 'jpeg']);
 Imagick::$imagesPerPage = 1;
 check('  ...a readable PDF read as every page by a build that ignores [n]: measured from the first image, drawn', [$readsOf($log), $r->isSuccess()], [2, true]);
-// A file whose bytes cannot be read, more than one image back, its page
-// count unknown or other than the images: not drawn, said as a portfolio.
-$pdf = $boxFile("<< /Type /Page /MediaBox [0 0 595 842] /X { >>");
+// A file whose bytes cannot be read, more than one image back, against a
+// page count the file states: not drawn, said as a portfolio.
+$pdf = $boxFile("1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n2 0 obj << /Type /Pages /Kids [3 0 R 4 0 R 5 0 R] /Count 3 >> endobj\n<< /Type /Page /MediaBox [0 0 595 842] /X { >>");
 Imagick::$imagesPerPage = 2;
 [$r, $log] = run(['format' => 'jpeg']);
-check('  ...a measuring read that gives more than one image for one page, the bytes unreadable: not drawn, said as a portfolio', [$readsOf($log), $r->getCode(), $r->getError()], [1, 'pdf_portfolio', $portfolioSays]);
+check('  ...a measuring read that gives more than one image for one page, the bytes unreadable, the count other: not drawn, said as a portfolio', [\Rapls\PDFImageCreator\Engine\ImagickEngine::pagesFromBytes($pdf), $readsOf($log), $r->getCode(), $r->getError()], [3, 1, 'pdf_portfolio', $portfolioSays]);
+// ...with no page count to hold the images against (a page tree in object
+// streams): an ordinary document on a build that ignores "[n]" was refused
+// for good. Drawn, bounded by the largest image (review of 1.4.42).
+$pdf = $boxFile("<< /Type /Page /MediaBox [0 0 595 842] /X { >>");
+[$r, $log] = run(['format' => 'jpeg']);
+check('  ...the bytes unreadable, no page count known: not called a portfolio, drawn', [\Rapls\PDFImageCreator\Engine\ImagickEngine::pagesFromBytes($pdf), $r->getCode(), $r->isSuccess()], [null, '', true]);
+Imagick::$imagesPerPage = 2;
 // ...as many images as the file says it has pages: such a build, the first
 // image taken.
 $pdf = $boxFile("1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n2 0 obj << /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >> endobj\n<< /Type /Page /MediaBox [0 0 595 842] /X { >>");
@@ -1460,17 +1467,23 @@ boxes([595, 842]);
 [$r, $log] = run(['format' => 'jpeg']);
 $oneImage = [$resolutionRead($log), $r->isSuccess()];
 $page(null);
-check('  ...more than one image back: the resolution fits the largest of them, readable or not, first or last; one image, as before', [$unreadableLargest, $readableLargest, $largestFirst, $oneImage], [['setResolution(22.76)', true], ['setResolution(22.75)', true], ['setResolution(22.75)', true], ['setResolution(150)', true]]);
+// All of them together, not the largest alone: the read draws every one, so
+// the area bounded is their sum (review of 1.4.42: the largest alone let N
+// images each up to the limit be drawn).
+check('  ...more than one image back: the resolution fits all of them together, readable or not, first or last; one image, as before', [$unreadableLargest, $readableLargest, $largestFirst, $oneImage], [['setResolution(22.29)', true], ['setResolution(22.29)', true], ['setResolution(22.29)', true], ['setResolution(150)', true]]);
 // A portfolio is so tomorrow too: a queue does not retry it (review of
 // 1.4.41's fixes: it was a render error, retried).
 check('  ...a portfolio is a permanent failure, in the vocabulary, described', [\Rapls\PDFImageCreator\FailureCode::isPermanent(\Rapls\PDFImageCreator\FailureCode::PDF_PORTFOLIO), in_array(\Rapls\PDFImageCreator\FailureCode::PDF_PORTFOLIO, \Rapls\PDFImageCreator\FailureCode::all(), true), "" !== \Rapls\PDFImageCreator\FailureCode::describe(\Rapls\PDFImageCreator\FailureCode::PDF_PORTFOLIO)["label"]], [true, true, true]);
 // ...and more than one image from a file that is no PDF -- PostScript --
-// is a read that failed, not a portfolio (review of 1.4.41's fixes).
+// is not a portfolio (review of 1.4.41's fixes).
 file_put_contents($pdf, "%!PS-Adobe-3.0\n%%BoundingBox: 0 0 595 842\nshowpage\n");
 Imagick::$imagesPerPage = 2;
 [$r, $log] = run(['format' => 'jpeg']);
 Imagick::$imagesPerPage = 1;
-check('  ...more than one image from PostScript: a failed read, not said as a portfolio', [$r->isSuccess(), $r->getCode(), false === stripos((string) $r->getError(), 'portfolio')], [false, 'render_error', true]);
+// ...and, holding no page count, measured once and drawn, bounded by the
+// largest image: it was refused and measured again at 36 dpi for nothing
+// (review of 1.4.42).
+check('  ...more than one image from PostScript: not said as a portfolio, measured once, drawn', [$r->isSuccess(), $r->getCode(), false === stripos((string) $r->getError(), 'portfolio'), $readsOf($log)], [true, '', true, 2]);
 // The same engine then converting an ordinary page says nothing of a portfolio.
 $engineAgain = new ImagickEngine();
 $pdf = $boxFile("<< /Collection << >> >>\n<< /Type /Page /MediaBox [0 0 595 842] >>");

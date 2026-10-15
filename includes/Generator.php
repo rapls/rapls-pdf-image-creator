@@ -713,7 +713,7 @@ final class Generator
      * attempt ended in an exception before it came to anything.
      *
      * @since 1.4.17
-     * @since 1.4.42 kept_previous.
+     * @since 1.4.43 kept_previous.
      * @return array{ok: bool, thumbnail_id: int|null, code: string, message: string, kept_previous: int|null}|null
      */
     public function outcomeFor(int $pdfId): ?array
@@ -741,7 +741,7 @@ final class Generator
      * whatever the reason, also when a featured image, another PDF or a
      * lookup that did not answer had kept it (review after 1.4.38).
      *
-     * @since 1.4.42
+     * @since 1.4.43
      */
     public function keptReasonFor(int $pdfId): ?string
     {

@@ -356,7 +356,7 @@ final class Inserter
      * a public method is not removed in a release. Nothing here hooks it any
      * more (review after 1.4.31: no script read either).
      *
-     * @deprecated 1.4.42 Nothing replaces it; "Insert into post" builds the
+     * @deprecated 1.4.43 Nothing replaces it; "Insert into post" builds the
      *             HTML when it is pressed.
      *
      * @param mixed $response Attachment response data
