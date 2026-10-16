@@ -90,7 +90,12 @@ check('three options at once, the add-on third, with why this plugin cannot', [
 // Whether this server forbids starting programs is read from ini_get(); the
 // test process cannot change disable_functions, so the reading is tested
 // on its own terms: both must be listed.
-check('  ...the add-on is not sold where this server forbids starting programs (reading the setting)', Upsell::programsBlocked() === (in_array('exec', array_map('trim', explode(',', strtolower((string) ini_get('disable_functions')))), true) && in_array('proc_open', array_map('trim', explode(',', strtolower((string) ini_get('disable_functions')))), true)), true);
+check('  ...the add-on is not sold where this server forbids starting programs (reading the setting)', is_bool(Upsell::programsBlocked()), true);
+// disable_functions takes commas, spaces or both (review of 1.4.45).
+$split = static function (string $list): bool { return Upsell::blocksPrograms($list); };
+check('  ...both named, by commas, spaces or both; one alone is not enough', [$split('exec,proc_open'), $split('exec proc_open'), $split(' EXEC , proc_open system'), $split('exec'), $split('')], [true, true, true, false, false]);
+$noAction = $out(static function () { Upsell::renderStatusOptions(false); });
+check('  ...with no "What to do" above, option 1 does not point to it', [false !== strpos($noAction, 'What to do'), false !== strpos($noAction, 'install Ghostscript'), false !== strpos($options, 'What to do')], [false, true, true]);
 
 echo "\n=== E: one line on the Status tab where this server renders PDFs ===\n";
 $note = $out([Upsell::class, 'renderStatusNote']);

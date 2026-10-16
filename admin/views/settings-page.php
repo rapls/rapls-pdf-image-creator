@@ -534,7 +534,7 @@ if (!defined('ABSPATH')) {
                 </a>
             </p>
         </div>
-        <?php \Rapls\PDFImageCreator\Upsell::renderStatusOptions(); ?>
+        <?php \Rapls\PDFImageCreator\Upsell::renderStatusOptions('' !== $rapls_pic_availability['action']); ?>
         <?php endif; ?>
 
         <?php

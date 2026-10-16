@@ -4,7 +4,7 @@
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: Rapls PDF Image Creator 1.4.45\n"
+"Project-Id-Version: Rapls PDF Image Creator 1.4.46\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-14 12:00+0900\n"
 "PO-Revision-Date: 2026-10-14 12:00+0900\n"
@@ -1142,3 +1142,7 @@ msgstr "今後は表示しない"
 #: includes/Upsell.php
 msgid "This server renders PDFs, and everything here works as it is. An optional add-on adds cropping, a page and a crop for each PDF, a background queue, and replacing a PDF in place."
 msgstr "このサーバーは PDF を描画でき、ここにある機能はそのまま使えます。任意のアドオンでは、切り取り、PDF ごとのページと切り取り、バックグラウンドのキュー、PDF のその場での差し替えが加わります。"
+
+#: includes/Upsell.php
+msgid "Ask them to let ImageMagick read PDFs and to install Ghostscript, which ImageMagick uses to draw them. Most hosts can do this."
+msgstr "ImageMagick が PDF を読めるようにすることと、ImageMagick が PDF の描画に使う Ghostscript を入れることを頼んでください。多くのホスティング会社は対応できます。"

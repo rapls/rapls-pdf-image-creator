@@ -133,7 +133,7 @@ final class Upsell
      * program -- that the add-on cannot render here either. Reading the
      * setting starts nothing.
      */
-    public static function renderStatusOptions(): void
+    public static function renderStatusOptions(bool $hasAction = true): void
     {
         if (!self::shows()) {
             return;
@@ -146,7 +146,15 @@ final class Upsell
             <ol>
                 <li>
                     <strong><?php esc_html_e('Ask your hosting provider (free).', 'rapls-pdf-image-creator'); ?></strong>
-                    <?php esc_html_e('Send them the message above under "What to do". Most hosts can allow ImageMagick to read PDFs.', 'rapls-pdf-image-creator'); ?>
+                    <?php
+                    // "What to do" is shown above only where the check has
+                    // advice to give (review of 1.4.45).
+                    if ($hasAction) {
+                        esc_html_e('Send them the message above under "What to do". Most hosts can allow ImageMagick to read PDFs.', 'rapls-pdf-image-creator');
+                    } else {
+                        esc_html_e('Ask them to let ImageMagick read PDFs and to install Ghostscript, which ImageMagick uses to draw them. Most hosts can do this.', 'rapls-pdf-image-creator');
+                    }
+                    ?>
                 </li>
                 <li>
                     <strong><?php esc_html_e('Use another host (free).', 'rapls-pdf-image-creator'); ?></strong>
@@ -200,7 +208,19 @@ final class Upsell
      */
     public static function programsBlocked(): bool
     {
-        $disabled = array_map('trim', explode(',', strtolower((string) ini_get('disable_functions'))));
+        // PHP takes commas, spaces or both between the names (review of
+        // 1.4.45: "exec proc_open" was read as one name, and the add-on was
+        // offered where it cannot render).
+        return self::blocksPrograms((string) ini_get('disable_functions'));
+    }
+
+    /**
+     * Whether a disable_functions value names both exec and proc_open
+     */
+    public static function blocksPrograms(string $list): bool
+    {
+        $disabled = preg_split('/[\s,]+/', strtolower($list), -1, PREG_SPLIT_NO_EMPTY);
+        $disabled = is_array($disabled) ? $disabled : [];
 
         return in_array('exec', $disabled, true) && in_array('proc_open', $disabled, true);
     }

@@ -24,6 +24,7 @@ return array (
     'An error occurred while generating thumbnail.' => 'サムネイルの生成中にエラーが発生しました。',
     'An error occurred while scanning for PDFs.' => 'PDF のスキャン中にエラーが発生しました。',
     'An error occurred.' => 'エラーが発生しました。',
+    'Ask them to let ImageMagick read PDFs and to install Ghostscript, which ImageMagick uses to draw them. Most hosts can do this.' => 'ImageMagick が PDF を読めるようにすることと、ImageMagick が PDF の描画に使う Ghostscript を入れることを頼んでください。多くのホスティング会社は対応できます。',
     'Ask your hosting provider (free).' => 'ホスティング会社に頼む（無料）。',
     'Ask your hosting provider for either of the following:' => 'ホスティング事業者に、次のいずれかを依頼してください。',
     'Ask your hosting provider to allow the PDF coder in policy.xml. The rule currently denies it, and it needs read rights.' => 'policy.xml で PDF コーダーを許可するよう、ホスティング事業者に依頼してください。現在は拒否する設定になっており、読み取り権限が必要です。',

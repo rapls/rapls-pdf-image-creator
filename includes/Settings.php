@@ -176,7 +176,7 @@ final class Settings
      * code elsewhere that called it through Plugin::getInstance()->getSettings()
      * would stop with a fatal error if it went (review after 1.4.38).
      *
-     * @deprecated 1.4.45 Read getFormat() instead.
+     * @deprecated 1.4.46 Read getFormat() instead.
      */
     public function getFileExtension(): string
     {
@@ -195,7 +195,7 @@ final class Settings
      *
      * Kept for the same reason as getFileExtension().
      *
-     * @deprecated 1.4.45 Read getFormat() instead.
+     * @deprecated 1.4.46 Read getFormat() instead.
      */
     public function getMimeType(): string
     {
