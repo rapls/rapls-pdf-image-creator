@@ -1069,7 +1069,7 @@ msgstr "このページの機能は、すべて無料のままです。"
 
 #: includes/Upsell.php
 msgid "Rapls PDF Image Creator Pro, an optional add-on"
-msgstr "Rapls PDF Image Creator Pro（任意の有料アドオン）"
+msgstr "Rapls PDF Image Creator Pro (任意の有料アドオン)"
 
 #: includes/Upsell.php
 msgid "Crops white margins, keeps the top of the page, or pads to a fixed shape, so small thumbnails stay readable."
@@ -1089,11 +1089,11 @@ msgstr "PDF をその場で差し替えます。前のファイルを残すの�
 
 #: includes/Upsell.php
 msgid "Renders with Ghostscript directly where ImageMagick cannot read PDFs. This needs a host that lets PHP start programs (exec or proc_open) and has Ghostscript installed."
-msgstr "ImageMagick が PDF を読めないサーバーでも、Ghostscript で直接描画します。これには、PHP からプログラムを起動できる（exec または proc_open）うえ、Ghostscript が入っているサーバーが必要です。"
+msgstr "ImageMagick が PDF を読めないサーバーでも、Ghostscript で直接描画します。これには、PHP からプログラムを起動できる (exec または proc_open) うえ、Ghostscript が入っているサーバーが必要です。"
 
 #: includes/Upsell.php
 msgid "One-time purchase, no subscription. 14-day money-back guarantee."
-msgstr "買い切りで、定期購入ではありません。14 日間の返金保証があります。"
+msgstr "買い切りで、定期購入ではありません。14日間の返金保証があります。"
 
 #: includes/Upsell.php
 msgid "About the add-on"
@@ -1105,7 +1105,7 @@ msgstr "選べる方法"
 
 #: includes/Upsell.php
 msgid "Ask your hosting provider (free)."
-msgstr "ホスティング会社に頼む（無料）。"
+msgstr "ホスティング会社に頼む (無料)。"
 
 #: includes/Upsell.php
 msgid "Send them the message above under \"What to do\". Most hosts can allow ImageMagick to read PDFs."
@@ -1113,7 +1113,7 @@ msgstr "上の「対処方法」の内容を伝えてください。多くのホ
 
 #: includes/Upsell.php
 msgid "Use another host (free)."
-msgstr "別のサーバーを使う（無料）。"
+msgstr "別のサーバーを使う (無料)。"
 
 #: includes/Upsell.php
 msgid "A host whose ImageMagick can read PDFs makes thumbnails with this plugin as it is."
@@ -1121,11 +1121,11 @@ msgstr "ImageMagick が PDF を読めるサーバーなら、このプラグイ�
 
 #: includes/Upsell.php
 msgid "Use the optional add-on (paid)."
-msgstr "任意のアドオンを使う（有料）。"
+msgstr "任意のアドオンを使う (有料)。"
 
 #: includes/Upsell.php
 msgid "This plugin cannot start Ghostscript itself: WordPress.org does not allow plugins in its directory to start other programs. The add-on is not in the directory and renders with Ghostscript directly. It needs a host that lets PHP start programs (exec or proc_open) and has Ghostscript installed."
-msgstr "このプラグインは Ghostscript を自分で起動できません。WordPress.org のディレクトリにあるプラグインは、ほかのプログラムを起動してはいけない決まりだからです。アドオンはディレクトリの外にあり、Ghostscript で直接描画します。PHP からプログラムを起動できる（exec または proc_open）うえ、Ghostscript が入っているサーバーが必要です。"
+msgstr "このプラグインは Ghostscript を自分で起動できません。WordPress.org のディレクトリにあるプラグインは、ほかのプログラムを起動してはいけない決まりだからです。アドオンはディレクトリの外にあり、Ghostscript で直接描画します。PHP からプログラムを起動できる (exec または proc_open) うえ、Ghostscript が入っているサーバーが必要です。"
 
 #: includes/Upsell.php
 msgid "This server does not let PHP start programs, so the add-on cannot render PDFs here either."
