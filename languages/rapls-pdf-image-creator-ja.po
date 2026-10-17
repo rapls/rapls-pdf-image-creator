@@ -4,7 +4,7 @@
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: Rapls PDF Image Creator 1.4.46\n"
+"Project-Id-Version: Rapls PDF Image Creator 1.4.47\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-14 12:00+0900\n"
 "PO-Revision-Date: 2026-10-14 12:00+0900\n"
@@ -540,7 +540,7 @@ msgid ""
 "Ask your hosting provider to allow the PDF coder in policy.xml. The rule "
 "currently denies it, and it needs read rights."
 msgstr ""
-"policy.xml で PDF コーダーを許可するよう、ホスティング事業者に依頼してくださ"
+"ホスティング事業者に、policy.xml で PDF コーダーを許可するよう依頼してくださ"
 "い。現在は拒否する設定になっており、読み取り権限が必要です。"
 
 msgid "PDF support missing"
@@ -774,8 +774,8 @@ msgstr "アップロードフォルダーに画像を書き出せませんでし
 msgid ""
 "Check the permissions on wp-content/uploads, and that the disk is not full."
 msgstr ""
-"wp-content/uploads のパーミッションと、ディスクに空き容量があるかを確認してく"
-"ださい。"
+"ディレクトリ wp-content/uploads のパーミッションと、ディスクに空き容量があるか"
+"を確認してください。"
 
 msgid "ImageMagick could not render the page."
 msgstr "ImageMagick がページを描画できませんでした。"
@@ -1146,3 +1146,21 @@ msgstr "このサーバーは PDF を描画でき、ここにある機能はそ�
 #: includes/Upsell.php
 msgid "Ask them to let ImageMagick read PDFs and to install Ghostscript, which ImageMagick uses to draw them. Most hosts can do this."
 msgstr "ImageMagick が PDF を読めるようにすることと、ImageMagick が PDF の描画に使う Ghostscript を入れることを頼んでください。多くのホスティング会社は対応できます。"
+
+#. translators: %s: the CVE identifier, CVE-2026-39919.
+#: includes/GhostscriptAdvisory.php
+msgid "Ask your hosting provider whether the server's Ghostscript has the fix for %s: Ghostscript 10.08.0 or later, or a package from your distribution that includes the fix. The version number alone cannot tell, because distributions add the fix to older versions, so this plugin does not check it."
+msgstr "サーバーの Ghostscript に %s の修正が入っているか、ホスティング事業者に確かめてください。Ghostscript 10.08.0以降か、修正を取り込んだディストリビューションのパッケージであれば対策済みです。ディストリビューションは古い版番号のまま修正を取り込むため版番号だけでは分からず、このプラグインは判定しません。"
+
+#. translators: %s: the CVE identifier, CVE-2026-39919.
+#: includes/GhostscriptAdvisory.php
+msgid "Ghostscript vulnerability %s"
+msgstr "Ghostscript の脆弱性 %s"
+
+#: includes/GhostscriptAdvisory.php
+msgid "This is not a fault in this plugin. ImageMagick uses the server's Ghostscript to draw PDFs, and so does WordPress's own PDF preview."
+msgstr "このプラグインの不具合ではありません。ImageMagick は PDF の描画にサーバーの Ghostscript を使い、WordPress 本体の PDF プレビューも同じです。"
+
+#: includes/GhostscriptAdvisory.php
+msgid "Details"
+msgstr "詳細"

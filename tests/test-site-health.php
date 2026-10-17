@@ -29,6 +29,7 @@ require RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/ConversionResult.php';
 require RAPLS_PIC_PLUGIN_DIR . 'includes/Engine/EngineInterface.php';
 require RAPLS_PIC_PLUGIN_DIR . 'includes/Generator.php';
 require RAPLS_PIC_PLUGIN_DIR . 'includes/Admin.php';
+require RAPLS_PIC_PLUGIN_DIR . 'includes/GhostscriptAdvisory.php';
 require RAPLS_PIC_PLUGIN_DIR . 'includes/SiteHealth.php';
 
 $pass = 0;
@@ -77,6 +78,8 @@ foreach (['null' => null, 'a string' => 'info'] as $label => $answer) {
 }
 $info = $health->registerDebugInformation(['wp-core' => ['label' => 'WordPress']]);
 check('an array gains this plugin\'s section, with no engine reported as such', [array_keys($info), $info['rapls-pdf-image-creator']['fields']['availability']['debug'] ?? null], [['wp-core', 'rapls-pdf-image-creator'], 'no_engine']);
+// Ghostscript is never reached where PDFs cannot be rendered: no CVE note there.
+check('  ...and no Ghostscript CVE note where PDFs cannot be rendered', isset($info['rapls-pdf-image-creator']['fields']['ghostscript_advisory']), false);
 
 
 echo "\n--- the failure, escaped (review after 1.4.34) ---\n";
@@ -131,6 +134,12 @@ check('a server that renders: good, no actions; its requirements listed, PDF sup
     isset($fields['stub_pdf_support']),
     isset($fields['availability_detail']),
 ], ['good', '', 'ok', 'Loaded', false, false]);
+// Where it renders, the CVE note says what to ask the host (CVE-2026-39919).
+check('  ...and the Ghostscript CVE note, naming the CVE, saying to ask the host', [
+    false !== strpos($fields['ghostscript_advisory']['label'] ?? '', 'CVE-2026-39919'),
+    false !== strpos($fields['ghostscript_advisory']['value'] ?? '', 'hosting provider'),
+    $fields['ghostscript_advisory']['debug'] ?? null,
+], [true, true, 'ask-host']);
 
 printf("\n%d passed, %d failed\n", $pass, $fail);
 exit(0 === $fail ? 0 : 1);

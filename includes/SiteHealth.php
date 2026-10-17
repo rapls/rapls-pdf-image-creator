@@ -159,6 +159,11 @@ final class SiteHealth
             ],
         ];
 
+        // Only where this server renders PDFs: elsewhere Ghostscript is never reached.
+        if ('ok' === $status['code']) {
+            $fields['ghostscript_advisory'] = GhostscriptAdvisory::siteHealthField();
+        }
+
         if ('' !== $status['detail']) {
             $fields['availability_detail'] = [
                 'label' => __('PDF rendering detail', 'rapls-pdf-image-creator'),

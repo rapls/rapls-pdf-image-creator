@@ -538,6 +538,13 @@ if (!defined('ABSPATH')) {
         <?php endif; ?>
 
         <?php
+        // Only where this server renders PDFs: elsewhere Ghostscript is never reached.
+        if ($rapls_pic_is_available) {
+            \Rapls\PDFImageCreator\GhostscriptAdvisory::renderStatus();
+        }
+        ?>
+
+        <?php
         // The server can be perfectly capable and a particular file still fail.
         // Before 1.4.0 that produced a PDF with no thumbnail and no explanation
         // anywhere; the reason was thrown away as soon as generate() returned.

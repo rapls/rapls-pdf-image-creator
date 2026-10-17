@@ -5,7 +5,7 @@ Donate link: https://buymeacoffee.com/rapls
 Tags: pdf, thumbnail, image, featured image, media
 Requires at least: 5.0
 Tested up to: 7.1
-Stable tag: 1.4.46
+Stable tag: 1.4.47
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -219,6 +219,10 @@ In Settings > Rapls PDF Image Creator, under Insert Settings, choose Thumbnail I
 
 The plugin itself never runs Ghostscript. ImageMagick does, though: it passes PDFs to Ghostscript to read them, so ImageMagick's PDF support only works if Ghostscript is installed on the server. You don't have to check this by hand. The Status tab (Settings > Rapls PDF Image Creator > Status) tells you whether PDFs can be rendered on your server.
 
+= Is this plugin affected by the Ghostscript vulnerability CVE-2026-39919? =
+
+It is not a fault in this plugin, but PDFs reach Ghostscript through it. CVE-2026-39919 is a buffer overflow in Ghostscript before 10.08.0, set off by a crafted PDF. This plugin never runs Ghostscript itself; ImageMagick does, to draw a PDF, and WordPress's own PDF preview takes the same path, so turning the plugin off does not take a site out of it. The fix is on the server: ask your hosting provider whether its Ghostscript is 10.08.0 or later, or a distribution package that includes the fix. The version number alone cannot tell, because distributions add the fix to older versions, so the plugin does not check it; where this server renders PDFs, the Status tab and Site Health say what to ask. Until the host confirms it, denying the PDF coder in ImageMagick's policy.xml keeps PDFs away from Ghostscript, and stops both this plugin's thumbnails and WordPress's PDF previews. As of October 17, 2026, no attack using it had been reported, and whether one succeeds depends on the server.
+
 = My thumbnails are black. =
 
 Two causes of black thumbnails have been fixed: PDF/X-1:2001 files (1.0.9), and transparent areas (1.1.0), which are now flattened onto the background colour you choose before the image is saved. If you choose a transparent background with JPEG output, white is used instead, because JPEG cannot store transparency. Thumbnails made before an update are not changed automatically, so regenerate an old black thumbnail before assuming the problem is still there.
@@ -343,6 +347,10 @@ No other profile is bundled. CMYK profiles are read from the host when one is
 present and are never redistributed.
 
 == Changelog ==
+= 1.4.47 =
+* Added: where this server renders PDFs, the Status tab and Site Health's Info tab say what to ask your hosting provider about the Ghostscript vulnerability CVE-2026-39919. The plugin cannot tell whether the server's Ghostscript is fixed, so it does not judge it
+* Added: a FAQ entry about CVE-2026-39919: what it is, why PDFs reach Ghostscript, what to ask the host, and what denying PDFs in policy.xml stops
+
 = 1.4.46 =
 The optional add-on
 * Added: the optional paid add-on, Rapls PDF Image Creator Pro, is mentioned in five places only (the Plugins screen row, a card at the bottom of the Settings tab, the Status tab as one of three options when this server cannot render PDFs or a small box when it can, and under the page-number field after it is changed, until dismissed); nothing in this plugin is limited, and the filter rapls_pdf_image_creator_show_upsell, returning false, removes all of them
@@ -472,6 +480,9 @@ Keeping and deleting images
 The changes in 1.4.9 and earlier are listed on the plugin's page: https://raplsworks.com/plugins/rapls-pdf-image-creator/
 
 == Upgrade Notice ==
+
+= 1.4.47 =
+The Status tab and Site Health now say what to ask your host about the Ghostscript vulnerability CVE-2026-39919, which affects how PDFs are drawn on the server. See the FAQ.
 
 = 1.4.46 =
 PDFs appear only in core's image pickers, shortcodes take a PDF's ID only, and a dropped PDF becomes a File block; two filters restore the old pickers and IDs (see FAQ). Bulk Generate handles large libraries, huge pages cannot exhaust the server, and regenerating keeps images posts show.
